@@ -375,8 +375,8 @@
   function normalizeDefinition(id, def) {
     if (!id || !/^[a-z0-9_-]+$/i.test(id)) throw new Error("Component id must use letters, numbers, _ or -.");
     if (!def || typeof def !== "object") throw new Error("Component definition is missing.");
-    const width = Math.max(50, Math.min(500, Number(def.width) || 140));
-    const height = Math.max(40, Math.min(600, Number(def.height) || 90));
+    const width = Math.max(10, Math.min(800, Number(def.width) || 140));
+    const height = Math.max(10, Math.min(800, Number(def.height) || 90));
     const pins = Array.isArray(def.pins) ? def.pins.slice(0, 80).map((p, i) => ({
       id: String(p.id || "p" + (i + 1)),
       name: String(p.name || p.id || "P" + (i + 1)).slice(0, 40),
