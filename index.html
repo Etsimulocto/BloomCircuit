@@ -153,13 +153,25 @@
             <output id="wireWidthOut">4 px</output>
           </div>
         </label>
-        <label>Label font
+        <button id="resetWireStyleBtn" type="button">Reset wire style</button>
+        <p class="hint">Select a wire, then click the little + at either end to add voltage, scope, waveform, signal, or test notes.</p>
+      </section>
+
+      <section id="wireNoteTools" hidden>
+        <h2>Endpoint note</h2>
+        <label>Text / measurement
+          <textarea id="wireNoteText" rows="4" placeholder="3.3V&#10;CH1: 8 MHz&#10;50% duty"></textarea>
+        </label>
+        <label>Text color
+          <input id="wireNoteColor" type="color" value="#24282c">
+        </label>
+        <label>Font size
           <div class="range-row">
-            <input id="wireFontSize" type="range" min="6" max="24" step="1" value="9">
-            <output id="wireFontSizeOut">9 px</output>
+            <input id="wireNoteFontSize" type="range" min="6" max="30" step="1" value="10">
+            <output id="wireNoteFontSizeOut">10 px</output>
           </div>
         </label>
-        <button id="resetWireStyleBtn" type="button">Reset wire style</button>
+        <button id="clearWireNoteBtn" type="button">Clear note</button>
       </section>
 
       <section>
