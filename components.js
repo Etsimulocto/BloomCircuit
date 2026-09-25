@@ -396,6 +396,7 @@
       subtitle: String(def.subtitle || "").slice(0, 120),
       keywords: Array.isArray(def.keywords) ? def.keywords.map(String).slice(0, 20) : [],
       defaultValue: String(def.defaultValue || "").slice(0, 50),
+      imageData: typeof def.imageData === "string" && def.imageData.startsWith("data:image/") ? def.imageData : "",
       pins
     };
   }
