@@ -10,7 +10,7 @@
   <header class="topbar">
     <div>
       <h1>BloomCircuit</h1>
-      <p>Visual wiring maps -> laser-ready SVG</p>
+      <p>Visual wiring maps → laser-ready SVG</p>
     </div>
     <label class="project-name">Project
       <input id="projectName" value="Happy Jarz Circuit">
@@ -20,8 +20,27 @@
   <main class="app-shell">
     <aside class="sidebar">
       <section>
-        <h2>Components</h2>
+        <div class="section-head">
+          <h2>Component Library</h2>
+          <span id="libraryCount" class="count-badge"></span>
+        </div>
+        <input id="componentSearch" type="search" placeholder="Search parts…">
+        <select id="categoryFilter" aria-label="Component category">
+          <option value="ALL">All categories</option>
+        </select>
         <div id="palette" class="palette"></div>
+        <p id="paletteEmpty" class="hint" hidden>No matching components.</p>
+      </section>
+
+      <section>
+        <h2>Patch Library</h2>
+        <div class="button-stack">
+          <button id="newComponentBtn" type="button">+ New custom component</button>
+          <button id="importPackBtn" type="button">Import component pack</button>
+          <input id="packInput" type="file" accept=".json,application/json" hidden>
+          <button id="exportPackBtn" type="button">Export component pack</button>
+        </div>
+        <p class="hint">Component packs are JSON. Import a new part as we discover it, or make one here and export the library for GitHub.</p>
       </section>
 
       <section>
@@ -35,15 +54,15 @@
             <option value="OTHER">OTHER</option>
           </select>
         </label>
-        <p class="hint">Click one pin, then another pin. Press Esc to cancel.</p>
+        <p class="hint">Click one pin, then another. Press Esc to cancel.</p>
       </section>
 
       <section>
         <h2>Project</h2>
         <div class="button-stack">
           <button id="happyJarzBtn" type="button">Load Happy Jarz template</button>
-          <button id="saveBtn" type="button">Save JSON</button>
-          <button id="loadBtn" type="button">Load JSON</button>
+          <button id="saveBtn" type="button">Save project JSON</button>
+          <button id="loadBtn" type="button">Load project JSON</button>
           <input id="loadInput" type="file" accept=".json,application/json" hidden>
           <button id="exportBtn" type="button">Export SVG</button>
           <button id="deleteBtn" type="button">Delete selected</button>
@@ -57,7 +76,7 @@
 
       <section>
         <h2>Scale</h2>
-        <p class="hint"><strong>10 px = 2.54 mm</strong><br>Snap grid matches common 0.1 inch header/breadboard pitch.</p>
+        <p class="hint"><strong>10 px = 2.54 mm</strong><br>Snap grid matches common 0.1 inch breadboard/header pitch.</p>
       </section>
     </aside>
 
@@ -86,8 +105,65 @@
   </main>
 
   <footer>
-    Click components to add them. Drag to move. Click pins to wire. Delete removes the selected item.
+    Click a library part to add it. Drag to move. Double-click a component to rename/value it. Click pins to wire.
   </footer>
+
+  <dialog id="componentDialog">
+    <form id="componentForm" method="dialog">
+      <div class="dialog-head">
+        <div>
+          <h2>Create component</h2>
+          <p>Quick-patch a part into the library without touching code.</p>
+        </div>
+        <button id="closeComponentDialog" type="button" class="icon-btn" aria-label="Close">×</button>
+      </div>
+
+      <div class="form-grid">
+        <label>Component ID
+          <input id="customId" required placeholder="my_sensor">
+        </label>
+        <label>Name
+          <input id="customTitle" required placeholder="My Sensor">
+        </label>
+        <label>Category
+          <input id="customCategory" value="Custom" placeholder="Sensors & Modules">
+        </label>
+        <label>Shape
+          <select id="customKind">
+            <option value="rect">Rectangle/module</option>
+            <option value="dip">DIP chip</option>
+            <option value="led">LED</option>
+            <option value="resistor">Resistor</option>
+            <option value="capacitor">Capacitor</option>
+            <option value="node">Node</option>
+          </select>
+        </label>
+        <label>Width (px)
+          <input id="customWidth" type="number" min="50" max="500" value="160">
+        </label>
+        <label>Height (px)
+          <input id="customHeight" type="number" min="40" max="600" value="100">
+        </label>
+      </div>
+
+      <label>Subtitle / note
+        <input id="customSubtitle" placeholder="Optional description">
+      </label>
+
+      <label>Pins — one per line: <code>id | label | role | side | position%</code>
+        <textarea id="customPins" rows="8" spellcheck="false">vcc | VCC | power | left | 30
+gnd | GND | gnd | left | 70
+sig | SIGNAL | gpio | right | 50</textarea>
+      </label>
+      <p class="hint">Roles: 5v, 3v3, gnd, gpio, input, output, control, power, passive, analog, i2c, spi, uart, pwm. Sides: left, right, top, bottom.</p>
+
+      <div class="dialog-actions">
+        <button id="createComponentBtn" type="submit">Add to library</button>
+        <button id="cancelComponentBtn" type="button">Cancel</button>
+      </div>
+      <p id="componentFormError" class="form-error" aria-live="polite"></p>
+    </form>
+  </dialog>
 
   <script src="components.js"></script>
   <script src="app.js"></script>
