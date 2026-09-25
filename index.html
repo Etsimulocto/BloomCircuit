@@ -102,6 +102,97 @@
         </svg>
       </div>
     </section>
+
+    <aside class="editor-sidebar" aria-label="Editor tools">
+      <section>
+        <div class="section-head">
+          <h2>Editor</h2>
+          <span id="selectionKind" class="count-badge">Canvas</span>
+        </div>
+        <p id="selectionName" class="selection-name">Nothing selected</p>
+      </section>
+
+      <section id="componentTools" hidden>
+        <h2>Component</h2>
+        <div class="tool-row">
+          <button id="rotateLeftBtn" type="button" title="Rotate left 90 degrees">↶ 90°</button>
+          <button id="rotateRightBtn" type="button" title="Rotate right 90 degrees">↷ 90°</button>
+        </div>
+        <label>Fill color
+          <input id="componentColor" type="color" value="#f4f0e7">
+        </label>
+        <label>Text color
+          <input id="componentTextColor" type="color" value="#191d20">
+        </label>
+        <label>Font size
+          <div class="range-row">
+            <input id="componentFontSize" type="range" min="7" max="28" step="1" value="12">
+            <output id="componentFontSizeOut">12 px</output>
+          </div>
+        </label>
+        <button id="resetComponentStyleBtn" type="button">Reset component style</button>
+      </section>
+
+      <section id="wireTools" hidden>
+        <h2>Wire</h2>
+        <label>Net type
+          <select id="wireNetType">
+            <option value="DATA">DATA</option>
+            <option value="5V">5V</option>
+            <option value="3V3">3V3</option>
+            <option value="GND">GND</option>
+            <option value="OTHER">OTHER</option>
+          </select>
+        </label>
+        <label>Wire color
+          <input id="wireColor" type="color" value="#6cb6ff">
+        </label>
+        <label>Wire width
+          <div class="range-row">
+            <input id="wireWidth" type="range" min="1" max="12" step="1" value="4">
+            <output id="wireWidthOut">4 px</output>
+          </div>
+        </label>
+        <label>Label font
+          <div class="range-row">
+            <input id="wireFontSize" type="range" min="6" max="24" step="1" value="9">
+            <output id="wireFontSizeOut">9 px</output>
+          </div>
+        </label>
+        <button id="resetWireStyleBtn" type="button">Reset wire style</button>
+      </section>
+
+      <section>
+        <h2>Canvas</h2>
+        <label>Background
+          <input id="canvasBgColor" type="color" value="#f8f5ed">
+        </label>
+        <label>Minor grid
+          <input id="minorGridColor" type="color" value="#d9d5cc">
+        </label>
+        <label>Major grid
+          <input id="majorGridColor" type="color" value="#b9b4aa">
+        </label>
+        <label>Pin label size
+          <div class="range-row">
+            <input id="pinFontSize" type="range" min="5" max="18" step="1" value="8">
+            <output id="pinFontSizeOut">8 px</output>
+          </div>
+        </label>
+        <button id="resetCanvasStyleBtn" type="button">Reset canvas colors</button>
+      </section>
+
+      <section>
+        <h2>Zoom</h2>
+        <div class="zoom-row">
+          <button id="zoomOutBtn" type="button" aria-label="Zoom out">−</button>
+          <output id="zoomOut">100%</output>
+          <button id="zoomInBtn" type="button" aria-label="Zoom in">+</button>
+        </div>
+        <input id="zoomRange" type="range" min="25" max="200" step="5" value="100" aria-label="Canvas zoom">
+        <button id="zoomResetBtn" type="button">Reset 100%</button>
+      </section>
+    </aside>
   </main>
 
   <footer>
