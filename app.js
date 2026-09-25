@@ -464,7 +464,7 @@
     render();
   }
 
-  function renderEndpointNote(wire,end,point,other,isWireSelected) {
+  function renderEndpointNote(wire,end,point,other,isWireSelected,path) {
     const note = ensureWireNotes(wire)[end];
     const dir = other.x >= point.x ? 1 : -1;
     const x = point.x + dir * 14;
@@ -501,8 +501,23 @@
     }
 
     if (isWireSelected || noteSelected) {
-      const hx = point.x + dir * 10;
-      const hy = point.y + 11;
+      let hx = point.x + dir * 10;
+      let hy = point.y + 11;
+
+      // Keep the endpoint controls clear of component bodies by placing them
+      // 20% of the way along the actual routed wire from each end.
+      if (path && typeof path.getTotalLength === "function") {
+        try {
+          const length = path.getTotalLength();
+          const distance = end === "from" ? length * .20 : length * .80;
+          const handlePoint = path.getPointAtLength(distance);
+          hx = handlePoint.x;
+          hy = handlePoint.y;
+        } catch (_) {
+          // Fall back to the old small offset if SVG path measurement is unavailable.
+        }
+      }
+
       const handle = svgEl("circle", {
         cx:hx,cy:hy,r:8,
         class:"wire-note-handle",
@@ -551,8 +566,8 @@
     wiresLayer.appendChild(path);
 
     // No automatic center label. Endpoint annotations stay blank until the user adds them.
-    renderEndpointNote(wire,"from",a,b,isWireSelected);
-    renderEndpointNote(wire,"to",b,a,isWireSelected);
+    renderEndpointNote(wire,"from",a,b,isWireSelected,path);
+    renderEndpointNote(wire,"to",b,a,isWireSelected,path);
   }
 
   function normalizeBoardType(value) {
