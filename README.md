@@ -1,5 +1,25 @@
 # BloomCircuit
 
+## Raspberry Pi offline app
+
+BloomCircuit can run as a local desktop-style app on Raspberry Pi with no internet connection.
+
+From the cloned repository:
+
+```bash
+cd ~/BloomCircuit
+git pull
+bash install_pi.sh
+```
+
+After install, launch **BloomCircuit** from the Raspberry Pi application menu, or run:
+
+```bash
+bloomcircuit
+```
+
+The launcher uses Python's built-in local HTTP server and opens Chromium in app mode. All HTML, CSS, JavaScript, component data, images, project saves, and SVG export stay local. No Node.js, Electron, cloud service, or internet connection is required.
+
 ## v0.4 board underlays
 
 BloomCircuit now includes a configurable physical-board underlay maker:
