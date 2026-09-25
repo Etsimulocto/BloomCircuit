@@ -50,8 +50,11 @@
   const wireColor = document.getElementById("wireColor");
   const wireWidth = document.getElementById("wireWidth");
   const wireWidthOut = document.getElementById("wireWidthOut");
-  const wireFontSize = document.getElementById("wireFontSize");
-  const wireFontSizeOut = document.getElementById("wireFontSizeOut");
+  const wireNoteTools = document.getElementById("wireNoteTools");
+  const wireNoteText = document.getElementById("wireNoteText");
+  const wireNoteColor = document.getElementById("wireNoteColor");
+  const wireNoteFontSize = document.getElementById("wireNoteFontSize");
+  const wireNoteFontSizeOut = document.getElementById("wireNoteFontSizeOut");
   const canvasBgColor = document.getElementById("canvasBgColor");
   const minorGridColor = document.getElementById("minorGridColor");
   const majorGridColor = document.getElementById("majorGridColor");
@@ -378,17 +381,108 @@
     return "M " + a.x + " " + a.y + " V " + my + " H " + b.x + " V " + b.y;
   }
 
+  function blankWireNotes() {
+    return {
+      from:{ text:"", color:"#24282c", fontSize:10 },
+      to:{ text:"", color:"#24282c", fontSize:10 }
+    };
+  }
+
+  function ensureWireNotes(wire) {
+    if (!wire.notes || typeof wire.notes !== "object") wire.notes = blankWireNotes();
+    ["from","to"].forEach(end => {
+      const current = wire.notes[end];
+      if (!current || typeof current !== "object") {
+        wire.notes[end] = { text:"", color:"#24282c", fontSize:10 };
+        return;
+      }
+      current.text = typeof current.text === "string" ? current.text : "";
+      current.color = typeof current.color === "string" ? current.color : "#24282c";
+      current.fontSize = clamp(Number(current.fontSize) || 10,6,30);
+    });
+    return wire.notes;
+  }
+
+  function selectWireNote(wireId,end) {
+    state.selected = { kind:"wireNote", id:wireId, end };
+    setStatus((end === "from" ? "Start" : "End") + " wire note selected.");
+    render();
+  }
+
+  function renderEndpointNote(wire,end,point,other,isWireSelected) {
+    const note = ensureWireNotes(wire)[end];
+    const dir = other.x >= point.x ? 1 : -1;
+    const x = point.x + dir * 14;
+    const y = point.y - 12;
+    const anchor = dir > 0 ? "start" : "end";
+    const noteSelected = state.selected && state.selected.kind === "wireNote" &&
+      state.selected.id === wire.id && state.selected.end === end;
+
+    if (note.text.trim()) {
+      const textEl = svgEl("text", {
+        x,y,
+        class:"wire-note",
+        "text-anchor":anchor,
+        style:"fill:" + note.color + ";font-size:" + note.fontSize + "px",
+        "data-wire-id":wire.id,
+        "data-wire-end":end
+      });
+
+      note.text.split(/\r?\n/).slice(0,8).forEach((line,index) => {
+        const tspan = svgEl("tspan", {
+          x,
+          dy:index === 0 ? 0 : note.fontSize * 1.2
+        });
+        tspan.textContent = line;
+        textEl.appendChild(tspan);
+      });
+
+      textEl.addEventListener("pointerdown",e => e.stopPropagation());
+      textEl.addEventListener("click",e => {
+        e.stopPropagation();
+        selectWireNote(wire.id,end);
+      });
+      wiresLayer.appendChild(textEl);
+    }
+
+    if (isWireSelected || noteSelected) {
+      const hx = point.x + dir * 10;
+      const hy = point.y + 11;
+      const handle = svgEl("circle", {
+        cx:hx,cy:hy,r:8,
+        class:"wire-note-handle",
+        "data-wire-id":wire.id,
+        "data-wire-end":end
+      });
+      handle.addEventListener("pointerdown",e => e.stopPropagation());
+      handle.addEventListener("click",e => {
+        e.stopPropagation();
+        selectWireNote(wire.id,end);
+      });
+      wiresLayer.appendChild(handle);
+
+      const plus = svgEl("text", {
+        x:hx,y:hy + .5,
+        class:"wire-note-plus"
+      });
+      plus.textContent = note.text.trim() ? "✎" : "+";
+      wiresLayer.appendChild(plus);
+    }
+  }
+
   function renderWire(wire) {
     const a = pinWorld(wire.from.compId, wire.from.pinId);
     const b = pinWorld(wire.to.compId, wire.to.pinId);
     if (!a || !b) return;
 
-    const isSelected = state.selected && state.selected.kind === "wire" && state.selected.id === wire.id;
+    const isWireSelected = state.selected &&
+      (state.selected.kind === "wire" || state.selected.kind === "wireNote") &&
+      state.selected.id === wire.id;
     const baseWidth = clamp(Number(wire.width) || 4, 1, 12);
     const path = svgEl("path", {
       d: wirePath(a,b),
-      class: "wire net-" + wire.net + (isSelected ? " selected" : ""),
-      style: "stroke:" + (wire.color || NET_COLORS[wire.net] || NET_COLORS.OTHER) + ";stroke-width:" + (isSelected ? baseWidth + 3 : baseWidth),
+      class: "wire net-" + wire.net + (isWireSelected ? " selected" : ""),
+      style: "stroke:" + (wire.color || NET_COLORS[wire.net] || NET_COLORS.OTHER) + ";stroke-width:" + (isWireSelected ? baseWidth + 3 : baseWidth),
       "data-id": wire.id
     });
 
@@ -396,19 +490,14 @@
     path.addEventListener("click", e => {
       e.stopPropagation();
       state.selected = { kind:"wire", id:wire.id };
-      setStatus(wire.net + " wire selected.");
+      setStatus("Wire selected — use + at either end for notes.");
       render();
     });
     wiresLayer.appendChild(path);
 
-    const tx = snap((a.x + b.x) / 2);
-    const ty = snap((a.y + b.y) / 2) - 5;
-    const label = svgEl("text", {
-      x:tx,y:ty,class:"wire-label","text-anchor":"middle",
-      style:"font-size:" + clamp(Number(wire.fontSize) || 9, 6, 24) + "px"
-    });
-    label.textContent = wire.net;
-    wiresLayer.appendChild(label);
+    // No automatic center label. Endpoint annotations stay blank until the user adds them.
+    renderEndpointNote(wire,"from",a,b,isWireSelected);
+    renderEndpointNote(wire,"to",b,a,isWireSelected);
   }
 
   function defaultComponentFill(kind) {
@@ -435,9 +524,17 @@
   }
 
   function selectedWire() {
-    return state.selected && state.selected.kind === "wire"
+    return state.selected && (state.selected.kind === "wire" || state.selected.kind === "wireNote")
       ? state.wires.find(w => w.id === state.selected.id) || null
       : null;
+  }
+
+  function selectedWireNote() {
+    if (!state.selected || state.selected.kind !== "wireNote") return null;
+    const wire = state.wires.find(w => w.id === state.selected.id) || null;
+    if (!wire) return null;
+    const end = state.selected.end === "to" ? "to" : "from";
+    return { wire, end, note:ensureWireNotes(wire)[end] };
   }
 
   function selectedComponent() {
@@ -449,9 +546,11 @@
   function updateInspector() {
     const comp = selectedComponent();
     const wire = selectedWire();
+    const wireNote = selectedWireNote();
 
     componentTools.hidden = !comp;
     wireTools.hidden = !wire;
+    wireNoteTools.hidden = !wireNote;
 
     if (comp) {
       const def = components[comp.type];
@@ -461,6 +560,18 @@
       componentTextColor.value = comp.textColor || "#191d20";
       componentFontSize.value = String(Number(comp.fontSize) || 12);
       componentFontSizeOut.textContent = (Number(comp.fontSize) || 12) + " px";
+    } else if (wireNote) {
+      selectionKind.textContent = "Wire note";
+      selectionName.textContent = (wireNote.end === "from" ? "Start: " : "End: ") +
+        describePin(wireNote.end === "from" ? wireNote.wire.from : wireNote.wire.to);
+      wireNetType.value = wireNote.wire.net;
+      wireColor.value = wireNote.wire.color || NET_COLORS[wireNote.wire.net] || NET_COLORS.OTHER;
+      wireWidth.value = String(clamp(Number(wireNote.wire.width) || 4,1,12));
+      wireWidthOut.textContent = wireWidth.value + " px";
+      wireNoteText.value = wireNote.note.text;
+      wireNoteColor.value = wireNote.note.color;
+      wireNoteFontSize.value = String(wireNote.note.fontSize);
+      wireNoteFontSizeOut.textContent = wireNote.note.fontSize + " px";
     } else if (wire) {
       selectionKind.textContent = "Wire";
       selectionName.textContent = describePin(wire.from) + " → " + describePin(wire.to);
@@ -468,8 +579,6 @@
       wireColor.value = wire.color || NET_COLORS[wire.net] || NET_COLORS.OTHER;
       wireWidth.value = String(clamp(Number(wire.width) || 4, 1, 12));
       wireWidthOut.textContent = wireWidth.value + " px";
-      wireFontSize.value = String(clamp(Number(wire.fontSize) || 9, 6, 24));
-      wireFontSizeOut.textContent = wireFontSize.value + " px";
     } else {
       selectionKind.textContent = "Canvas";
       selectionName.textContent = "Nothing selected";
@@ -541,9 +650,9 @@
         from: { ...state.pendingPin },
         to: ref,
         net,
-        color: null,
-        width: 4,
-        fontSize: 9
+        color:null,
+        width:4,
+        notes:blankWireNotes()
       };
       state.wires.push(wire);
       state.selected = { kind:"wire", id:wire.id };
@@ -632,11 +741,17 @@
       const id = state.selected.id;
       state.components = state.components.filter(c => c.id !== id);
       state.wires = state.wires.filter(w => w.from.compId !== id && w.to.compId !== id);
+      state.selected = null;
+    } else if (state.selected.kind === "wireNote") {
+      const wire = state.wires.find(w => w.id === state.selected.id);
+      if (wire) ensureWireNotes(wire)[state.selected.end === "to" ? "to" : "from"].text = "";
+      state.selected = wire ? { kind:"wire", id:wire.id } : null;
     } else {
       state.wires = state.wires.filter(w => w.id !== state.selected.id);
+      state.selected = null;
     }
 
-    state.selected = null;
+
     state.pendingPin = null;
     setStatus("Deleted.");
     render();
@@ -652,7 +767,7 @@
   function saveProject() {
     const data = {
       format:"BloomCircuit",
-      version:2,
+      version:3,
       projectName:projectName.value.trim() || "BloomCircuit",
       gridPx:GRID,
       mmPerPx:MM_PER_PX,
@@ -701,12 +816,22 @@
       w.from && w.to &&
       validIds.has(w.from.compId) && validIds.has(w.to.compId) &&
       ["5V","3V3","GND","DATA","OTHER"].includes(w.net)
-    ).map(w => ({
-      ...w,
-      color:typeof w.color === "string" ? w.color : null,
-      width:clamp(Number(w.width) || 4,1,12),
-      fontSize:clamp(Number(w.fontSize) || 9,6,24)
-    }));
+    ).map(w => {
+      const normalizeNote = raw => ({
+        text:raw && typeof raw.text === "string" ? raw.text : "",
+        color:raw && typeof raw.color === "string" ? raw.color : "#24282c",
+        fontSize:clamp(raw && Number(raw.fontSize) || 10,6,30)
+      });
+      return {
+        ...w,
+        color:typeof w.color === "string" ? w.color : null,
+        width:clamp(Number(w.width) || 4,1,12),
+        notes:{
+          from:normalizeNote(w.notes && w.notes.from),
+          to:normalizeNote(w.notes && w.notes.to)
+        }
+      };
+    });
 
     const rawCanvas = data.canvasSettings || {};
     const canvasSettings = {
@@ -746,6 +871,7 @@
 
     clone.querySelectorAll(".selected").forEach(el => el.classList.remove("selected"));
     clone.querySelectorAll(".pending").forEach(el => el.classList.remove("pending"));
+    clone.querySelectorAll(".wire-note-handle,.wire-note-plus").forEach(el => el.remove());
     clone.setAttribute("xmlns",NS);
     clone.setAttribute("width",(CANVAS_WIDTH*MM_PER_PX).toFixed(2)+"mm");
     clone.setAttribute("height",(CANVAS_HEIGHT*MM_PER_PX).toFixed(2)+"mm");
@@ -755,7 +881,7 @@
     const monochrome = etchMode.checked;
     style.textContent =
       (monochrome
-        ? ".component-body,.resistor-body,.led-lens{fill:#fff!important;stroke:#000;stroke-width:2}.component-title,.component-subtitle,.pin-label,.wire-label{fill:#000!important}.wire{stroke:#000!important}"
+        ? ".component-body,.resistor-body,.led-lens{fill:#fff!important;stroke:#000;stroke-width:2}.component-title,.component-subtitle,.pin-label,.wire-note{fill:#000!important}.wire{stroke:#000!important}"
         : ".component-body{fill:var(--component-fill,#f4f0e7);stroke:#000;stroke-width:2}.resistor-body{fill:var(--component-fill,#e7d0a6)}.led-lens{fill:#f3f7ff;stroke:#000;stroke-width:2}.component-title,.component-subtitle,.pin-label{fill:var(--component-text,#191d20)}") +
       ".component-title{font-weight:700;font-size:var(--component-font-size,12px);text-anchor:middle}" +
       ".component-subtitle{font-size:var(--component-subtitle-size,9px)}" +
@@ -763,7 +889,8 @@
       ".pin{fill:#fff;stroke:#000;stroke-width:1.3}" +
       ".bus-line,.cap-plate{stroke:#000;fill:none}" +
       ".wire{fill:none;stroke-linejoin:round;stroke-linecap:round}" +
-      ".wire-label{fill:#000;font-weight:700;paint-order:stroke;stroke:#fff;stroke-width:3}";
+      ".wire-note{font-weight:600;paint-order:stroke;stroke:#fff;stroke-width:3}" +
+      (monochrome ? ".wire-note{fill:#000!important}" : "");
 
     let defs = clone.querySelector("defs");
     if (!defs) {
@@ -785,7 +912,7 @@
       net,
       color:null,
       width:4,
-      fontSize:9
+      notes:blankWireNotes()
     });
   }
 
@@ -1047,10 +1174,33 @@
     render();
   });
 
-  wireFontSize.addEventListener("input",() => {
-    const wire = selectedWire();
-    if (!wire) return;
-    wire.fontSize = clamp(Number(wireFontSize.value) || 9,6,24);
+  wireNoteText.addEventListener("input",() => {
+    const selected = selectedWireNote();
+    if (!selected) return;
+    selected.note.text = wireNoteText.value.slice(0,500);
+    render();
+  });
+
+  wireNoteColor.addEventListener("input",() => {
+    const selected = selectedWireNote();
+    if (!selected) return;
+    selected.note.color = wireNoteColor.value;
+    render();
+  });
+
+  wireNoteFontSize.addEventListener("input",() => {
+    const selected = selectedWireNote();
+    if (!selected) return;
+    selected.note.fontSize = clamp(Number(wireNoteFontSize.value) || 10,6,30);
+    render();
+  });
+
+  document.getElementById("clearWireNoteBtn").addEventListener("click",() => {
+    const selected = selectedWireNote();
+    if (!selected) return;
+    selected.note.text = "";
+    state.selected = { kind:"wire", id:selected.wire.id };
+    setStatus("Endpoint note cleared.");
     render();
   });
 
@@ -1059,7 +1209,6 @@
     if (!wire) return;
     wire.color = null;
     wire.width = 4;
-    wire.fontSize = 9;
     setStatus("Wire style reset.");
     render();
   });
