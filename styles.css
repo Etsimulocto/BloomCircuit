@@ -13,6 +13,10 @@
   --wire-gnd: #7f8c98;
   --wire-data: #6cb6ff;
   --wire-other: #c792ea;
+  --canvas-bg: #f8f5ed;
+  --minor-grid: #d9d5cc;
+  --major-grid: #b9b4aa;
+  --pin-font-size: 8px;
 }
 
 * { box-sizing: border-box; }
@@ -68,23 +72,33 @@ textarea {
 
 .app-shell {
   display: grid;
-  grid-template-columns: 270px minmax(0, 1fr);
+  grid-template-columns: 270px minmax(0, 1fr) 250px;
   min-height: 720px;
 }
 
-.sidebar {
+.sidebar,
+.editor-sidebar {
   padding: 14px;
-  border-right: 1px solid var(--border);
   background: var(--panel);
 }
 
-.sidebar section + section {
+.sidebar {
+  border-right: 1px solid var(--border);
+}
+
+.editor-sidebar {
+  border-left: 1px solid var(--border);
+}
+
+.sidebar section + section,
+.editor-sidebar section + section {
   border-top: 1px solid var(--border);
   margin-top: 16px;
   padding-top: 16px;
 }
 
-.sidebar h2 {
+.sidebar h2,
+.editor-sidebar h2 {
   margin: 0 0 10px;
   font-size: .95rem;
 }
@@ -185,7 +199,7 @@ textarea {
   width: 1200px;
   height: 700px;
   display: block;
-  background: #f8f5ed;
+  background: var(--canvas-bg);
   border: 1px solid #454d55;
   touch-action: none;
   user-select: none;
@@ -193,33 +207,33 @@ textarea {
 
 .minor-grid-line {
   fill: none;
-  stroke: #d9d5cc;
+  stroke: var(--minor-grid);
   stroke-width: .55;
 }
 
 .major-grid-line {
   fill: none;
-  stroke: #b9b4aa;
+  stroke: var(--major-grid);
   stroke-width: .9;
 }
 
 .component-body {
-  fill: #f4f0e7;
+  fill: var(--component-fill, #f4f0e7);
   stroke: #252b30;
   stroke-width: 2;
 }
 
 .component-title {
-  fill: #191d20;
-  font-size: 12px;
+  fill: var(--component-text, #191d20);
+  font-size: var(--component-font-size, 12px);
   font-weight: 700;
   text-anchor: middle;
   pointer-events: none;
 }
 
 .component-subtitle {
-  fill: #4b535a;
-  font-size: 9px;
+  fill: var(--component-text, #4b535a);
+  font-size: var(--component-subtitle-size, 9px);
   text-anchor: middle;
   pointer-events: none;
 }
@@ -237,8 +251,8 @@ textarea {
 }
 
 .pin-label {
-  fill: #171a1d;
-  font-size: 8px;
+  fill: var(--component-text, #171a1d);
+  font-size: var(--pin-font-size);
   pointer-events: none;
 }
 
@@ -282,7 +296,7 @@ textarea {
 }
 
 .resistor-body {
-  fill: #e7d0a6;
+  fill: var(--component-fill, #e7d0a6);
   stroke: #2c3136;
   stroke-width: 2;
 }
@@ -405,9 +419,66 @@ body.etch-mode .net-OTHER {
   stroke: #000;
 }
 
+
+.editor-sidebar label {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 10px;
+  font-size: .82rem;
+}
+
+.selection-name {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: .82rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.tool-row,
+.zoom-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0,1fr));
+  gap: 7px;
+  margin-bottom: 10px;
+}
+
+.zoom-row {
+  grid-template-columns: 44px minmax(70px,1fr) 44px;
+  align-items: center;
+}
+
+.zoom-row output {
+  text-align: center;
+  font-weight: 700;
+}
+
+.range-row {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) 54px;
+  gap: 8px;
+  align-items: center;
+}
+
+.range-row output {
+  color: var(--muted);
+  font-size: .78rem;
+  text-align: right;
+}
+
+.editor-sidebar input[type="color"] {
+  min-height: 38px;
+  padding: 3px;
+}
+
+.editor-sidebar input[type="range"] {
+  padding: 0;
+}
+
 @media (max-width: 820px) {
   .app-shell { grid-template-columns: 1fr; }
   .sidebar { border-right: 0; border-bottom: 1px solid var(--border); }
+  .editor-sidebar { border-left: 0; border-top: 1px solid var(--border); }
   .palette { max-height: none; grid-template-columns: repeat(2, minmax(0,1fr)); }
   .palette-group { min-width: 0; }
   .topbar { align-items: stretch; flex-direction: column; }
