@@ -153,6 +153,16 @@
             <input id="selectedBoardHolesY" type="number" min="2" max="80" step="1">
           </label>
         </div>
+        <div class="tool-row">
+          <button id="boardRotateLeftBtn" type="button" title="Rotate board left 90 degrees">↶ 90°</button>
+          <button id="boardRotateRightBtn" type="button" title="Rotate board right 90 degrees">↷ 90°</button>
+        </div>
+        <label>Scale
+          <div class="range-row">
+            <input id="boardScale" type="range" min="25" max="400" step="5" value="100">
+            <output id="boardScaleOut">100%</output>
+          </div>
+        </label>
         <label>Board color
           <input id="boardColor" type="color" value="#d9e4c7">
         </label>
@@ -173,6 +183,12 @@
         </label>
         <label>Text color
           <input id="componentTextColor" type="color" value="#191d20">
+        </label>
+        <label>Scale
+          <div class="range-row">
+            <input id="componentScale" type="range" min="25" max="400" step="5" value="100">
+            <output id="componentScaleOut">100%</output>
+          </div>
         </label>
         <label>Font size
           <div class="range-row">
