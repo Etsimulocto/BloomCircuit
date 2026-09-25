@@ -214,7 +214,7 @@
       value: opts.value !== undefined ? opts.value : (def.defaultValue || ""),
       fillColor: opts.fillColor || null,
       textColor: opts.textColor || null,
-      fontSize: Number(opts.fontSize) || 12
+      fontSize: Number(opts.fontSize) || Math.max(6, Math.min(12, Math.round(Math.min(def.width,def.height) / 5)))
     };
   }
 
@@ -393,13 +393,14 @@
 
     renderBody(group, comp, def);
 
-    const titleY = def.kind === "pi40" ? 20 : 18;
+    const titleY = Math.max(8, Math.min(def.kind === "pi40" ? 20 : 18, def.height * .28));
     addText(group, def.title, def.width / 2, titleY, "component-title");
 
-    if (comp.value) {
-      addText(group, comp.value, def.width / 2, titleY + 14, "component-subtitle");
-    } else if (def.subtitle && comp.type !== "pi40") {
-      addText(group, def.subtitle, def.width / 2, titleY + 14, "component-subtitle");
+    const detailY = titleY + Math.max(8, subtitleSize + 2);
+    if (comp.value && detailY < def.height - 3) {
+      addText(group, comp.value, def.width / 2, detailY, "component-subtitle");
+    } else if (def.subtitle && comp.type !== "pi40" && detailY < def.height - 3) {
+      addText(group, def.subtitle, def.width / 2, detailY, "component-subtitle");
     }
 
     def.pins.forEach(pinDef => renderPin(group, comp, pinDef));
