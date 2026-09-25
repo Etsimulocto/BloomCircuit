@@ -231,6 +231,14 @@ APA106 #2
 
 with shared 5V/GND buses and 104 decoupling capacitors.
 
+## License
+
+BloomCircuit is **free and open source** under the [MIT License](LICENSE).
+
+You may use, copy, modify, fork, publish, and redistribute BloomCircuit, including in personal, educational, and commercial projects, as long as the MIT license notice is kept with the software.
+
+There is no warranty; verify wiring and component pinouts against the actual hardware and datasheets before powering a circuit.
+
 ## Scope
 
 BloomCircuit is intentionally a wiring-map and fabrication-documentation tool. It does not currently replace KiCad, SPICE, PCB DRC, or a datasheet. The goal is to make a physical maker circuit easy to understand, reproduce, and engrave.
