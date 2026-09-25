@@ -1,5 +1,7 @@
 # BloomCircuit
 
+**Current stable release:** v1.0.0
+
 ## Raspberry Pi offline app
 
 BloomCircuit can run as a local desktop-style app on Raspberry Pi with no internet connection.
