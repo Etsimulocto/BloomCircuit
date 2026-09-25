@@ -45,6 +45,8 @@
   const wireTools = document.getElementById("wireTools");
   const componentColor = document.getElementById("componentColor");
   const componentTextColor = document.getElementById("componentTextColor");
+  const componentScale = document.getElementById("componentScale");
+  const componentScaleOut = document.getElementById("componentScaleOut");
   const componentFontSize = document.getElementById("componentFontSize");
   const componentFontSizeOut = document.getElementById("componentFontSizeOut");
   const wireNetType = document.getElementById("wireNetType");
@@ -64,6 +66,8 @@
   const selectedBoardType = document.getElementById("selectedBoardType");
   const selectedBoardHolesX = document.getElementById("selectedBoardHolesX");
   const selectedBoardHolesY = document.getElementById("selectedBoardHolesY");
+  const boardScale = document.getElementById("boardScale");
+  const boardScaleOut = document.getElementById("boardScaleOut");
   const boardColor = document.getElementById("boardColor");
   const boardHoleColor = document.getElementById("boardHoleColor");
 
@@ -183,6 +187,7 @@
       x: snap(x),
       y: snap(y),
       rotation: Number(opts.rotation) || 0,
+      scale: clamp(Number(opts.scale) || 1, .25, 4),
       value: opts.value !== undefined ? opts.value : (def.defaultValue || ""),
       fillColor: opts.fillColor || null,
       textColor: opts.textColor || null,
@@ -219,13 +224,13 @@
     if (!comp || !pin) return null;
     const def = components[comp.type];
     const angle = ((Number(comp.rotation) || 0) % 360 + 360) % 360;
-    if (!angle) return { x: comp.x + pin.x, y: comp.y + pin.y };
+    const scale = clamp(Number(comp.scale) || 1,.25,4);
 
     const cx = def.width / 2;
     const cy = def.height / 2;
     const rad = angle * Math.PI / 180;
-    const dx = pin.x - cx;
-    const dy = pin.y - cy;
+    const dx = (pin.x - cx) * scale;
+    const dy = (pin.y - cy) * scale;
     return {
       x: comp.x + cx + dx * Math.cos(rad) - dy * Math.sin(rad),
       y: comp.y + cy + dx * Math.sin(rad) + dy * Math.cos(rad)
@@ -345,7 +350,7 @@
     const subtitleSize = Math.max(6, (Number(comp.fontSize) || 12) - 3);
     const group = svgEl("g", {
       class: "component" + (state.selected && state.selected.kind === "component" && state.selected.id === comp.id ? " selected" : ""),
-      transform: "translate(" + comp.x + " " + comp.y + ") rotate(" + (Number(comp.rotation) || 0) + " " + (def.width/2) + " " + (def.height/2) + ")",
+      transform: "translate(" + comp.x + " " + comp.y + ") translate(" + (def.width/2) + " " + (def.height/2) + ") rotate(" + (Number(comp.rotation) || 0) + ") scale(" + clamp(Number(comp.scale) || 1,.25,4) + ") translate(" + (-def.width/2) + " " + (-def.height/2) + ")",
       style: "--component-fill:" + (comp.fillColor || defaultComponentFill(def.kind)) + ";--component-text:" + (comp.textColor || "#191d20") + ";--component-font-size:" + (Number(comp.fontSize) || 12) + "px;--component-subtitle-size:" + subtitleSize + "px",
       "data-id": comp.id
     });
@@ -525,6 +530,8 @@
       y:snap(Number(board && board.y) || 300),
       holesX:clamp(Math.round(Number(board && board.holesX) || 30),2,120),
       holesY:clamp(Math.round(Number(board && board.holesY) || 10),2,80),
+      rotation:Number(board && board.rotation) || 0,
+      scale:clamp(Number(board && board.scale) || 1,.25,4),
       color:board && typeof board.color === "string" ? board.color : "#d9e4c7",
       holeColor:board && typeof board.holeColor === "string" ? board.holeColor : "#3c4248"
     };
@@ -592,7 +599,7 @@
     const isSelected = state.selected && state.selected.kind === "board" && state.selected.id === board.id;
     const group = svgEl("g", {
       class:"board-underlay" + (isSelected ? " selected" : ""),
-      transform:"translate(" + board.x + " " + board.y + ")",
+      transform:"translate(" + board.x + " " + board.y + ") translate(" + (g.width/2) + " " + (g.height/2) + ") rotate(" + (Number(board.rotation) || 0) + ") scale(" + clamp(Number(board.scale) || 1,.25,4) + ") translate(" + (-g.width/2) + " " + (-g.height/2) + ")",
       style:"--board-fill:" + board.color + ";--board-hole:" + board.holeColor,
       "data-id":board.id
     });
@@ -676,7 +683,7 @@
     const label=svgEl("text",{
       x:8,y:g.height-6,class:"board-dim","text-anchor":"start"
     });
-    label.textContent=board.holesX + "×" + board.holesY + " @ 2.54 mm";
+    label.textContent=board.holesX + "×" + board.holesY + " @ 2.54 mm • " + Math.round(clamp(Number(board.scale) || 1,.25,4)*100) + "%";
     group.appendChild(label);
 
     group.addEventListener("pointerdown",e => beginBoardDrag(e,board.id));
@@ -745,12 +752,15 @@
 
     if (board) {
       const g=boardGeometry(board);
+      const boardScaleValue=clamp(Number(board.scale) || 1,.25,4);
       selectionKind.textContent="Board";
       selectionName.textContent=board.holesX + " × " + board.holesY + " holes • " +
-        (g.width * MM_PER_PX).toFixed(1) + " × " + (g.height * MM_PER_PX).toFixed(1) + " mm";
+        Math.round(boardScaleValue*100) + "%";
       selectedBoardType.value=board.type;
       selectedBoardHolesX.value=String(board.holesX);
       selectedBoardHolesY.value=String(board.holesY);
+      boardScale.value=String(Math.round(boardScaleValue*100));
+      boardScaleOut.textContent=Math.round(boardScaleValue*100) + "%";
       boardColor.value=board.color;
       boardHoleColor.value=board.holeColor;
     } else if (comp) {
@@ -759,6 +769,8 @@
       selectionName.textContent = (def ? def.title : comp.type) + (comp.value ? " — " + comp.value : "");
       componentColor.value = comp.fillColor || defaultComponentFill(def && def.kind);
       componentTextColor.value = comp.textColor || "#191d20";
+      componentScale.value = String(Math.round(clamp(Number(comp.scale) || 1,.25,4)*100));
+      componentScaleOut.textContent = componentScale.value + "%";
       componentFontSize.value = String(Number(comp.fontSize) || 12);
       componentFontSizeOut.textContent = (Number(comp.fontSize) || 12) + " px";
     } else if (wireNote) {
@@ -1058,6 +1070,7 @@
       x:snap(Number(c.x)),
       y:snap(Number(c.y)),
       rotation:Number(c.rotation) || 0,
+      scale:clamp(Number(c.scale) || 1,.25,4),
       value:typeof c.value === "string" ? c.value : "",
       fillColor:typeof c.fillColor === "string" ? c.fillColor : null,
       textColor:typeof c.textColor === "string" ? c.textColor : null,
@@ -1387,6 +1400,24 @@
   }
 
   document.getElementById("addBoardBtn").addEventListener("click",addBoard);
+  document.getElementById("boardRotateLeftBtn").addEventListener("click",() => {
+    const board=selectedBoard();
+    if (!board) return;
+    board.rotation=(((Number(board.rotation)||0)-90)%360+360)%360;
+    render();
+  });
+  document.getElementById("boardRotateRightBtn").addEventListener("click",() => {
+    const board=selectedBoard();
+    if (!board) return;
+    board.rotation=(((Number(board.rotation)||0)+90)%360+360)%360;
+    render();
+  });
+  boardScale.addEventListener("input",() => {
+    const board=selectedBoard();
+    if (!board) return;
+    board.scale=clamp(Number(boardScale.value)/100,.25,4);
+    render();
+  });
   selectedBoardType.addEventListener("change",updateSelectedBoardFromControls);
   selectedBoardHolesX.addEventListener("change",updateSelectedBoardFromControls);
   selectedBoardHolesY.addEventListener("change",updateSelectedBoardFromControls);
@@ -1439,6 +1470,13 @@
     render();
   });
 
+  componentScale.addEventListener("input",() => {
+    const comp = selectedComponent();
+    if (!comp) return;
+    comp.scale = clamp(Number(componentScale.value)/100,.25,4);
+    render();
+  });
+
   componentFontSize.addEventListener("input",() => {
     const comp = selectedComponent();
     if (!comp) return;
@@ -1453,6 +1491,7 @@
     comp.textColor = null;
     comp.fontSize = 12;
     comp.rotation = 0;
+    comp.scale = 1;
     setStatus("Component style reset.");
     render();
   });
