@@ -80,6 +80,7 @@
     selected: null,
     pendingPin: null,
     drag: null,
+    suppressCanvasClick: false,
     addCounter: 0,
     customIds: new Set(),
     canvasSettings: { ...CANVAS_DEFAULTS }
@@ -575,9 +576,11 @@
       pointerId:e.pointerId,
       compId,
       dx:p.x-comp.x,
-      dy:p.y-comp.y
+      dy:p.y-comp.y,
+      moved:false
     };
     state.selected = { kind:"component", id:compId };
+    updateInspector();
     canvas.setPointerCapture(e.pointerId);
     e.preventDefault();
   }
@@ -588,19 +591,29 @@
     if (!comp || !components[comp.type]) return;
     const def = components[comp.type];
     const p = clientToSvg(e);
-    comp.x = snap(clamp(p.x-state.drag.dx,0,1200-def.width));
-    comp.y = snap(clamp(p.y-state.drag.dy,0,700-def.height));
+    const nextX = snap(clamp(p.x-state.drag.dx,0,1200-def.width));
+    const nextY = snap(clamp(p.y-state.drag.dy,0,700-def.height));
+    if (nextX !== comp.x || nextY !== comp.y) state.drag.moved = true;
+    comp.x = nextX;
+    comp.y = nextY;
     render();
   });
 
   canvas.addEventListener("pointerup", e => {
     if (!state.drag || e.pointerId !== state.drag.pointerId) return;
+    const moved = state.drag.moved;
     try { canvas.releasePointerCapture(e.pointerId); } catch (_) {}
     state.drag = null;
-    setStatus("Component moved.");
+    state.suppressCanvasClick = true;
+    setStatus(moved ? "Component moved." : "Component selected.");
+    updateInspector();
   });
 
   canvas.addEventListener("click", e => {
+    if (state.suppressCanvasClick) {
+      state.suppressCanvasClick = false;
+      return;
+    }
     if (e.target === canvas || e.target.id === "grid-bg") {
       state.selected = null;
       render();
