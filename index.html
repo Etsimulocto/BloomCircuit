@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BloomCircuit</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>BloomCircuit</h1>
+      <p>Visual wiring maps -> laser-ready SVG</p>
+    </div>
+    <label class="project-name">Project
+      <input id="projectName" value="Happy Jarz Circuit">
+    </label>
+  </header>
+
+  <main class="app-shell">
+    <aside class="sidebar">
+      <section>
+        <h2>Components</h2>
+        <div id="palette" class="palette"></div>
+      </section>
+
+      <section>
+        <h2>Wire</h2>
+        <label>Net type
+          <select id="netType">
+            <option value="DATA">DATA</option>
+            <option value="5V">5V</option>
+            <option value="3V3">3V3</option>
+            <option value="GND">GND</option>
+            <option value="OTHER">OTHER</option>
+          </select>
+        </label>
+        <p class="hint">Click one pin, then another pin. Press Esc to cancel.</p>
+      </section>
+
+      <section>
+        <h2>Project</h2>
+        <div class="button-stack">
+          <button id="happyJarzBtn" type="button">Load Happy Jarz template</button>
+          <button id="saveBtn" type="button">Save JSON</button>
+          <button id="loadBtn" type="button">Load JSON</button>
+          <input id="loadInput" type="file" accept=".json,application/json" hidden>
+          <button id="exportBtn" type="button">Export SVG</button>
+          <button id="deleteBtn" type="button">Delete selected</button>
+          <button id="clearBtn" type="button" class="danger">Clear canvas</button>
+        </div>
+        <label class="check-row">
+          <input id="etchMode" type="checkbox">
+          Etch view
+        </label>
+      </section>
+
+      <section>
+        <h2>Scale</h2>
+        <p class="hint"><strong>10 px = 2.54 mm</strong><br>Snap grid matches common 0.1 inch header/breadboard pitch.</p>
+      </section>
+    </aside>
+
+    <section class="workspace-panel">
+      <div class="status-row">
+        <span id="status">Ready.</span>
+        <span id="warning" class="warning" aria-live="polite"></span>
+      </div>
+      <div class="workspace-scroll">
+        <svg id="canvas" viewBox="0 0 1200 700" role="img" aria-label="BloomCircuit wiring workspace">
+          <defs>
+            <pattern id="minorGrid" width="10" height="10" patternUnits="userSpaceOnUse">
+              <path d="M 10 0 L 0 0 0 10" class="minor-grid-line"/>
+            </pattern>
+            <pattern id="majorGrid" width="50" height="50" patternUnits="userSpaceOnUse">
+              <rect width="50" height="50" fill="url(#minorGrid)"/>
+              <path d="M 50 0 L 0 0 0 50" class="major-grid-line"/>
+            </pattern>
+          </defs>
+          <rect id="grid-bg" x="0" y="0" width="1200" height="700" fill="url(#majorGrid)"/>
+          <g id="wiresLayer"></g>
+          <g id="componentsLayer"></g>
+        </svg>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    Click components to add them. Drag to move. Click pins to wire. Delete removes the selected item.
+  </footer>
+
+  <script src="components.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
