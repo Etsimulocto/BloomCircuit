@@ -532,6 +532,146 @@ body.etch-mode .board-rail {
   stroke: #000;
 }
 
+
+.number-stepper {
+  display: grid;
+  grid-template-columns: 38px minmax(72px,1fr) 38px;
+  gap: 6px;
+  align-items: center;
+}
+
+.number-stepper button {
+  min-height: 36px;
+  padding: 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.number-stepper input {
+  text-align: center;
+  min-width: 0;
+}
+
+.component-maker-dialog {
+  width: min(1100px, calc(100vw - 24px));
+  max-height: calc(100vh - 24px);
+}
+
+.component-maker-dialog form {
+  max-height: calc(100vh - 26px);
+  overflow: auto;
+}
+
+.maker-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(3,minmax(0,1fr));
+  gap: 10px;
+}
+
+.maker-image-row {
+  display: grid;
+  grid-template-columns: minmax(220px,1fr) auto minmax(220px,1fr);
+  gap: 10px;
+  align-items: end;
+  margin: 10px 0 14px;
+}
+
+.maker-image-picker {
+  margin: 0 !important;
+}
+
+.maker-layout {
+  display: grid;
+  grid-template-columns: minmax(0,1.7fr) minmax(260px,.8fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.maker-preview-panel,
+.maker-pin-panel {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #151a1f;
+  padding: 12px;
+}
+
+.maker-preview-panel h3,
+.maker-pin-panel h3 {
+  margin: 0 0 8px;
+  font-size: .9rem;
+}
+
+.maker-pin-panel h3:not(:first-child) {
+  margin-top: 16px;
+}
+
+.maker-preview-scroll {
+  overflow: auto;
+  max-height: 520px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #f8f5ed;
+}
+
+#customFootprintPreview {
+  display: block;
+  width: 100%;
+  min-width: 520px;
+  min-height: 320px;
+  background: #f8f5ed;
+  cursor: crosshair;
+  user-select: none;
+  touch-action: none;
+}
+
+.maker-grid-hole {
+  fill: #aeb4ba;
+}
+
+.maker-pin {
+  fill: #fff;
+  stroke: #111;
+  stroke-width: 1.4;
+  cursor: grab;
+}
+
+.maker-pin.selected {
+  fill: #ffd166;
+  stroke: #b45309;
+  stroke-width: 2.2;
+}
+
+.maker-pin-label {
+  fill: #111;
+  font-size: 7px;
+  font-weight: 700;
+  paint-order: stroke;
+  stroke: #fff;
+  stroke-width: 2px;
+  pointer-events: none;
+}
+
+.custom-pin-list {
+  display: grid;
+  gap: 5px;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.custom-pin-list button {
+  text-align: left;
+  min-height: 32px;
+  font-size: .78rem;
+}
+
+.custom-pin-list button.active {
+  border-color: var(--accent);
+}
+
+.component-image {
+  pointer-events: none;
+}
+
 .editor-sidebar label {
   display: grid;
   gap: 6px;
@@ -596,4 +736,8 @@ body.etch-mode .board-rail {
   .topbar { align-items: stretch; flex-direction: column; }
   .project-name { width: 100%; }
   .form-grid { grid-template-columns: 1fr; }
+  .maker-meta-grid,
+  .maker-layout,
+  .maker-image-row { grid-template-columns: 1fr; }
+  #customFootprintPreview { min-width: 440px; }
 }
