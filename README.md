@@ -1,5 +1,20 @@
 # BloomCircuit
 
+## v0.4 board underlays
+
+BloomCircuit now includes a configurable physical-board underlay maker:
+
+- square perfboard / isolated-hole grid
+- stripboard / rail board
+- standard breadboard with center trench
+- breadboard with center trench plus power rails
+- configurable hole counts on X and Y
+- fixed 2.54 mm hobby-board pitch
+- multiple boards per project
+- draggable underlays that stay behind components and wires
+- board and hole colors
+- board geometry saved in project JSON and included in SVG export
+
 ## v0.3.1 inspector fix
 
 - component editor now stays open after a normal click
