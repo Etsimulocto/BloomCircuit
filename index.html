@@ -335,8 +335,14 @@
             <h3>Footprint / pin placement</h3>
             <span id="customMakerSize" class="count-badge">16 × 10</span>
           </div>
+          <div class="maker-preview-toolbar">
+            <button id="makerZoomDown" type="button" aria-label="Zoom footprint out">−</button>
+            <input id="makerZoomValue" type="number" min="25" max="800" step="5" value="100" aria-label="Footprint zoom percent">
+            <button id="makerZoomUp" type="button" aria-label="Zoom footprint in">+</button>
+            <button id="makerZoomFit" type="button">Fit</button>
+          </div>
           <p class="hint">Click a grid intersection to add a pin. Drag a pin to move it. Everything snaps to the same grid as the breadboard.</p>
-          <div class="maker-preview-scroll">
+          <div class="maker-preview-scroll" id="makerPreviewScroll">
             <svg id="customFootprintPreview" viewBox="0 0 160 100" aria-label="Custom component footprint editor">
               <defs>
                 <pattern id="makerGrid" width="10" height="10" patternUnits="userSpaceOnUse">
@@ -345,6 +351,7 @@
               </defs>
               <rect id="customMakerGridBg" x="0" y="0" width="160" height="100" fill="url(#makerGrid)"/>
               <image id="customFootprintImage" x="0" y="0" width="160" height="100" preserveAspectRatio="none" opacity="0.82"/>
+              <rect id="customCutoutOutline" x="1" y="1" width="158" height="98" rx="2" class="maker-cutout-outline"/>
               <g id="customFootprintPins"></g>
             </svg>
           </div>
