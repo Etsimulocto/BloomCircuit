@@ -5,8 +5,12 @@ APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DESKTOP_DIR="$HOME/.local/share/applications"
 BIN_DIR="$HOME/.local/bin"
 ICON_DIR="$HOME/.local/share/icons/hicolor/scalable/apps"
+HOME_DESKTOP="$(xdg-user-dir DESKTOP 2>/dev/null || true)"
+if [ -z "$HOME_DESKTOP" ]; then
+  HOME_DESKTOP="$HOME/Desktop"
+fi
 
-mkdir -p "$DESKTOP_DIR" "$BIN_DIR" "$ICON_DIR"
+mkdir -p "$DESKTOP_DIR" "$BIN_DIR" "$ICON_DIR" "$HOME_DESKTOP"
 
 chmod +x "$APP_DIR/bloomcircuit_pi.py"
 
@@ -33,6 +37,14 @@ EOF
 
 chmod +x "$DESKTOP_DIR/bloomcircuit.desktop"
 
+cp "$DESKTOP_DIR/bloomcircuit.desktop" "$HOME_DESKTOP/BloomCircuit.desktop"
+chmod +x "$HOME_DESKTOP/BloomCircuit.desktop"
+
+# Raspberry Pi OS / PCManFM may require desktop launchers to be marked trusted.
+if command -v gio >/dev/null 2>&1; then
+  gio set "$HOME_DESKTOP/BloomCircuit.desktop" metadata::trusted true >/dev/null 2>&1 || true
+fi
+
 if command -v update-desktop-database >/dev/null 2>&1; then
   update-desktop-database "$DESKTOP_DIR" >/dev/null 2>&1 || true
 fi
@@ -43,7 +55,10 @@ fi
 
 echo
 echo "BloomCircuit installed."
-echo "Open it from the Raspberry Pi application menu, or run:"
+echo "A BloomCircuit icon was added to your desktop:"
+echo "  $HOME_DESKTOP/BloomCircuit.desktop"
+echo
+echo "You can also open it from the Raspberry Pi application menu, or run:"
 echo "  bloomcircuit"
 echo
 echo "It runs entirely from: $APP_DIR"
