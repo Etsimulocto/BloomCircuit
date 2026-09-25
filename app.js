@@ -36,6 +36,44 @@
   const customSubtitle = document.getElementById("customSubtitle");
   const customPins = document.getElementById("customPins");
 
+  const selectionKind = document.getElementById("selectionKind");
+  const selectionName = document.getElementById("selectionName");
+  const componentTools = document.getElementById("componentTools");
+  const wireTools = document.getElementById("wireTools");
+  const componentColor = document.getElementById("componentColor");
+  const componentTextColor = document.getElementById("componentTextColor");
+  const componentFontSize = document.getElementById("componentFontSize");
+  const componentFontSizeOut = document.getElementById("componentFontSizeOut");
+  const wireNetType = document.getElementById("wireNetType");
+  const wireColor = document.getElementById("wireColor");
+  const wireWidth = document.getElementById("wireWidth");
+  const wireWidthOut = document.getElementById("wireWidthOut");
+  const wireFontSize = document.getElementById("wireFontSize");
+  const wireFontSizeOut = document.getElementById("wireFontSizeOut");
+  const canvasBgColor = document.getElementById("canvasBgColor");
+  const minorGridColor = document.getElementById("minorGridColor");
+  const majorGridColor = document.getElementById("majorGridColor");
+  const pinFontSize = document.getElementById("pinFontSize");
+  const pinFontSizeOut = document.getElementById("pinFontSizeOut");
+  const zoomRange = document.getElementById("zoomRange");
+  const zoomOut = document.getElementById("zoomOut");
+
+  const NET_COLORS = {
+    "5V":"#ff6b6b",
+    "3V3":"#f7b267",
+    "GND":"#7f8c98",
+    "DATA":"#6cb6ff",
+    "OTHER":"#c792ea"
+  };
+
+  const CANVAS_DEFAULTS = {
+    bgColor:"#f8f5ed",
+    minorGridColor:"#d9d5cc",
+    majorGridColor:"#b9b4aa",
+    pinFontSize:8,
+    zoom:1
+  };
+
   const state = {
     components: [],
     wires: [],
@@ -43,7 +81,8 @@
     pendingPin: null,
     drag: null,
     addCounter: 0,
-    customIds: new Set()
+    customIds: new Set(),
+    canvasSettings: { ...CANVAS_DEFAULTS }
   };
 
   function uid(prefix) {
@@ -124,7 +163,11 @@
       type,
       x: snap(x),
       y: snap(y),
-      value: opts.value !== undefined ? opts.value : (def.defaultValue || "")
+      rotation: Number(opts.rotation) || 0,
+      value: opts.value !== undefined ? opts.value : (def.defaultValue || ""),
+      fillColor: opts.fillColor || null,
+      textColor: opts.textColor || null,
+      fontSize: Number(opts.fontSize) || 12
     };
   }
 
@@ -155,7 +198,19 @@
     const comp = getComponent(compId);
     const pin = getPinDef(comp, pinId);
     if (!comp || !pin) return null;
-    return { x: comp.x + pin.x, y: comp.y + pin.y };
+    const def = components[comp.type];
+    const angle = ((Number(comp.rotation) || 0) % 360 + 360) % 360;
+    if (!angle) return { x: comp.x + pin.x, y: comp.y + pin.y };
+
+    const cx = def.width / 2;
+    const cy = def.height / 2;
+    const rad = angle * Math.PI / 180;
+    const dx = pin.x - cx;
+    const dy = pin.y - cy;
+    return {
+      x: comp.x + cx + dx * Math.cos(rad) - dy * Math.sin(rad),
+      y: comp.y + cy + dx * Math.sin(rad) + dy * Math.cos(rad)
+    };
   }
 
   function connectionLabel(pinDef, comp) {
@@ -268,9 +323,11 @@
     const def = components[comp.type];
     if (!def) return;
 
+    const subtitleSize = Math.max(6, (Number(comp.fontSize) || 12) - 3);
     const group = svgEl("g", {
       class: "component" + (state.selected && state.selected.kind === "component" && state.selected.id === comp.id ? " selected" : ""),
-      transform: "translate(" + comp.x + " " + comp.y + ")",
+      transform: "translate(" + comp.x + " " + comp.y + ") rotate(" + (Number(comp.rotation) || 0) + " " + (def.width/2) + " " + (def.height/2) + ")",
+      style: "--component-fill:" + (comp.fillColor || defaultComponentFill(def.kind)) + ";--component-text:" + (comp.textColor || "#191d20") + ";--component-font-size:" + (Number(comp.fontSize) || 12) + "px;--component-subtitle-size:" + subtitleSize + "px",
       "data-id": comp.id
     });
 
@@ -323,9 +380,12 @@
     const b = pinWorld(wire.to.compId, wire.to.pinId);
     if (!a || !b) return;
 
+    const isSelected = state.selected && state.selected.kind === "wire" && state.selected.id === wire.id;
+    const baseWidth = clamp(Number(wire.width) || 4, 1, 12);
     const path = svgEl("path", {
       d: wirePath(a,b),
-      class: "wire net-" + wire.net + (state.selected && state.selected.kind === "wire" && state.selected.id === wire.id ? " selected" : ""),
+      class: "wire net-" + wire.net + (isSelected ? " selected" : ""),
+      style: "stroke:" + (wire.color || NET_COLORS[wire.net] || NET_COLORS.OTHER) + ";stroke-width:" + (isSelected ? baseWidth + 3 : baseWidth),
       "data-id": wire.id
     });
 
@@ -340,16 +400,86 @@
 
     const tx = snap((a.x + b.x) / 2);
     const ty = snap((a.y + b.y) / 2) - 5;
-    const label = svgEl("text", { x:tx,y:ty,class:"wire-label","text-anchor":"middle" });
+    const label = svgEl("text", {
+      x:tx,y:ty,class:"wire-label","text-anchor":"middle",
+      style:"font-size:" + clamp(Number(wire.fontSize) || 9, 6, 24) + "px"
+    });
     label.textContent = wire.net;
     wiresLayer.appendChild(label);
   }
 
+  function defaultComponentFill(kind) {
+    if (kind === "resistor") return "#e7d0a6";
+    return "#f4f0e7";
+  }
+
+  function updateCanvasAppearance() {
+    const s = state.canvasSettings;
+    document.documentElement.style.setProperty("--canvas-bg", s.bgColor);
+    document.documentElement.style.setProperty("--minor-grid", s.minorGridColor);
+    document.documentElement.style.setProperty("--major-grid", s.majorGridColor);
+    document.documentElement.style.setProperty("--pin-font-size", s.pinFontSize + "px");
+    canvas.style.width = (1200 * s.zoom) + "px";
+    canvas.style.height = (700 * s.zoom) + "px";
+
+    canvasBgColor.value = s.bgColor;
+    minorGridColor.value = s.minorGridColor;
+    majorGridColor.value = s.majorGridColor;
+    pinFontSize.value = String(s.pinFontSize);
+    pinFontSizeOut.textContent = s.pinFontSize + " px";
+    zoomRange.value = String(Math.round(s.zoom * 100));
+    zoomOut.textContent = Math.round(s.zoom * 100) + "%";
+  }
+
+  function selectedWire() {
+    return state.selected && state.selected.kind === "wire"
+      ? state.wires.find(w => w.id === state.selected.id) || null
+      : null;
+  }
+
+  function selectedComponent() {
+    return state.selected && state.selected.kind === "component"
+      ? getComponent(state.selected.id)
+      : null;
+  }
+
+  function updateInspector() {
+    const comp = selectedComponent();
+    const wire = selectedWire();
+
+    componentTools.hidden = !comp;
+    wireTools.hidden = !wire;
+
+    if (comp) {
+      const def = components[comp.type];
+      selectionKind.textContent = "Component";
+      selectionName.textContent = (def ? def.title : comp.type) + (comp.value ? " — " + comp.value : "");
+      componentColor.value = comp.fillColor || defaultComponentFill(def && def.kind);
+      componentTextColor.value = comp.textColor || "#191d20";
+      componentFontSize.value = String(Number(comp.fontSize) || 12);
+      componentFontSizeOut.textContent = (Number(comp.fontSize) || 12) + " px";
+    } else if (wire) {
+      selectionKind.textContent = "Wire";
+      selectionName.textContent = describePin(wire.from) + " → " + describePin(wire.to);
+      wireNetType.value = wire.net;
+      wireColor.value = wire.color || NET_COLORS[wire.net] || NET_COLORS.OTHER;
+      wireWidth.value = String(clamp(Number(wire.width) || 4, 1, 12));
+      wireWidthOut.textContent = wireWidth.value + " px";
+      wireFontSize.value = String(clamp(Number(wire.fontSize) || 9, 6, 24));
+      wireFontSizeOut.textContent = wireFontSize.value + " px";
+    } else {
+      selectionKind.textContent = "Canvas";
+      selectionName.textContent = "Nothing selected";
+    }
+  }
+
   function render() {
+    updateCanvasAppearance();
     wiresLayer.replaceChildren();
     componentsLayer.replaceChildren();
     state.wires.forEach(renderWire);
     state.components.forEach(renderComponent);
+    updateInspector();
   }
 
   function describePin(ref) {
@@ -407,7 +537,10 @@
         id: uid("wire"),
         from: { ...state.pendingPin },
         to: ref,
-        net
+        net,
+        color: null,
+        width: 4,
+        fontSize: 9
       };
       state.wires.push(wire);
       state.selected = { kind:"wire", id:wire.id };
@@ -509,6 +642,7 @@
       gridPx:GRID,
       mmPerPx:MM_PER_PX,
       componentDefinitions:customDefinitionsUsedByProject(),
+      canvasSettings:{ ...state.canvasSettings },
       components:state.components,
       wires:state.wires
     };
@@ -539,7 +673,11 @@
       type:c.type,
       x:snap(Number(c.x)),
       y:snap(Number(c.y)),
-      value:typeof c.value === "string" ? c.value : ""
+      rotation:Number(c.rotation) || 0,
+      value:typeof c.value === "string" ? c.value : "",
+      fillColor:typeof c.fillColor === "string" ? c.fillColor : null,
+      textColor:typeof c.textColor === "string" ? c.textColor : null,
+      fontSize:clamp(Number(c.fontSize) || 12,7,28)
     }));
 
     const validIds = new Set(goodComponents.map(c => c.id));
@@ -548,9 +686,23 @@
       w.from && w.to &&
       validIds.has(w.from.compId) && validIds.has(w.to.compId) &&
       ["5V","3V3","GND","DATA","OTHER"].includes(w.net)
-    );
+    ).map(w => ({
+      ...w,
+      color:typeof w.color === "string" ? w.color : null,
+      width:clamp(Number(w.width) || 4,1,12),
+      fontSize:clamp(Number(w.fontSize) || 9,6,24)
+    }));
 
-    return { components:goodComponents,wires:goodWires };
+    const rawCanvas = data.canvasSettings || {};
+    const canvasSettings = {
+      bgColor:typeof rawCanvas.bgColor === "string" ? rawCanvas.bgColor : CANVAS_DEFAULTS.bgColor,
+      minorGridColor:typeof rawCanvas.minorGridColor === "string" ? rawCanvas.minorGridColor : CANVAS_DEFAULTS.minorGridColor,
+      majorGridColor:typeof rawCanvas.majorGridColor === "string" ? rawCanvas.majorGridColor : CANVAS_DEFAULTS.majorGridColor,
+      pinFontSize:clamp(Number(rawCanvas.pinFontSize) || CANVAS_DEFAULTS.pinFontSize,5,18),
+      zoom:clamp(Number(rawCanvas.zoom) || CANVAS_DEFAULTS.zoom,.25,2)
+    };
+
+    return { components:goodComponents,wires:goodWires,canvasSettings };
   }
 
   async function loadProject(file) {
@@ -559,6 +711,7 @@
       const checked = validateLoaded(data);
       state.components = checked.components;
       state.wires = checked.wires;
+      state.canvasSettings = checked.canvasSettings;
       state.selected = null;
       state.pendingPin = null;
       projectName.value = data.projectName || "BloomCircuit";
@@ -586,15 +739,16 @@
     const style = document.createElementNS(NS,"style");
     const monochrome = etchMode.checked;
     style.textContent =
-      ".component-body,.resistor-body,.led-lens{fill:#fff;stroke:#000;stroke-width:2}" +
-      ".component-title{fill:#000;font:700 12px sans-serif;text-anchor:middle}" +
-      ".component-subtitle,.pin-label{fill:#000;font:9px sans-serif}" +
+      (monochrome
+        ? ".component-body,.resistor-body,.led-lens{fill:#fff!important;stroke:#000;stroke-width:2}.component-title,.component-subtitle,.pin-label,.wire-label{fill:#000!important}.wire{stroke:#000!important}"
+        : ".component-body{fill:var(--component-fill,#f4f0e7);stroke:#000;stroke-width:2}.resistor-body{fill:var(--component-fill,#e7d0a6)}.led-lens{fill:#f3f7ff;stroke:#000;stroke-width:2}.component-title,.component-subtitle,.pin-label{fill:var(--component-text,#191d20)}") +
+      ".component-title{font-weight:700;font-size:var(--component-font-size,12px);text-anchor:middle}" +
+      ".component-subtitle{font-size:var(--component-subtitle-size,9px)}" +
+      ".pin-label{font-size:" + state.canvasSettings.pinFontSize + "px}" +
       ".pin{fill:#fff;stroke:#000;stroke-width:1.3}" +
       ".bus-line,.cap-plate{stroke:#000;fill:none}" +
-      ".wire{fill:none;stroke-width:4;stroke-linejoin:round;stroke-linecap:round}" +
-      ".wire-label{fill:#000;font:700 9px sans-serif;paint-order:stroke;stroke:#fff;stroke-width:3}" +
-      (monochrome ? ".wire{stroke:#000}" :
-        ".net-5V{stroke:#e53935}.net-3V3{stroke:#ef8c2f}.net-GND{stroke:#606b75}.net-DATA{stroke:#1976d2}.net-OTHER{stroke:#7b4ab5}");
+      ".wire{fill:none;stroke-linejoin:round;stroke-linecap:round}" +
+      ".wire-label{fill:#000;font-weight:700;paint-order:stroke;stroke:#fff;stroke-width:3}";
 
     let defs = clone.querySelector("defs");
     if (!defs) {
@@ -613,13 +767,17 @@
       id:uid("wire"),
       from:{ compId:fromComp.id,pinId:fromPin },
       to:{ compId:toComp.id,pinId:toPin },
-      net
+      net,
+      color:null,
+      width:4,
+      fontSize:9
     });
   }
 
   function loadHappyJarz() {
     state.components = [];
     state.wires = [];
+    state.canvasSettings = { ...CANVAS_DEFAULTS };
     state.selected = null;
     state.pendingPin = null;
 
@@ -808,7 +966,124 @@
     setStatus("Component pack exported (" + pack.components.length + " parts).");
   }
 
-  componentSearch.addEventListener("input",buildPalette);
+  function rotateSelected(delta) {
+    const comp = selectedComponent();
+    if (!comp) return;
+    comp.rotation = (((Number(comp.rotation) || 0) + delta) % 360 + 360) % 360;
+    setStatus("Rotated to " + comp.rotation + "°.");
+    render();
+  }
+
+  document.getElementById("rotateLeftBtn").addEventListener("click",() => rotateSelected(-90));
+  document.getElementById("rotateRightBtn").addEventListener("click",() => rotateSelected(90));
+
+  componentColor.addEventListener("input",() => {
+    const comp = selectedComponent();
+    if (!comp) return;
+    comp.fillColor = componentColor.value;
+    render();
+  });
+
+  componentTextColor.addEventListener("input",() => {
+    const comp = selectedComponent();
+    if (!comp) return;
+    comp.textColor = componentTextColor.value;
+    render();
+  });
+
+  componentFontSize.addEventListener("input",() => {
+    const comp = selectedComponent();
+    if (!comp) return;
+    comp.fontSize = clamp(Number(componentFontSize.value) || 12,7,28);
+    render();
+  });
+
+  document.getElementById("resetComponentStyleBtn").addEventListener("click",() => {
+    const comp = selectedComponent();
+    if (!comp) return;
+    comp.fillColor = null;
+    comp.textColor = null;
+    comp.fontSize = 12;
+    comp.rotation = 0;
+    setStatus("Component style reset.");
+    render();
+  });
+
+  wireNetType.addEventListener("change",() => {
+    const wire = selectedWire();
+    if (!wire) return;
+    wire.net = wireNetType.value;
+    wire.color = null;
+    setStatus("Wire changed to " + wire.net + ".");
+    render();
+  });
+
+  wireColor.addEventListener("input",() => {
+    const wire = selectedWire();
+    if (!wire) return;
+    wire.color = wireColor.value;
+    render();
+  });
+
+  wireWidth.addEventListener("input",() => {
+    const wire = selectedWire();
+    if (!wire) return;
+    wire.width = clamp(Number(wireWidth.value) || 4,1,12);
+    render();
+  });
+
+  wireFontSize.addEventListener("input",() => {
+    const wire = selectedWire();
+    if (!wire) return;
+    wire.fontSize = clamp(Number(wireFontSize.value) || 9,6,24);
+    render();
+  });
+
+  document.getElementById("resetWireStyleBtn").addEventListener("click",() => {
+    const wire = selectedWire();
+    if (!wire) return;
+    wire.color = null;
+    wire.width = 4;
+    wire.fontSize = 9;
+    setStatus("Wire style reset.");
+    render();
+  });
+
+  canvasBgColor.addEventListener("input",() => {
+    state.canvasSettings.bgColor = canvasBgColor.value;
+    render();
+  });
+  minorGridColor.addEventListener("input",() => {
+    state.canvasSettings.minorGridColor = minorGridColor.value;
+    render();
+  });
+  majorGridColor.addEventListener("input",() => {
+    state.canvasSettings.majorGridColor = majorGridColor.value;
+    render();
+  });
+  pinFontSize.addEventListener("input",() => {
+    state.canvasSettings.pinFontSize = clamp(Number(pinFontSize.value) || 8,5,18);
+    render();
+  });
+
+  document.getElementById("resetCanvasStyleBtn").addEventListener("click",() => {
+    const zoom = state.canvasSettings.zoom;
+    state.canvasSettings = { ...CANVAS_DEFAULTS, zoom };
+    setStatus("Canvas colors reset.");
+    render();
+  });
+
+  function setZoom(next) {
+    state.canvasSettings.zoom = clamp(Number(next) || 1,.25,2);
+    updateCanvasAppearance();
+  }
+
+  document.getElementById("zoomOutBtn").addEventListener("click",() => setZoom(state.canvasSettings.zoom - .1));
+  document.getElementById("zoomInBtn").addEventListener("click",() => setZoom(state.canvasSettings.zoom + .1));
+  document.getElementById("zoomResetBtn").addEventListener("click",() => setZoom(1));
+  zoomRange.addEventListener("input",() => setZoom(Number(zoomRange.value) / 100));
+
+    componentSearch.addEventListener("input",buildPalette);
   categoryFilter.addEventListener("change",buildPalette);
 
   document.getElementById("newComponentBtn").addEventListener("click",() => {
@@ -852,6 +1127,7 @@
     if (!window.confirm("Clear the entire BloomCircuit canvas?")) return;
     state.components = [];
     state.wires = [];
+    state.canvasSettings = { ...CANVAS_DEFAULTS };
     state.selected = null;
     state.pendingPin = null;
     setWarning("");
