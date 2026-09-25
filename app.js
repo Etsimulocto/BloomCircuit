@@ -11,6 +11,7 @@
   const BUILTIN_IDS = new Set(Object.keys(components));
 
   const canvas = document.getElementById("canvas");
+  const boardsLayer = document.getElementById("boardsLayer");
   const wiresLayer = document.getElementById("wiresLayer");
   const componentsLayer = document.getElementById("componentsLayer");
   const palette = document.getElementById("palette");
@@ -55,6 +56,17 @@
   const wireNoteColor = document.getElementById("wireNoteColor");
   const wireNoteFontSize = document.getElementById("wireNoteFontSize");
   const wireNoteFontSizeOut = document.getElementById("wireNoteFontSizeOut");
+
+  const boardType = document.getElementById("boardType");
+  const boardHolesX = document.getElementById("boardHolesX");
+  const boardHolesY = document.getElementById("boardHolesY");
+  const boardTools = document.getElementById("boardTools");
+  const selectedBoardType = document.getElementById("selectedBoardType");
+  const selectedBoardHolesX = document.getElementById("selectedBoardHolesX");
+  const selectedBoardHolesY = document.getElementById("selectedBoardHolesY");
+  const boardColor = document.getElementById("boardColor");
+  const boardHoleColor = document.getElementById("boardHoleColor");
+
   const canvasBgColor = document.getElementById("canvasBgColor");
   const minorGridColor = document.getElementById("minorGridColor");
   const majorGridColor = document.getElementById("majorGridColor");
@@ -80,6 +92,7 @@
   };
 
   const state = {
+    boards: [],
     components: [],
     wires: [],
     selected: null,
@@ -500,6 +513,183 @@
     renderEndpointNote(wire,"to",b,a,isWireSelected);
   }
 
+  function normalizeBoardType(value) {
+    return ["perf","strip","breadboard","breadboardRails"].includes(value) ? value : "perf";
+  }
+
+  function normalizeBoard(board) {
+    return {
+      id:String(board && board.id || uid("board")),
+      type:normalizeBoardType(board && board.type),
+      x:snap(Number(board && board.x) || 300),
+      y:snap(Number(board && board.y) || 300),
+      holesX:clamp(Math.round(Number(board && board.holesX) || 30),2,120),
+      holesY:clamp(Math.round(Number(board && board.holesY) || 10),2,80),
+      color:board && typeof board.color === "string" ? board.color : "#d9e4c7",
+      holeColor:board && typeof board.holeColor === "string" ? board.holeColor : "#3c4248"
+    };
+  }
+
+  function getBoard(id) {
+    return state.boards.find(board => board.id === id) || null;
+  }
+
+  function boardGeometry(board) {
+    const pitch = GRID;
+    const margin = 16;
+    const slot = board.type === "breadboard" || board.type === "breadboardRails" ? 18 : 0;
+    const terminalHeight = (board.holesY - 1) * pitch;
+    const railsExtra = board.type === "breadboardRails" ? 76 : 0;
+    return {
+      pitch,
+      margin,
+      slot,
+      railsExtra,
+      width:margin * 2 + (board.holesX - 1) * pitch,
+      height:margin * 2 + terminalHeight + slot + railsExtra
+    };
+  }
+
+  function boardHoleY(board,row,g) {
+    if (board.type !== "breadboard" && board.type !== "breadboardRails") {
+      return g.margin + row * g.pitch;
+    }
+    const half = Math.ceil(board.holesY / 2);
+    const terminalTop = g.margin + (board.type === "breadboardRails" ? 38 : 0);
+    return terminalTop + row * g.pitch + (row >= half ? g.slot : 0);
+  }
+
+  function boardHoleX(col,g) {
+    return g.margin + col * g.pitch;
+  }
+
+  function addBoard() {
+    const next = normalizeBoard({
+      id:uid("board"),
+      type:boardType.value,
+      holesX:Number(boardHolesX.value),
+      holesY:Number(boardHolesY.value),
+      x:300 + (state.boards.length % 6) * 30,
+      y:300 + (state.boards.length % 6) * 30
+    });
+    const g = boardGeometry(next);
+    next.x = snap(clamp(next.x,0,CANVAS_WIDTH-g.width));
+    next.y = snap(clamp(next.y,0,CANVAS_HEIGHT-g.height));
+    state.boards.push(next);
+    state.selected = { kind:"board", id:next.id };
+    setStatus("Board underlay added: " + next.holesX + " × " + next.holesY + " holes.");
+    render();
+  }
+
+  function selectedBoard() {
+    return state.selected && state.selected.kind === "board"
+      ? getBoard(state.selected.id)
+      : null;
+  }
+
+  function renderBoard(board) {
+    const g = boardGeometry(board);
+    const isSelected = state.selected && state.selected.kind === "board" && state.selected.id === board.id;
+    const group = svgEl("g", {
+      class:"board-underlay" + (isSelected ? " selected" : ""),
+      transform:"translate(" + board.x + " " + board.y + ")",
+      style:"--board-fill:" + board.color + ";--board-hole:" + board.holeColor,
+      "data-id":board.id
+    });
+
+    const base = svgEl("rect", {
+      x:0,y:0,width:g.width,height:g.height,rx:8,class:"board-base"
+    });
+    group.appendChild(base);
+
+    // Stripboard copper/rail indication sits behind the holes.
+    if (board.type === "strip") {
+      for (let row=0; row<board.holesY; row+=1) {
+        const y=boardHoleY(board,row,g);
+        group.appendChild(svgEl("line",{
+          x1:g.margin-4,y1:y,x2:g.width-g.margin+4,y2:y,class:"board-strip"
+        }));
+      }
+    }
+
+    // Standard breadboard: show the center trench and the 5-hole terminal groups.
+    if (board.type === "breadboard" || board.type === "breadboardRails") {
+      const half=Math.ceil(board.holesY/2);
+      const before=boardHoleY(board,Math.max(0,half-1),g);
+      const after=boardHoleY(board,Math.min(board.holesY-1,half),g);
+      const slotY=(before+after)/2;
+      group.appendChild(svgEl("rect",{
+        x:g.margin-7,
+        y:slotY-g.slot/2+2,
+        width:g.width-(g.margin-7)*2,
+        height:Math.max(8,g.slot-4),
+        rx:3,
+        class:"board-slot"
+      }));
+
+      // Faint connection bars: each breadboard column has connected terminal groups on each side.
+      for (let col=0; col<board.holesX; col+=1) {
+        const x=boardHoleX(col,g);
+        if (half > 1) {
+          group.appendChild(svgEl("line",{
+            x1:x,y1:boardHoleY(board,0,g),
+            x2:x,y2:boardHoleY(board,half-1,g),
+            class:"board-strip"
+          }));
+        }
+        if (board.holesY-half > 1) {
+          group.appendChild(svgEl("line",{
+            x1:x,y1:boardHoleY(board,half,g),
+            x2:x,y2:boardHoleY(board,board.holesY-1,g),
+            class:"board-strip"
+          }));
+        }
+      }
+    }
+
+    // Optional breadboard power rails, two rows at top and two at bottom.
+    if (board.type === "breadboardRails") {
+      const railYs=[14,26,g.height-26,g.height-14];
+      railYs.forEach((y,index) => {
+        group.appendChild(svgEl("line",{
+          x1:g.margin,y1:y,x2:g.width-g.margin,y2:y,
+          class:"board-rail" + (index % 2 === 0 ? " power" : "")
+        }));
+        for (let col=0; col<board.holesX; col+=1) {
+          group.appendChild(svgEl("circle",{
+            cx:boardHoleX(col,g),cy:y,r:2.8,class:"board-hole"
+          }));
+        }
+      });
+    }
+
+    // Main terminal/perf holes.
+    for (let row=0; row<board.holesY; row+=1) {
+      const y=boardHoleY(board,row,g);
+      for (let col=0; col<board.holesX; col+=1) {
+        group.appendChild(svgEl("circle",{
+          cx:boardHoleX(col,g),cy:y,r:2.8,class:"board-hole"
+        }));
+      }
+    }
+
+    const label=svgEl("text",{
+      x:8,y:g.height-6,class:"board-dim","text-anchor":"start"
+    });
+    label.textContent=board.holesX + "×" + board.holesY + " @ 2.54 mm";
+    group.appendChild(label);
+
+    group.addEventListener("pointerdown",e => beginBoardDrag(e,board.id));
+    group.addEventListener("click",e => {
+      e.stopPropagation();
+      state.selected={ kind:"board",id:board.id };
+      setStatus("Board underlay selected.");
+      render();
+    });
+
+    boardsLayer.appendChild(group);
+  }
+
   function defaultComponentFill(kind) {
     if (kind === "resistor") return "#e7d0a6";
     return "#f4f0e7";
@@ -547,12 +737,24 @@
     const comp = selectedComponent();
     const wire = selectedWire();
     const wireNote = selectedWireNote();
+    const board = selectedBoard();
 
+    boardTools.hidden = !board;
     componentTools.hidden = !comp;
     wireTools.hidden = !wire;
     wireNoteTools.hidden = !wireNote;
 
-    if (comp) {
+    if (board) {
+      const g=boardGeometry(board);
+      selectionKind.textContent="Board";
+      selectionName.textContent=board.holesX + " × " + board.holesY + " holes • " +
+        (g.width * MM_PER_PX).toFixed(1) + " × " + (g.height * MM_PER_PX).toFixed(1) + " mm";
+      selectedBoardType.value=board.type;
+      selectedBoardHolesX.value=String(board.holesX);
+      selectedBoardHolesY.value=String(board.holesY);
+      boardColor.value=board.color;
+      boardHoleColor.value=board.holeColor;
+    } else if (comp) {
       const def = components[comp.type];
       selectionKind.textContent = "Component";
       selectionName.textContent = (def ? def.title : comp.type) + (comp.value ? " — " + comp.value : "");
@@ -587,8 +789,10 @@
 
   function render() {
     updateCanvasAppearance();
+    boardsLayer.replaceChildren();
     wiresLayer.replaceChildren();
     componentsLayer.replaceChildren();
+    state.boards.forEach(renderBoard);
     state.wires.forEach(renderWire);
     state.components.forEach(renderComponent);
     updateInspector();
@@ -684,6 +888,7 @@
 
     const p = clientToSvg(e);
     state.drag = {
+      kind:"component",
       pointerId:e.pointerId,
       compId,
       dx:p.x-comp.x,
@@ -696,12 +901,45 @@
     e.preventDefault();
   }
 
+  function beginBoardDrag(e,boardId) {
+    if (e.button !== undefined && e.button !== 0) return;
+    const board=getBoard(boardId);
+    if (!board) return;
+    const p=clientToSvg(e);
+    state.drag={
+      kind:"board",
+      pointerId:e.pointerId,
+      boardId,
+      dx:p.x-board.x,
+      dy:p.y-board.y,
+      moved:false
+    };
+    state.selected={ kind:"board",id:boardId };
+    updateInspector();
+    canvas.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  }
+
   canvas.addEventListener("pointermove", e => {
     if (!state.drag || e.pointerId !== state.drag.pointerId) return;
+    const p=clientToSvg(e);
+
+    if (state.drag.kind === "board") {
+      const board=getBoard(state.drag.boardId);
+      if (!board) return;
+      const g=boardGeometry(board);
+      const nextX=snap(clamp(p.x-state.drag.dx,0,CANVAS_WIDTH-g.width));
+      const nextY=snap(clamp(p.y-state.drag.dy,0,CANVAS_HEIGHT-g.height));
+      if (nextX !== board.x || nextY !== board.y) state.drag.moved=true;
+      board.x=nextX;
+      board.y=nextY;
+      render();
+      return;
+    }
+
     const comp = getComponent(state.drag.compId);
     if (!comp || !components[comp.type]) return;
     const def = components[comp.type];
-    const p = clientToSvg(e);
     const nextX = snap(clamp(p.x-state.drag.dx,0,CANVAS_WIDTH-def.width));
     const nextY = snap(clamp(p.y-state.drag.dy,0,CANVAS_HEIGHT-def.height));
     if (nextX !== comp.x || nextY !== comp.y) state.drag.moved = true;
@@ -713,10 +951,13 @@
   canvas.addEventListener("pointerup", e => {
     if (!state.drag || e.pointerId !== state.drag.pointerId) return;
     const moved = state.drag.moved;
+    const dragKind=state.drag.kind;
     try { canvas.releasePointerCapture(e.pointerId); } catch (_) {}
     state.drag = null;
     state.suppressCanvasClick = true;
-    setStatus(moved ? "Component moved." : "Component selected.");
+    setStatus(dragKind === "board"
+      ? (moved ? "Board underlay moved." : "Board underlay selected.")
+      : (moved ? "Component moved." : "Component selected."));
     updateInspector();
   });
 
@@ -737,7 +978,10 @@
       return;
     }
 
-    if (state.selected.kind === "component") {
+    if (state.selected.kind === "board") {
+      state.boards=state.boards.filter(board => board.id !== state.selected.id);
+      state.selected=null;
+    } else if (state.selected.kind === "component") {
       const id = state.selected.id;
       state.components = state.components.filter(c => c.id !== id);
       state.wires = state.wires.filter(w => w.from.compId !== id && w.to.compId !== id);
@@ -767,12 +1011,13 @@
   function saveProject() {
     const data = {
       format:"BloomCircuit",
-      version:3,
+      version:4,
       projectName:projectName.value.trim() || "BloomCircuit",
       gridPx:GRID,
       mmPerPx:MM_PER_PX,
       componentDefinitions:customDefinitionsUsedByProject(),
       canvasSettings:{ ...state.canvasSettings },
+      boards:state.boards,
       components:state.components,
       wires:state.wires
     };
@@ -794,6 +1039,16 @@
         rebuildLibraryUI();
       }
     }
+
+    const goodBoards=(Array.isArray(data.boards) ? data.boards : [])
+      .filter(board => board && typeof board.id === "string")
+      .map(board => {
+        const normalized=normalizeBoard(board);
+        const g=boardGeometry(normalized);
+        normalized.x=snap(clamp(normalized.x,0,CANVAS_WIDTH-g.width));
+        normalized.y=snap(clamp(normalized.y,0,CANVAS_HEIGHT-g.height));
+        return normalized;
+      });
 
     const goodComponents = data.components.filter(c =>
       c && typeof c.id === "string" && components[c.type] &&
@@ -842,13 +1097,14 @@
       zoom:clamp(Number(rawCanvas.zoom) || CANVAS_DEFAULTS.zoom,.25,2)
     };
 
-    return { components:goodComponents,wires:goodWires,canvasSettings };
+    return { boards:goodBoards,components:goodComponents,wires:goodWires,canvasSettings };
   }
 
   async function loadProject(file) {
     try {
       const data = JSON.parse(await file.text());
       const checked = validateLoaded(data);
+      state.boards = checked.boards;
       state.components = checked.components;
       state.wires = checked.wires;
       state.canvasSettings = checked.canvasSettings;
@@ -890,7 +1146,16 @@
       ".bus-line,.cap-plate{stroke:#000;fill:none}" +
       ".wire{fill:none;stroke-linejoin:round;stroke-linecap:round}" +
       ".wire-note{font-weight:600;paint-order:stroke;stroke:#fff;stroke-width:3}" +
-      (monochrome ? ".wire-note{fill:#000!important}" : "");
+      ".board-base{fill:var(--board-fill,#d9e4c7);stroke:#2d3338;stroke-width:2}" +
+      ".board-hole{fill:var(--board-hole,#3c4248)}" +
+      ".board-slot{fill:#fff;stroke:#7b8288;stroke-width:1.5}" +
+      ".board-strip{fill:none;stroke:#8b6f48;stroke-width:5;stroke-linecap:round;opacity:.42}" +
+      ".board-rail{fill:none;stroke:#466e96;stroke-width:4;stroke-linecap:round;opacity:.55}" +
+      ".board-rail.power{stroke:#b94646}" +
+      ".board-dim{fill:#4b535a;font-size:9px}" +
+      (monochrome
+        ? ".wire-note{fill:#000!important}.board-base{fill:#fff!important;stroke:#000}.board-hole{fill:#000!important}.board-slot{fill:#fff;stroke:#000}.board-strip,.board-rail{stroke:#000!important}"
+        : "");
 
     let defs = clone.querySelector("defs");
     if (!defs) {
@@ -917,6 +1182,8 @@
   }
 
   function loadHappyJarz() {
+    state.boards = [];
+    state.boards = [];
     state.components = [];
     state.wires = [];
     state.canvasSettings = { ...CANVAS_DEFAULTS };
@@ -1107,6 +1374,46 @@
     download(cleanFileName(pack.name)+".json",JSON.stringify(pack,null,2),"application/json");
     setStatus("Component pack exported (" + pack.components.length + " parts).");
   }
+
+  function updateSelectedBoardFromControls() {
+    const board=selectedBoard();
+    if (!board) return;
+    board.type=normalizeBoardType(selectedBoardType.value);
+    board.holesX=clamp(Math.round(Number(selectedBoardHolesX.value) || board.holesX),2,120);
+    board.holesY=clamp(Math.round(Number(selectedBoardHolesY.value) || board.holesY),2,80);
+    const g=boardGeometry(board);
+    board.x=snap(clamp(board.x,0,CANVAS_WIDTH-g.width));
+    board.y=snap(clamp(board.y,0,CANVAS_HEIGHT-g.height));
+    render();
+  }
+
+  document.getElementById("addBoardBtn").addEventListener("click",addBoard);
+  selectedBoardType.addEventListener("change",updateSelectedBoardFromControls);
+  selectedBoardHolesX.addEventListener("change",updateSelectedBoardFromControls);
+  selectedBoardHolesY.addEventListener("change",updateSelectedBoardFromControls);
+
+  boardColor.addEventListener("input",() => {
+    const board=selectedBoard();
+    if (!board) return;
+    board.color=boardColor.value;
+    render();
+  });
+
+  boardHoleColor.addEventListener("input",() => {
+    const board=selectedBoard();
+    if (!board) return;
+    board.holeColor=boardHoleColor.value;
+    render();
+  });
+
+  document.getElementById("deleteBoardBtn").addEventListener("click",() => {
+    const board=selectedBoard();
+    if (!board) return;
+    state.boards=state.boards.filter(item => item.id !== board.id);
+    state.selected=null;
+    setStatus("Board underlay deleted.");
+    render();
+  });
 
   function rotateSelected(delta) {
     const comp = selectedComponent();
