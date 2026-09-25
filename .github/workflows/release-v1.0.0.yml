@@ -1,0 +1,31 @@
+name: Publish BloomCircuit v1.0.0
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/release-v1.0.0.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out BloomCircuit
+        uses: actions/checkout@v4
+
+      - name: Publish v1.0.0
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view v1.0.0 >/dev/null 2>&1; then
+            echo "BloomCircuit v1.0.0 already exists."
+          else
+            gh release create v1.0.0 \
+              --target "$GITHUB_SHA" \
+              --title "BloomCircuit v1.0.0" \
+              --notes-file RELEASE_NOTES_v1.0.0.md
+          fi
