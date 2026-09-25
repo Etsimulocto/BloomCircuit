@@ -74,6 +74,20 @@ The palette is searchable and filterable by category.
 
 See [COMPONENT_PACKS.md](COMPONENT_PACKS.md) for the pack format.
 
+## v0.3 visual editor
+
+The right-side Editor panel adds quick fabrication/layout controls:
+
+- rotate selected components in 90° steps
+- per-component fill color and text color
+- per-component title font size
+- selected-wire net type, color, width, and label font size
+- canvas background, minor-grid, and major-grid colors
+- global pin-label font size
+- canvas zoom from 25% to 200%
+- visual settings saved with project JSON
+- rotated pin geometry stays attached to wires
+
 ## Core editor
 
 - 10 px = 2.54 mm snap grid
