@@ -1626,7 +1626,7 @@
     render();
   }
 
-  boardScale.addEventListener("input",()=>setBoardScalePercent(boardScale.value));
+  boardScale.addEventListener("change",()=>setBoardScalePercent(boardScale.value));
   document.getElementById("boardScaleDown").addEventListener("click",()=>setBoardScalePercent(Number(boardScale.value)-1));
   document.getElementById("boardScaleUp").addEventListener("click",()=>setBoardScalePercent(Number(boardScale.value)+1));
   selectedBoardType.addEventListener("change",updateSelectedBoardFromControls);
@@ -1690,7 +1690,7 @@
     render();
   }
 
-  componentScale.addEventListener("input",()=>setComponentScalePercent(componentScale.value));
+  componentScale.addEventListener("change",()=>setComponentScalePercent(componentScale.value));
   document.getElementById("componentScaleDown").addEventListener("click",()=>setComponentScalePercent(Number(componentScale.value)-1));
   document.getElementById("componentScaleUp").addEventListener("click",()=>setComponentScalePercent(Number(componentScale.value)+1));
 
