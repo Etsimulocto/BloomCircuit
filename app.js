@@ -38,6 +38,20 @@
   const customHeight = document.getElementById("customHeight");
   const customSubtitle = document.getElementById("customSubtitle");
   const customPins = document.getElementById("customPins");
+  const customImageInput = document.getElementById("customImageInput");
+  const customFootprintPreview = document.getElementById("customFootprintPreview");
+  const customFootprintImage = document.getElementById("customFootprintImage");
+  const customFootprintPins = document.getElementById("customFootprintPins");
+  const customMakerGridBg = document.getElementById("customMakerGridBg");
+  const customMakerSize = document.getElementById("customMakerSize");
+  const customPinEmpty = document.getElementById("customPinEmpty");
+  const customPinEditor = document.getElementById("customPinEditor");
+  const customPinId = document.getElementById("customPinId");
+  const customPinLabel = document.getElementById("customPinLabel");
+  const customPinRole = document.getElementById("customPinRole");
+  const customPinX = document.getElementById("customPinX");
+  const customPinY = document.getElementById("customPinY");
+  const customPinList = document.getElementById("customPinList");
 
   const selectionKind = document.getElementById("selectionKind");
   const selectionName = document.getElementById("selectionName");
@@ -46,7 +60,6 @@
   const componentColor = document.getElementById("componentColor");
   const componentTextColor = document.getElementById("componentTextColor");
   const componentScale = document.getElementById("componentScale");
-  const componentScaleOut = document.getElementById("componentScaleOut");
   const componentFontSize = document.getElementById("componentFontSize");
   const componentFontSizeOut = document.getElementById("componentFontSizeOut");
   const wireNetType = document.getElementById("wireNetType");
@@ -67,7 +80,6 @@
   const selectedBoardHolesX = document.getElementById("selectedBoardHolesX");
   const selectedBoardHolesY = document.getElementById("selectedBoardHolesY");
   const boardScale = document.getElementById("boardScale");
-  const boardScaleOut = document.getElementById("boardScaleOut");
   const boardColor = document.getElementById("boardColor");
   const boardHoleColor = document.getElementById("boardHoleColor");
 
@@ -106,6 +118,13 @@
     addCounter: 0,
     customIds: new Set(),
     canvasSettings: { ...CANVAS_DEFAULTS }
+  };
+
+  const customMaker = {
+    pins: [],
+    selectedIndex: -1,
+    dragIndex: -1,
+    imageData: ""
   };
 
   function uid(prefix) {
@@ -224,7 +243,7 @@
     if (!comp || !pin) return null;
     const def = components[comp.type];
     const angle = ((Number(comp.rotation) || 0) % 360 + 360) % 360;
-    const scale = clamp(Number(comp.scale) || 1,.25,4);
+    const scale = clamp(Number(comp.scale) || 1,.1,10);
 
     const cx = def.width / 2;
     const cy = def.height / 2;
@@ -257,6 +276,19 @@
   }
 
   function renderBody(group, comp, def) {
+    if (def.imageData) {
+      const body = svgEl("rect", { x:0,y:0,width:def.width,height:def.height,rx:6,class:"component-body" });
+      group.appendChild(body);
+      const image = svgEl("image", {
+        x:0,y:0,width:def.width,height:def.height,
+        href:def.imageData,
+        preserveAspectRatio:"none",
+        class:"component-image"
+      });
+      group.appendChild(image);
+      return body;
+    }
+
     if (def.kind === "bus") {
       const body = svgEl("rect", { x:0,y:0,width:def.width,height:def.height,rx:8,class:"component-body" });
       group.appendChild(body);
@@ -350,7 +382,7 @@
     const subtitleSize = Math.max(6, (Number(comp.fontSize) || 12) - 3);
     const group = svgEl("g", {
       class: "component" + (state.selected && state.selected.kind === "component" && state.selected.id === comp.id ? " selected" : ""),
-      transform: "translate(" + comp.x + " " + comp.y + ") translate(" + (def.width/2) + " " + (def.height/2) + ") rotate(" + (Number(comp.rotation) || 0) + ") scale(" + clamp(Number(comp.scale) || 1,.25,4) + ") translate(" + (-def.width/2) + " " + (-def.height/2) + ")",
+      transform: "translate(" + comp.x + " " + comp.y + ") translate(" + (def.width/2) + " " + (def.height/2) + ") rotate(" + (Number(comp.rotation) || 0) + ") scale(" + clamp(Number(comp.scale) || 1,.1,10) + ") translate(" + (-def.width/2) + " " + (-def.height/2) + ")",
       style: "--component-fill:" + (comp.fillColor || defaultComponentFill(def.kind)) + ";--component-text:" + (comp.textColor || "#191d20") + ";--component-font-size:" + (Number(comp.fontSize) || 12) + "px;--component-subtitle-size:" + subtitleSize + "px",
       "data-id": comp.id
     });
@@ -531,7 +563,7 @@
       holesX:clamp(Math.round(Number(board && board.holesX) || 30),2,120),
       holesY:clamp(Math.round(Number(board && board.holesY) || 10),2,80),
       rotation:Number(board && board.rotation) || 0,
-      scale:clamp(Number(board && board.scale) || 1,.25,4),
+      scale:clamp(Number(board && board.scale) || 1,.1,10),
       color:board && typeof board.color === "string" ? board.color : "#d9e4c7",
       holeColor:board && typeof board.holeColor === "string" ? board.holeColor : "#3c4248"
     };
@@ -543,7 +575,7 @@
 
   function boardGeometry(board) {
     const pitch = GRID;
-    const margin = 16;
+    const margin = 20;
     const slot = board.type === "breadboard" || board.type === "breadboardRails" ? 18 : 0;
     const terminalHeight = (board.holesY - 1) * pitch;
     const railsExtra = board.type === "breadboardRails" ? 76 : 0;
@@ -599,7 +631,7 @@
     const isSelected = state.selected && state.selected.kind === "board" && state.selected.id === board.id;
     const group = svgEl("g", {
       class:"board-underlay" + (isSelected ? " selected" : ""),
-      transform:"translate(" + board.x + " " + board.y + ") translate(" + (g.width/2) + " " + (g.height/2) + ") rotate(" + (Number(board.rotation) || 0) + ") scale(" + clamp(Number(board.scale) || 1,.25,4) + ") translate(" + (-g.width/2) + " " + (-g.height/2) + ")",
+      transform:"translate(" + board.x + " " + board.y + ") translate(" + (g.width/2) + " " + (g.height/2) + ") rotate(" + (Number(board.rotation) || 0) + ") scale(" + clamp(Number(board.scale) || 1,.1,10) + ") translate(" + (-g.width/2) + " " + (-g.height/2) + ")",
       style:"--board-fill:" + board.color + ";--board-hole:" + board.holeColor,
       "data-id":board.id
     });
@@ -683,7 +715,7 @@
     const label=svgEl("text",{
       x:8,y:g.height-6,class:"board-dim","text-anchor":"start"
     });
-    label.textContent=board.holesX + "×" + board.holesY + " @ 2.54 mm • " + Math.round(clamp(Number(board.scale) || 1,.25,4)*100) + "%";
+    label.textContent=board.holesX + "×" + board.holesY + " @ 2.54 mm • " + Math.round(clamp(Number(board.scale) || 1,.1,10)*100) + "%";
     group.appendChild(label);
 
     group.addEventListener("pointerdown",e => beginBoardDrag(e,board.id));
@@ -752,7 +784,7 @@
 
     if (board) {
       const g=boardGeometry(board);
-      const boardScaleValue=clamp(Number(board.scale) || 1,.25,4);
+      const boardScaleValue=clamp(Number(board.scale) || 1,.1,10);
       selectionKind.textContent="Board";
       selectionName.textContent=board.holesX + " × " + board.holesY + " holes • " +
         Math.round(boardScaleValue*100) + "%";
@@ -760,7 +792,6 @@
       selectedBoardHolesX.value=String(board.holesX);
       selectedBoardHolesY.value=String(board.holesY);
       boardScale.value=String(Math.round(boardScaleValue*100));
-      boardScaleOut.textContent=Math.round(boardScaleValue*100) + "%";
       boardColor.value=board.color;
       boardHoleColor.value=board.holeColor;
     } else if (comp) {
@@ -769,8 +800,7 @@
       selectionName.textContent = (def ? def.title : comp.type) + (comp.value ? " — " + comp.value : "");
       componentColor.value = comp.fillColor || defaultComponentFill(def && def.kind);
       componentTextColor.value = comp.textColor || "#191d20";
-      componentScale.value = String(Math.round(clamp(Number(comp.scale) || 1,.25,4)*100));
-      componentScaleOut.textContent = componentScale.value + "%";
+      componentScale.value = String(Math.round(clamp(Number(comp.scale) || 1,.1,10)*100));
       componentFontSize.value = String(Number(comp.fontSize) || 12);
       componentFontSizeOut.textContent = (Number(comp.fontSize) || 12) + " px";
     } else if (wireNote) {
@@ -1070,7 +1100,7 @@
       x:snap(Number(c.x)),
       y:snap(Number(c.y)),
       rotation:Number(c.rotation) || 0,
-      scale:clamp(Number(c.scale) || 1,.25,4),
+      scale:clamp(Number(c.scale) || 1,.1,10),
       value:typeof c.value === "string" ? c.value : "",
       fillColor:typeof c.fillColor === "string" ? c.fillColor : null,
       textColor:typeof c.textColor === "string" ? c.textColor : null,
@@ -1194,6 +1224,7 @@
   }
 
   function loadHappyJarz() {
+    state.boards = [];
     state.boards = [];
     state.boards = [];
     state.components = [];
@@ -1322,41 +1353,215 @@
     buildPalette();
   }
 
-  function parseCustomPins(text, width, height) {
-    const lines = text.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
-    if (!lines.length) throw new Error("Add at least one pin.");
+  function customMakerDimensions() {
+    const holesX=clamp(Math.round(Number(customWidth.value) || 16),2,80);
+    const holesY=clamp(Math.round(Number(customHeight.value) || 10),2,60);
+    return {
+      holesX,
+      holesY,
+      width:(holesX-1)*GRID,
+      height:(holesY-1)*GRID
+    };
+  }
 
-    return lines.map((line,index) => {
-      const parts = line.split("|").map(part => part.trim());
-      if (parts.length < 4) throw new Error("Pin line " + (index+1) + " needs: id | label | role | side | position%");
-      const [id,label,role,side,posText] = parts;
-      if (!["left","right","top","bottom"].includes(side)) throw new Error("Pin line " + (index+1) + ": side must be left/right/top/bottom.");
-      const pos = clamp(Number(posText || 50),0,100) / 100;
-      let x = width * pos;
-      let y = height * pos;
-      if (side === "left") x = 0;
-      if (side === "right") x = width;
-      if (side === "top") y = 0;
-      if (side === "bottom") y = height;
-      return { id:id || "p"+(index+1),name:label || id || "P"+(index+1),role:role || "passive",x,y,side };
+  function inferPinSide(x,y,width,height) {
+    const choices=[
+      ["left",x],
+      ["right",Math.abs(width-x)],
+      ["top",y],
+      ["bottom",Math.abs(height-y)]
+    ];
+    choices.sort((a,b)=>a[1]-b[1]);
+    return choices[0][0];
+  }
+
+  function resetCustomMaker() {
+    customMaker.pins=[];
+    customMaker.selectedIndex=-1;
+    customMaker.dragIndex=-1;
+    customMaker.imageData="";
+    customImageInput.value="";
+    customWidth.value="16";
+    customHeight.value="10";
+    renderCustomMaker();
+  }
+
+  function selectedCustomPin() {
+    return customMaker.selectedIndex >= 0 && customMaker.selectedIndex < customMaker.pins.length
+      ? customMaker.pins[customMaker.selectedIndex]
+      : null;
+  }
+
+  function renderCustomPinEditor() {
+    const pin=selectedCustomPin();
+    customPinEmpty.hidden=!!pin;
+    customPinEditor.hidden=!pin;
+
+    if (pin) {
+      const d=customMakerDimensions();
+      customPinId.value=pin.id;
+      customPinLabel.value=pin.name;
+      customPinRole.value=pin.role;
+      customPinX.max=String(d.holesX-1);
+      customPinY.max=String(d.holesY-1);
+      customPinX.value=String(Math.round(pin.x/GRID));
+      customPinY.value=String(Math.round(pin.y/GRID));
+    }
+
+    customPinList.replaceChildren();
+    customMaker.pins.forEach((pin,index)=>{
+      const button=document.createElement("button");
+      button.type="button";
+      button.className=index===customMaker.selectedIndex ? "active" : "";
+      button.textContent=(index+1)+". "+pin.name+" ["+Math.round(pin.x/GRID)+","+Math.round(pin.y/GRID)+"]";
+      button.addEventListener("click",()=>{
+        customMaker.selectedIndex=index;
+        renderCustomMaker();
+      });
+      customPinList.appendChild(button);
+    });
+  }
+
+  function renderCustomMaker() {
+    const d=customMakerDimensions();
+    customMakerSize.textContent=d.holesX+" × "+d.holesY;
+    customFootprintPreview.setAttribute("viewBox","0 0 "+Math.max(10,d.width)+" "+Math.max(10,d.height));
+    customMakerGridBg.setAttribute("width",String(Math.max(10,d.width)));
+    customMakerGridBg.setAttribute("height",String(Math.max(10,d.height)));
+    customFootprintImage.setAttribute("width",String(Math.max(10,d.width)));
+    customFootprintImage.setAttribute("height",String(Math.max(10,d.height)));
+
+    if (customMaker.imageData) {
+      customFootprintImage.setAttribute("href",customMaker.imageData);
+      customFootprintImage.removeAttribute("visibility");
+    } else {
+      customFootprintImage.removeAttribute("href");
+      customFootprintImage.setAttribute("visibility","hidden");
+    }
+
+    customMaker.pins.forEach(pin=>{
+      pin.x=clamp(snap(pin.x),0,d.width);
+      pin.y=clamp(snap(pin.y),0,d.height);
+      pin.side=inferPinSide(pin.x,pin.y,d.width,d.height);
+    });
+
+    customFootprintPins.replaceChildren();
+    customMaker.pins.forEach((pin,index)=>{
+      const g=svgEl("g",{"data-index":index});
+      const circle=svgEl("circle",{
+        cx:pin.x,cy:pin.y,r:4.2,
+        class:"maker-pin"+(index===customMaker.selectedIndex ? " selected" : "")
+      });
+      const label=svgEl("text",{
+        x:pin.x+6,y:pin.y-5,class:"maker-pin-label","text-anchor":"start"
+      });
+      label.textContent=pin.name;
+
+      circle.addEventListener("pointerdown",e=>{
+        e.stopPropagation();
+        customMaker.selectedIndex=index;
+        customMaker.dragIndex=index;
+        customFootprintPreview.setPointerCapture(e.pointerId);
+        renderCustomPinEditor();
+      });
+      circle.addEventListener("click",e=>{
+        e.stopPropagation();
+        customMaker.selectedIndex=index;
+        renderCustomMaker();
+      });
+
+      g.appendChild(circle);
+      g.appendChild(label);
+      customFootprintPins.appendChild(g);
+    });
+
+    renderCustomPinEditor();
+  }
+
+  function customPreviewPoint(e) {
+    const point=customFootprintPreview.createSVGPoint();
+    point.x=e.clientX;
+    point.y=e.clientY;
+    const matrix=customFootprintPreview.getScreenCTM();
+    return matrix ? point.matrixTransform(matrix.inverse()) : {x:0,y:0};
+  }
+
+  function addCustomPinAt(x,y) {
+    const d=customMakerDimensions();
+    x=clamp(snap(x),0,d.width);
+    y=clamp(snap(y),0,d.height);
+    const number=customMaker.pins.length+1;
+    const pin={
+      id:"p"+number,
+      name:"P"+number,
+      role:"passive",
+      x,y,
+      side:inferPinSide(x,y,d.width,d.height)
+    };
+    customMaker.pins.push(pin);
+    customMaker.selectedIndex=customMaker.pins.length-1;
+    renderCustomMaker();
+  }
+
+  async function imageFileToEmbeddedData(file) {
+    return await new Promise((resolve,reject)=>{
+      const reader=new FileReader();
+      reader.onerror=()=>reject(new Error("Could not read image."));
+      reader.onload=()=>{
+        const img=new Image();
+        img.onerror=()=>reject(new Error("Could not decode image."));
+        img.onload=()=>{
+          const max=900;
+          const scale=Math.min(1,max/Math.max(img.width,img.height));
+          const canvas=document.createElement("canvas");
+          canvas.width=Math.max(1,Math.round(img.width*scale));
+          canvas.height=Math.max(1,Math.round(img.height*scale));
+          const ctx=canvas.getContext("2d");
+          ctx.drawImage(img,0,0,canvas.width,canvas.height);
+          resolve(canvas.toDataURL("image/webp",0.86));
+        };
+        img.src=reader.result;
+      };
+      reader.readAsDataURL(file);
     });
   }
 
   function createCustomComponentFromForm() {
     const id = customId.value.trim();
-    const width = clamp(Number(customWidth.value)||160,50,500);
-    const height = clamp(Number(customHeight.value)||100,40,600);
+    const d=customMakerDimensions();
+    if (!customMaker.pins.length) throw new Error("Place at least one pin on the footprint grid.");
+
+    const ids=new Set();
+    customMaker.pins.forEach((pin,index)=>{
+      const pinId=String(pin.id || "p"+(index+1)).trim();
+      if (!pinId) throw new Error("Every pin needs an ID.");
+      if (ids.has(pinId)) throw new Error("Pin IDs must be unique. Duplicate: "+pinId);
+      ids.add(pinId);
+    });
+
     const definition = {
       title:customTitle.value.trim() || id,
       palette:customTitle.value.trim() || id,
       category:customCategory.value.trim() || "Custom",
       kind:customKind.value,
-      width,
-      height,
+      width:d.width,
+      height:d.height,
       subtitle:customSubtitle.value.trim(),
-      keywords:["custom"],
-      pins:parseCustomPins(customPins.value,width,height)
+      keywords:["custom","breadboard","2.54mm"],
+      imageData:customMaker.imageData,
+      pins:customMaker.pins.map((pin,index)=>({
+        id:String(pin.id || "p"+(index+1)).trim(),
+        name:String(pin.name || pin.id || "P"+(index+1)).trim(),
+        role:pin.role || "passive",
+        x:clamp(snap(pin.x),0,d.width),
+        y:clamp(snap(pin.y),0,d.height),
+        side:inferPinSide(pin.x,pin.y,d.width,d.height)
+      }))
     };
+
+    customPins.value=definition.pins.map(pin=>
+      [pin.id,pin.name,pin.role,pin.x/GRID,pin.y/GRID].join(" | ")
+    ).join("\n");
 
     library.registerComponent(id,definition,true);
     state.customIds.add(id);
@@ -1412,12 +1617,18 @@
     board.rotation=(((Number(board.rotation)||0)+90)%360+360)%360;
     render();
   });
-  boardScale.addEventListener("input",() => {
+  function setBoardScalePercent(value) {
     const board=selectedBoard();
     if (!board) return;
-    board.scale=clamp(Number(boardScale.value)/100,.25,4);
+    const pct=clamp(Math.round(Number(value) || 100),10,1000);
+    board.scale=pct/100;
+    boardScale.value=String(pct);
     render();
-  });
+  }
+
+  boardScale.addEventListener("input",()=>setBoardScalePercent(boardScale.value));
+  document.getElementById("boardScaleDown").addEventListener("click",()=>setBoardScalePercent(Number(boardScale.value)-1));
+  document.getElementById("boardScaleUp").addEventListener("click",()=>setBoardScalePercent(Number(boardScale.value)+1));
   selectedBoardType.addEventListener("change",updateSelectedBoardFromControls);
   selectedBoardHolesX.addEventListener("change",updateSelectedBoardFromControls);
   selectedBoardHolesY.addEventListener("change",updateSelectedBoardFromControls);
@@ -1470,12 +1681,18 @@
     render();
   });
 
-  componentScale.addEventListener("input",() => {
-    const comp = selectedComponent();
+  function setComponentScalePercent(value) {
+    const comp=selectedComponent();
     if (!comp) return;
-    comp.scale = clamp(Number(componentScale.value)/100,.25,4);
+    const pct=clamp(Math.round(Number(value) || 100),10,1000);
+    comp.scale=pct/100;
+    componentScale.value=String(pct);
     render();
-  });
+  }
+
+  componentScale.addEventListener("input",()=>setComponentScalePercent(componentScale.value));
+  document.getElementById("componentScaleDown").addEventListener("click",()=>setComponentScalePercent(Number(componentScale.value)-1));
+  document.getElementById("componentScaleUp").addEventListener("click",()=>setComponentScalePercent(Number(componentScale.value)+1));
 
   componentFontSize.addEventListener("input",() => {
     const comp = selectedComponent();
@@ -1597,9 +1814,79 @@
 
   document.getElementById("newComponentBtn").addEventListener("click",() => {
     componentFormError.textContent = "";
+    resetCustomMaker();
     componentDialog.showModal();
     customId.focus();
   });
+  customWidth.addEventListener("input",renderCustomMaker);
+  customHeight.addEventListener("input",renderCustomMaker);
+
+  customFootprintPreview.addEventListener("click",e=>{
+    if (e.target.classList.contains("maker-pin")) return;
+    addCustomPinAt(customPreviewPoint(e).x,customPreviewPoint(e).y);
+  });
+
+  customFootprintPreview.addEventListener("pointermove",e=>{
+    if (customMaker.dragIndex < 0) return;
+    const pin=customMaker.pins[customMaker.dragIndex];
+    if (!pin) return;
+    const d=customMakerDimensions();
+    const p=customPreviewPoint(e);
+    pin.x=clamp(snap(p.x),0,d.width);
+    pin.y=clamp(snap(p.y),0,d.height);
+    renderCustomMaker();
+  });
+
+  customFootprintPreview.addEventListener("pointerup",e=>{
+    if (customMaker.dragIndex < 0) return;
+    try { customFootprintPreview.releasePointerCapture(e.pointerId); } catch (_) {}
+    customMaker.dragIndex=-1;
+    renderCustomMaker();
+  });
+
+  customImageInput.addEventListener("change",async()=>{
+    const file=customImageInput.files && customImageInput.files[0];
+    if (!file) return;
+    try {
+      customMaker.imageData=await imageFileToEmbeddedData(file);
+      renderCustomMaker();
+    } catch (err) {
+      componentFormError.textContent=err.message;
+    }
+  });
+
+  document.getElementById("clearCustomImageBtn").addEventListener("click",()=>{
+    customMaker.imageData="";
+    customImageInput.value="";
+    renderCustomMaker();
+  });
+
+  function updateSelectedCustomPinFromEditor() {
+    const pin=selectedCustomPin();
+    if (!pin) return;
+    const d=customMakerDimensions();
+    pin.id=customPinId.value.trim() || pin.id;
+    pin.name=customPinLabel.value.trim() || pin.id;
+    pin.role=customPinRole.value;
+    pin.x=clamp(Math.round(Number(customPinX.value)||0)*GRID,0,d.width);
+    pin.y=clamp(Math.round(Number(customPinY.value)||0)*GRID,0,d.height);
+    pin.side=inferPinSide(pin.x,pin.y,d.width,d.height);
+    renderCustomMaker();
+  }
+
+  customPinId.addEventListener("change",updateSelectedCustomPinFromEditor);
+  customPinLabel.addEventListener("input",updateSelectedCustomPinFromEditor);
+  customPinRole.addEventListener("change",updateSelectedCustomPinFromEditor);
+  customPinX.addEventListener("change",updateSelectedCustomPinFromEditor);
+  customPinY.addEventListener("change",updateSelectedCustomPinFromEditor);
+
+  document.getElementById("deleteCustomPinBtn").addEventListener("click",()=>{
+    if (customMaker.selectedIndex < 0) return;
+    customMaker.pins.splice(customMaker.selectedIndex,1);
+    customMaker.selectedIndex=Math.min(customMaker.selectedIndex,customMaker.pins.length-1);
+    renderCustomMaker();
+  });
+
   document.getElementById("closeComponentDialog").addEventListener("click",() => componentDialog.close());
   document.getElementById("cancelComponentBtn").addEventListener("click",() => componentDialog.close());
 
