@@ -157,10 +157,11 @@
           <button id="boardRotateLeftBtn" type="button" title="Rotate board left 90 degrees">↶ 90°</button>
           <button id="boardRotateRightBtn" type="button" title="Rotate board right 90 degrees">↷ 90°</button>
         </div>
-        <label>Scale
-          <div class="range-row">
-            <input id="boardScale" type="range" min="25" max="400" step="5" value="100">
-            <output id="boardScaleOut">100%</output>
+        <label>Scale %
+          <div class="number-stepper">
+            <button id="boardScaleDown" type="button" aria-label="Decrease board scale">−</button>
+            <input id="boardScale" type="number" min="10" max="1000" step="1" value="100" inputmode="numeric">
+            <button id="boardScaleUp" type="button" aria-label="Increase board scale">+</button>
           </div>
         </label>
         <label>Board color
@@ -184,10 +185,11 @@
         <label>Text color
           <input id="componentTextColor" type="color" value="#191d20">
         </label>
-        <label>Scale
-          <div class="range-row">
-            <input id="componentScale" type="range" min="25" max="400" step="5" value="100">
-            <output id="componentScaleOut">100%</output>
+        <label>Scale %
+          <div class="number-stepper">
+            <button id="componentScaleDown" type="button" aria-label="Decrease component scale">−</button>
+            <input id="componentScale" type="number" min="10" max="1000" step="1" value="100" inputmode="numeric">
+            <button id="componentScaleUp" type="button" aria-label="Increase component scale">+</button>
           </div>
         </label>
         <label>Font size
@@ -277,17 +279,17 @@
     Click a library part to add it. Drag to move. Double-click a component to rename/value it. Click pins to wire.
   </footer>
 
-  <dialog id="componentDialog">
+  <dialog id="componentDialog" class="component-maker-dialog">
     <form id="componentForm" method="dialog">
       <div class="dialog-head">
         <div>
-          <h2>Create component</h2>
-          <p>Quick-patch a part into the library without touching code.</p>
+          <h2>Component Maker</h2>
+          <p>Drop a real component image on a 2.54 mm breadboard grid, then place pins exactly where they belong.</p>
         </div>
         <button id="closeComponentDialog" type="button" class="icon-btn" aria-label="Close">×</button>
       </div>
 
-      <div class="form-grid">
+      <div class="maker-meta-grid">
         <label>Component ID
           <input id="customId" required placeholder="my_sensor">
         </label>
@@ -297,7 +299,7 @@
         <label>Category
           <input id="customCategory" value="Custom" placeholder="Sensors & Modules">
         </label>
-        <label>Shape
+        <label>Shape fallback
           <select id="customKind">
             <option value="rect">Rectangle/module</option>
             <option value="dip">DIP chip</option>
@@ -307,11 +309,11 @@
             <option value="node">Node</option>
           </select>
         </label>
-        <label>Width (px)
-          <input id="customWidth" type="number" min="50" max="500" value="160">
+        <label>Grid X (holes)
+          <input id="customWidth" type="number" min="2" max="80" step="1" value="16">
         </label>
-        <label>Height (px)
-          <input id="customHeight" type="number" min="40" max="600" value="100">
+        <label>Grid Y (holes)
+          <input id="customHeight" type="number" min="2" max="60" step="1" value="10">
         </label>
       </div>
 
@@ -319,12 +321,81 @@
         <input id="customSubtitle" placeholder="Optional description">
       </label>
 
-      <label>Pins — one per line: <code>id | label | role | side | position%</code>
-        <textarea id="customPins" rows="8" spellcheck="false">vcc | VCC | power | left | 30
-gnd | GND | gnd | left | 70
-sig | SIGNAL | gpio | right | 50</textarea>
-      </label>
-      <p class="hint">Roles: 5v, 3v3, gnd, gpio, input, output, control, power, passive, analog, i2c, spi, uart, pwm. Sides: left, right, top, bottom.</p>
+      <div class="maker-image-row">
+        <label class="maker-image-picker">Component image
+          <input id="customImageInput" type="file" accept="image/png,image/jpeg,image/webp">
+        </label>
+        <button id="clearCustomImageBtn" type="button">Clear image</button>
+        <span class="hint">Image is embedded into the component pack. Grid pitch is 2.54 mm.</span>
+      </div>
+
+      <div class="maker-layout">
+        <section class="maker-preview-panel">
+          <div class="section-head">
+            <h3>Footprint / pin placement</h3>
+            <span id="customMakerSize" class="count-badge">16 × 10</span>
+          </div>
+          <p class="hint">Click a grid intersection to add a pin. Drag a pin to move it. Everything snaps to the same grid as the breadboard.</p>
+          <div class="maker-preview-scroll">
+            <svg id="customFootprintPreview" viewBox="0 0 160 100" aria-label="Custom component footprint editor">
+              <defs>
+                <pattern id="makerGrid" width="10" height="10" patternUnits="userSpaceOnUse">
+                  <circle cx="0" cy="0" r="1.8" class="maker-grid-hole"/>
+                </pattern>
+              </defs>
+              <rect id="customMakerGridBg" x="0" y="0" width="160" height="100" fill="url(#makerGrid)"/>
+              <image id="customFootprintImage" x="0" y="0" width="160" height="100" preserveAspectRatio="none" opacity="0.82"/>
+              <g id="customFootprintPins"></g>
+            </svg>
+          </div>
+        </section>
+
+        <section class="maker-pin-panel">
+          <h3>Selected pin</h3>
+          <p id="customPinEmpty" class="hint">Click the grid to add/select a pin.</p>
+          <div id="customPinEditor" hidden>
+            <label>Pin ID
+              <input id="customPinId" placeholder="din">
+            </label>
+            <label>Label
+              <input id="customPinLabel" placeholder="DIN">
+            </label>
+            <label>Role
+              <select id="customPinRole">
+                <option value="passive">passive</option>
+                <option value="power">power</option>
+                <option value="5v">5V</option>
+                <option value="3v3">3V3</option>
+                <option value="gnd">GND</option>
+                <option value="gpio">GPIO</option>
+                <option value="input">input</option>
+                <option value="output">output</option>
+                <option value="control">control</option>
+                <option value="analog">analog</option>
+                <option value="i2c">I2C</option>
+                <option value="spi">SPI</option>
+                <option value="uart">UART</option>
+                <option value="pwm">PWM</option>
+                <option value="nc">NC</option>
+              </select>
+            </label>
+            <div class="xy-row">
+              <label>Grid X
+                <input id="customPinX" type="number" min="0" step="1">
+              </label>
+              <label>Grid Y
+                <input id="customPinY" type="number" min="0" step="1">
+              </label>
+            </div>
+            <button id="deleteCustomPinBtn" type="button" class="danger">Delete pin</button>
+          </div>
+
+          <h3>Pin list</h3>
+          <div id="customPinList" class="custom-pin-list"></div>
+        </section>
+      </div>
+
+      <textarea id="customPins" hidden></textarea>
 
       <div class="dialog-actions">
         <button id="createComponentBtn" type="submit">Add to library</button>
