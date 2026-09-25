@@ -4,6 +4,8 @@
   const NS = "http://www.w3.org/2000/svg";
   const GRID = 10;
   const MM_PER_PX = 0.254;
+  const CANVAS_WIDTH = 3000;
+  const CANVAS_HEIGHT = 1800;
   const library = window.BloomLibrary;
   const components = library.components;
   const BUILTIN_IDS = new Set(Object.keys(components));
@@ -177,8 +179,8 @@
     if (!def) return;
     const offset = (state.addCounter % 8) * 30;
     state.addCounter += 1;
-    const x = clamp(300 + offset, 10, 1180 - def.width);
-    const y = clamp(80 + offset, 10, 680 - def.height);
+    const x = clamp(300 + offset, 10, CANVAS_WIDTH - 20 - def.width);
+    const y = clamp(80 + offset, 10, CANVAS_HEIGHT - 20 - def.height);
     const comp = makeComponent(type, x, y);
     state.components.push(comp);
     state.selected = { kind: "component", id: comp.id };
@@ -420,8 +422,8 @@
     document.documentElement.style.setProperty("--minor-grid", s.minorGridColor);
     document.documentElement.style.setProperty("--major-grid", s.majorGridColor);
     document.documentElement.style.setProperty("--pin-font-size", s.pinFontSize + "px");
-    canvas.style.width = (1200 * s.zoom) + "px";
-    canvas.style.height = (700 * s.zoom) + "px";
+    canvas.style.width = (CANVAS_WIDTH * s.zoom) + "px";
+    canvas.style.height = (CANVAS_HEIGHT * s.zoom) + "px";
 
     canvasBgColor.value = s.bgColor;
     minorGridColor.value = s.minorGridColor;
@@ -591,8 +593,8 @@
     if (!comp || !components[comp.type]) return;
     const def = components[comp.type];
     const p = clientToSvg(e);
-    const nextX = snap(clamp(p.x-state.drag.dx,0,1200-def.width));
-    const nextY = snap(clamp(p.y-state.drag.dy,0,700-def.height));
+    const nextX = snap(clamp(p.x-state.drag.dx,0,CANVAS_WIDTH-def.width));
+    const nextY = snap(clamp(p.y-state.drag.dy,0,CANVAS_HEIGHT-def.height));
     if (nextX !== comp.x || nextY !== comp.y) state.drag.moved = true;
     comp.x = nextX;
     comp.y = nextY;
@@ -745,9 +747,9 @@
     clone.querySelectorAll(".selected").forEach(el => el.classList.remove("selected"));
     clone.querySelectorAll(".pending").forEach(el => el.classList.remove("pending"));
     clone.setAttribute("xmlns",NS);
-    clone.setAttribute("width",(1200*MM_PER_PX).toFixed(2)+"mm");
-    clone.setAttribute("height",(700*MM_PER_PX).toFixed(2)+"mm");
-    clone.setAttribute("viewBox","0 0 1200 700");
+    clone.setAttribute("width",(CANVAS_WIDTH*MM_PER_PX).toFixed(2)+"mm");
+    clone.setAttribute("height",(CANVAS_HEIGHT*MM_PER_PX).toFixed(2)+"mm");
+    clone.setAttribute("viewBox","0 0 " + CANVAS_WIDTH + " " + CANVAS_HEIGHT);
 
     const style = document.createElementNS(NS,"style");
     const monochrome = etchMode.checked;
