@@ -43,7 +43,10 @@
   const customFootprintImage = document.getElementById("customFootprintImage");
   const customFootprintPins = document.getElementById("customFootprintPins");
   const customMakerGridBg = document.getElementById("customMakerGridBg");
+  const customCutoutOutline = document.getElementById("customCutoutOutline");
   const customMakerSize = document.getElementById("customMakerSize");
+  const makerPreviewScroll = document.getElementById("makerPreviewScroll");
+  const makerZoomValue = document.getElementById("makerZoomValue");
   const customPinEmpty = document.getElementById("customPinEmpty");
   const customPinEditor = document.getElementById("customPinEditor");
   const customPinId = document.getElementById("customPinId");
@@ -124,7 +127,8 @@
     pins: [],
     selectedIndex: -1,
     dragIndex: -1,
-    imageData: ""
+    imageData: "",
+    zoom: 1
   };
 
   function uid(prefix) {
@@ -1380,7 +1384,9 @@
     customMaker.selectedIndex=-1;
     customMaker.dragIndex=-1;
     customMaker.imageData="";
+    customMaker.zoom=1;
     customImageInput.value="";
+    makerZoomValue.value="100";
     customWidth.value="16";
     customHeight.value="10";
     renderCustomMaker();
@@ -1424,12 +1430,29 @@
 
   function renderCustomMaker() {
     const d=customMakerDimensions();
-    customMakerSize.textContent=d.holesX+" × "+d.holesY;
-    customFootprintPreview.setAttribute("viewBox","0 0 "+Math.max(10,d.width)+" "+Math.max(10,d.height));
-    customMakerGridBg.setAttribute("width",String(Math.max(10,d.width)));
-    customMakerGridBg.setAttribute("height",String(Math.max(10,d.height)));
-    customFootprintImage.setAttribute("width",String(Math.max(10,d.width)));
-    customFootprintImage.setAttribute("height",String(Math.max(10,d.height)));
+    const pad=6;
+    const logicalWidth=Math.max(10,d.width);
+    const logicalHeight=Math.max(10,d.height);
+    const cellsX=Math.max(1,d.holesX-1);
+    const cellsY=Math.max(1,d.holesY-1);
+    const cellPixels=24;
+    const baseWidth=Math.max(260,cellsX*cellPixels);
+    const baseHeight=Math.max(180,cellsY*cellPixels);
+
+    customMakerSize.textContent=d.holesX+" × "+d.holesY+" • "+Math.round(customMaker.zoom*100)+"%";
+    customFootprintPreview.setAttribute("viewBox",(-pad)+" "+(-pad)+" "+(logicalWidth+pad*2)+" "+(logicalHeight+pad*2));
+    customFootprintPreview.style.width=Math.round(baseWidth*customMaker.zoom)+"px";
+    customFootprintPreview.style.height=Math.round(baseHeight*customMaker.zoom)+"px";
+
+    customMakerGridBg.setAttribute("width",String(logicalWidth));
+    customMakerGridBg.setAttribute("height",String(logicalHeight));
+    customFootprintImage.setAttribute("width",String(logicalWidth));
+    customFootprintImage.setAttribute("height",String(logicalHeight));
+
+    customCutoutOutline.setAttribute("x","0.8");
+    customCutoutOutline.setAttribute("y","0.8");
+    customCutoutOutline.setAttribute("width",String(Math.max(1,logicalWidth-1.6)));
+    customCutoutOutline.setAttribute("height",String(Math.max(1,logicalHeight-1.6)));
 
     if (customMaker.imageData) {
       customFootprintImage.setAttribute("href",customMaker.imageData);
@@ -1816,9 +1839,36 @@
     componentFormError.textContent = "";
     resetCustomMaker();
     componentDialog.showModal();
+    requestAnimationFrame(()=>fitMakerPreview());
     customId.focus();
   });
-  customWidth.addEventListener("input",renderCustomMaker);
+  function setMakerZoomPercent(value) {
+    const pct=clamp(Math.round(Number(value) || 100),25,800);
+    customMaker.zoom=pct/100;
+    makerZoomValue.value=String(pct);
+    renderCustomMaker();
+  }
+
+  function fitMakerPreview() {
+    const d=customMakerDimensions();
+    const cellsX=Math.max(1,d.holesX-1);
+    const cellsY=Math.max(1,d.holesY-1);
+    const baseWidth=Math.max(260,cellsX*24);
+    const baseHeight=Math.max(180,cellsY*24);
+    const availableWidth=Math.max(120,makerPreviewScroll.clientWidth-18);
+    const availableHeight=Math.max(120,Math.min(500,window.innerHeight*0.48));
+    const pct=Math.floor(Math.min(availableWidth/baseWidth,availableHeight/baseHeight)*100);
+    setMakerZoomPercent(clamp(pct,25,800));
+    makerPreviewScroll.scrollLeft=0;
+    makerPreviewScroll.scrollTop=0;
+  }
+
+  makerZoomValue.addEventListener("change",()=>setMakerZoomPercent(makerZoomValue.value));
+  document.getElementById("makerZoomDown").addEventListener("click",()=>setMakerZoomPercent(Number(makerZoomValue.value)-25));
+  document.getElementById("makerZoomUp").addEventListener("click",()=>setMakerZoomPercent(Number(makerZoomValue.value)+25));
+  document.getElementById("makerZoomFit").addEventListener("click",fitMakerPreview);
+
+    customWidth.addEventListener("input",renderCustomMaker);
   customHeight.addEventListener("input",renderCustomMaker);
 
   customFootprintPreview.addEventListener("click",e=>{
