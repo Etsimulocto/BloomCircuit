@@ -290,6 +290,39 @@ textarea {
   pointer-events: none;
 }
 
+.wire-note {
+  fill: #24282c;
+  font-weight: 600;
+  paint-order: stroke;
+  stroke: var(--canvas-bg);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+  cursor: pointer;
+  white-space: pre;
+}
+
+.wire-note-handle {
+  fill: var(--panel2);
+  stroke: #111;
+  stroke-width: 1.5;
+  cursor: pointer;
+}
+
+.wire-note-plus {
+  fill: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  text-anchor: middle;
+  dominant-baseline: middle;
+  pointer-events: none;
+}
+
+body.etch-mode .wire-note {
+  fill: #000 !important;
+  stroke: #fff;
+}
+
+
 .bus-line {
   stroke: #202428;
   stroke-width: 4;
