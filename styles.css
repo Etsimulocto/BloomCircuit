@@ -605,6 +605,34 @@ body.etch-mode .board-rail {
   margin-top: 16px;
 }
 
+
+.maker-preview-toolbar {
+  display: grid;
+  grid-template-columns: 38px 86px 38px 64px;
+  gap: 6px;
+  align-items: center;
+  margin: 8px 0 10px;
+}
+
+.maker-preview-toolbar input {
+  text-align: center;
+  min-width: 0;
+}
+
+.maker-preview-toolbar button {
+  min-height: 34px;
+  padding: 0 8px;
+}
+
+.maker-cutout-outline {
+  fill: none;
+  stroke: #e11d48;
+  stroke-width: 1.5;
+  stroke-dasharray: 5 3;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
 .maker-preview-scroll {
   overflow: auto;
   max-height: 520px;
@@ -615,9 +643,10 @@ body.etch-mode .board-rail {
 
 #customFootprintPreview {
   display: block;
-  width: 100%;
-  min-width: 520px;
-  min-height: 320px;
+  width: 520px;
+  height: 320px;
+  min-width: 0;
+  min-height: 0;
   background: #f8f5ed;
   cursor: crosshair;
   user-select: none;
