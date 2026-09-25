@@ -372,6 +372,115 @@
     }
   });
 
+  // Built-in parts use the same physical coordinate system as the board maker:
+  // 10 SVG units = one 2.54 mm breadboard/perfboard pitch.
+  // This pass keeps the existing library names/roles, but rebuilds each footprint
+  // so adjacent pins land on exact grid holes at 100% scale.
+  const BUILTIN_PITCH = 10;
+
+  function ceilGrid(value) {
+    return Math.max(BUILTIN_PITCH, Math.ceil(Number(value || BUILTIN_PITCH) / BUILTIN_PITCH) * BUILTIN_PITCH);
+  }
+
+  function orderedSidePins(def, side) {
+    return (def.pins || [])
+      .filter(p => p.side === side)
+      .sort((a,b) => {
+        const av = side === "left" || side === "right" ? Number(a.y) : Number(a.x);
+        const bv = side === "left" || side === "right" ? Number(b.y) : Number(b.x);
+        return av - bv;
+      });
+  }
+
+  function gridifyBuiltinDefinition(def) {
+    if (!def || !Array.isArray(def.pins) || !def.pins.length) return def;
+
+    const originalWidth = Math.max(10, Number(def.width) || 100);
+    const originalHeight = Math.max(10, Number(def.height) || 100);
+    const ratio = originalWidth / originalHeight;
+
+    const left = orderedSidePins(def,"left");
+    const right = orderedSidePins(def,"right");
+    const top = orderedSidePins(def,"top");
+    const bottom = orderedSidePins(def,"bottom");
+    const verticalCount = Math.max(left.length,right.length);
+    const horizontalCount = Math.max(top.length,bottom.length);
+
+    // DIPs are the one place where the cross-row spacing matters physically.
+    // Use 0.3 inch (3 breadboard holes) between pin rows, with one-hole margins.
+    if (def.kind === "dip" && verticalCount) {
+      const rows = verticalCount;
+      def.width = 50;
+      def.height = Math.max(30,(rows-1)*BUILTIN_PITCH+20);
+
+      const placeDipSide = (pins,x) => pins.forEach((pin,index) => {
+        pin.x=x;
+        pin.y=10+index*BUILTIN_PITCH;
+      });
+      placeDipSide(left,10);
+      placeDipSide(right,40);
+
+      def.gridNative = true;
+      return def;
+    }
+
+    const minWidth = horizontalCount > 1
+      ? (horizontalCount-1)*BUILTIN_PITCH+20
+      : 30;
+    const minHeight = verticalCount > 1
+      ? (verticalCount-1)*BUILTIN_PITCH+20
+      : 30;
+
+    let width=minWidth;
+    let height=minHeight;
+
+    // Preserve the original visual aspect ratio while shrinking the old diagram
+    // symbols onto a common physical grid.
+    if (width/height < ratio) {
+      width=ceilGrid(height*ratio);
+    } else {
+      height=ceilGrid(width/ratio);
+    }
+
+    width=Math.max(30,width);
+    height=Math.max(30,height);
+    def.width=width;
+    def.height=height;
+
+    const placeSide = (pins,side) => {
+      if (!pins.length) return;
+      pins.forEach((pin,index) => {
+        if (side === "left" || side === "right") {
+          pin.x=side === "left" ? 0 : width;
+          pin.y=pins.length === 1
+            ? Math.round((height/2)/BUILTIN_PITCH)*BUILTIN_PITCH
+            : 10+index*BUILTIN_PITCH;
+        } else {
+          pin.y=side === "top" ? 0 : height;
+          pin.x=pins.length === 1
+            ? Math.round((width/2)/BUILTIN_PITCH)*BUILTIN_PITCH
+            : 10+index*BUILTIN_PITCH;
+        }
+      });
+    };
+
+    placeSide(left,"left");
+    placeSide(right,"right");
+    placeSide(top,"top");
+    placeSide(bottom,"bottom");
+
+    // Any odd legacy pin that did not declare a side still lands on-grid.
+    (def.pins || []).forEach(pin => {
+      pin.x=Math.max(0,Math.min(width,Math.round(Number(pin.x || 0)/BUILTIN_PITCH)*BUILTIN_PITCH));
+      pin.y=Math.max(0,Math.min(height,Math.round(Number(pin.y || 0)/BUILTIN_PITCH)*BUILTIN_PITCH));
+    });
+
+    def.gridNative = true;
+    return def;
+  }
+
+  Object.values(registry).forEach(gridifyBuiltinDefinition);
+
   function normalizeDefinition(id, def) {
     if (!id || !/^[a-z0-9_-]+$/i.test(id)) throw new Error("Component id must use letters, numbers, _ or -.");
     if (!def || typeof def !== "object") throw new Error("Component definition is missing.");
