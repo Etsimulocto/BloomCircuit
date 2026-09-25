@@ -97,6 +97,7 @@
             </pattern>
           </defs>
           <rect id="grid-bg" x="0" y="0" width="3000" height="1800" fill="url(#majorGrid)"/>
+          <g id="boardsLayer"></g>
           <g id="wiresLayer"></g>
           <g id="componentsLayer"></g>
         </svg>
@@ -110,6 +111,55 @@
           <span id="selectionKind" class="count-badge">Canvas</span>
         </div>
         <p id="selectionName" class="selection-name">Nothing selected</p>
+      </section>
+
+      <section>
+        <h2>Breadboard maker</h2>
+        <label>Board type
+          <select id="boardType">
+            <option value="perf">Square grid / perfboard</option>
+            <option value="strip">Stripboard / rails</option>
+            <option value="breadboard">Breadboard / center slot</option>
+            <option value="breadboardRails">Breadboard + power rails</option>
+          </select>
+        </label>
+        <div class="xy-row">
+          <label>Holes X
+            <input id="boardHolesX" type="number" min="2" max="120" step="1" value="30">
+          </label>
+          <label>Holes Y
+            <input id="boardHolesY" type="number" min="2" max="80" step="1" value="10">
+          </label>
+        </div>
+        <button id="addBoardBtn" type="button">+ Add board underlay</button>
+        <p class="hint">2.54 mm hole pitch. Boards live under the circuit so components and wires stay on top.</p>
+      </section>
+
+      <section id="boardTools" hidden>
+        <h2>Board underlay</h2>
+        <label>Type
+          <select id="selectedBoardType">
+            <option value="perf">Square grid / perfboard</option>
+            <option value="strip">Stripboard / rails</option>
+            <option value="breadboard">Breadboard / center slot</option>
+            <option value="breadboardRails">Breadboard + power rails</option>
+          </select>
+        </label>
+        <div class="xy-row">
+          <label>Holes X
+            <input id="selectedBoardHolesX" type="number" min="2" max="120" step="1">
+          </label>
+          <label>Holes Y
+            <input id="selectedBoardHolesY" type="number" min="2" max="80" step="1">
+          </label>
+        </div>
+        <label>Board color
+          <input id="boardColor" type="color" value="#d9e4c7">
+        </label>
+        <label>Hole color
+          <input id="boardHoleColor" type="color" value="#3c4248">
+        </label>
+        <button id="deleteBoardBtn" type="button" class="danger">Delete board</button>
       </section>
 
       <section id="componentTools" hidden>
