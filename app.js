@@ -681,7 +681,6 @@
 
     group.addEventListener("pointerdown",e => beginBoardDrag(e,board.id));
     group.addEventListener("click",e => {
-      e.stopPropagation();
       state.selected={ kind:"board",id:board.id };
       setStatus("Board underlay selected.");
       render();
