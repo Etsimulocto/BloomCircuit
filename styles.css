@@ -196,8 +196,8 @@ textarea {
 }
 
 #canvas {
-  width: 1200px;
-  height: 700px;
+  width: 3000px;
+  height: 1800px;
   display: block;
   background: var(--canvas-bg);
   border: 1px solid #454d55;
