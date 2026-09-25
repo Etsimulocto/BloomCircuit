@@ -1,5 +1,11 @@
 # BloomCircuit
 
+## v0.3.1 inspector fix
+
+- component editor now stays open after a normal click
+- component editor stays open after drag/reposition
+- blank-canvas clicks still deselect normally
+
 BloomCircuit is a small browser-based wiring-map editor for maker projects. It is built around **physical wiring documentation**, a **2.54 mm snap grid**, and **laser-ready SVG export** rather than PCB routing or SPICE simulation.
 
 ## v0.2
