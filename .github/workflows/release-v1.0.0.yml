@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - ".github/workflows/release-v1.0.0.yml"
+      - "RELEASE_NOTES_v1.0.0.md"
 
 permissions:
   contents: write
@@ -17,12 +18,14 @@ jobs:
       - name: Check out BloomCircuit
         uses: actions/checkout@v4
 
-      - name: Publish v1.0.0
+      - name: Publish or update v1.0.0
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           if gh release view v1.0.0 >/dev/null 2>&1; then
-            echo "BloomCircuit v1.0.0 already exists."
+            gh release edit v1.0.0 \
+              --title "BloomCircuit v1.0.0" \
+              --notes-file RELEASE_NOTES_v1.0.0.md
           else
             gh release create v1.0.0 \
               --target "$GITHUB_SHA" \
