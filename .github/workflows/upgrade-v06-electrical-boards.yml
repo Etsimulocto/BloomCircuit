@@ -1,80 +1,27 @@
-name: Upgrade BloomCircuit v0.6 electrical boards
+name: Verify BloomCircuit v0.6 electrical boards
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - ".github/workflows/upgrade-v06-electrical-boards.yml"
-      - "tools/upgrade_v06.py"
+  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  upgrade:
+  verify:
     runs-on: ubuntu-latest
     steps:
       - name: Check out BloomCircuit
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Tighten migration selector
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          p=Path('tools/upgrade_v06.py')
-          text=p.read_text(encoding='utf-8')
-          old="""old = '''    state.components = [];
-              state.wires = [];
-          '''
-          new = '''    state.boards = [];
-              state.components = [];
-              state.wires = [];
-          '''
-          app = replace_once(app, old, new, \"clear boards\")
-          """
-          new="""old = '''  document.getElementById(\"clearBtn\").addEventListener(\"click\",() => {
-              if (!window.confirm(\"Clear the entire BloomCircuit canvas?\")) return;
-              state.components = [];
-              state.wires = [];
-          '''
-          new = '''  document.getElementById(\"clearBtn\").addEventListener(\"click\",() => {
-              if (!window.confirm(\"Clear the entire BloomCircuit canvas?\")) return;
-              state.boards = [];
-              state.components = [];
-              state.wires = [];
-          '''
-          app = replace_once(app, old, new, \"clear boards\")
-          """
-          if old not in text:
-              raise SystemExit('clear-board migration selector not found')
-          p.write_text(text.replace(old,new,1),encoding='utf-8')
-          PY
-
-      - name: Apply electrical-board migration
-        run: python3 tools/upgrade_v06.py
 
       - name: Validate JavaScript syntax
         run: node --check app.js
 
-      - name: Verify v0.6 markers
+      - name: Verify v0.6 electrical-board markers
         run: |
           grep -q 'version:5' app.js
           grep -q 'function boardElectricalGroup' app.js
-          grep -q 'board-node' app.js
+          grep -q 'function handleBoardNodeClick' app.js
+          grep -q 'function endpointWorld' app.js
           grep -q 'function wireLaneOffset' app.js
+          grep -q 'board-node' styles.css
           grep -q 'v0.6 electrical boards' README.md
-
-      - name: Commit generated upgrade
-        run: |
-          if git diff --quiet -- app.js styles.css README.md tools/upgrade_v06.py; then
-            echo "No generated changes to commit."
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add app.js styles.css README.md tools/upgrade_v06.py
-          git commit -m "Add electrical breadboard nodes and routed wire lanes"
-          git push
