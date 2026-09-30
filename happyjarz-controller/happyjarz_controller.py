@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-HAPPY JARZ Controller v0.1
+HAPPY JARZ Controller v0.1.1
 BloomCore-style bench/service UI for Windows, Raspberry Pi, and Linux.
 
 Failure boundary:
@@ -23,7 +23,7 @@ import serial
 from serial.tools import list_ports
 
 APP_NAME = "HAPPY JARZ Controller"
-APP_VERSION = "0.1"
+APP_VERSION = "0.1.1"
 BAUD = 115200
 SCAN_SECONDS = 1.0
 HANDSHAKE_TIMEOUT = 0.45
@@ -154,6 +154,7 @@ class HappyJarzApp(tk.Tk):
         self.brightness_var = tk.IntVar(value=75)
         self.pattern_var = tk.StringVar(value="SOLID")
         self.led_colors = {1: (255, 80, 120), 2: (80, 120, 255)}
+        self._brightness_after = None
 
         self._build_ui()
         self.after(80, self._drain_events)
@@ -191,11 +192,11 @@ class HappyJarzApp(tk.Tk):
         settings = ttk.LabelFrame(root, text="Shared controls", padding=10)
         settings.pack(fill="x", pady=8)
         ttk.Label(settings, text="Brightness").grid(row=0, column=0, sticky="w")
-        scale = ttk.Scale(settings, from_=0, to=100, orient="horizontal", command=self._brightness_changed)
-        scale.set(self.brightness_var.get())
-        scale.grid(row=0, column=1, sticky="ew", padx=8)
         self.brightness_label = ttk.Label(settings, text="75%", width=5)
         self.brightness_label.grid(row=0, column=2)
+        scale = ttk.Scale(settings, from_=0, to=100, orient="horizontal", command=self._brightness_changed)
+        scale.grid(row=0, column=1, sticky="ew", padx=8)
+        scale.set(self.brightness_var.get())
         ttk.Label(settings, text="Pattern").grid(row=1, column=0, sticky="w", pady=(8, 0))
         patterns = ttk.Combobox(settings, state="readonly", textvariable=self.pattern_var,
                                 values=("OFF", "SOLID", "FADE", "RAINBOW", "PULSE"))
@@ -244,8 +245,6 @@ class HappyJarzApp(tk.Tk):
         n = max(0, min(100, int(float(value))))
         self.brightness_var.set(n)
         self.brightness_label.configure(text=f"{n}%")
-        if not hasattr(self, "_brightness_after"):
-            self._brightness_after = None
         if self._brightness_after:
             self.after_cancel(self._brightness_after)
         self._brightness_after = self.after(120, lambda: self.link.send(f"SET BRIGHTNESS {n}"))
