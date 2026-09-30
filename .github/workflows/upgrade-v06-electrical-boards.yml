@@ -1,0 +1,47 @@
+name: Upgrade BloomCircuit v0.6 electrical boards
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/upgrade-v06-electrical-boards.yml"
+      - "tools/upgrade_v06.py"
+
+permissions:
+  contents: write
+
+jobs:
+  upgrade:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out BloomCircuit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply electrical-board migration
+        run: python3 tools/upgrade_v06.py
+
+      - name: Validate JavaScript syntax
+        run: node --check app.js
+
+      - name: Verify v0.6 markers
+        run: |
+          grep -q 'version:5' app.js
+          grep -q 'function boardElectricalGroup' app.js
+          grep -q 'class:"board-node' app.js
+          grep -q 'function wireLaneOffset' app.js
+          grep -q 'v0.6 electrical boards' README.md
+
+      - name: Commit generated upgrade
+        run: |
+          if git diff --quiet -- app.js styles.css README.md; then
+            echo "No generated changes to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app.js styles.css README.md
+          git commit -m "Add electrical breadboard nodes and routed wire lanes"
+          git push
