@@ -2,6 +2,22 @@
 
 **Current stable release:** v1.0.0
 
+## v0.6 electrical boards
+
+Board underlays are now real electrical objects instead of passive background graphics.
+
+- every visible board hole is a clickable connection node
+- breadboard terminal groups model the connected holes on each side of the center trench
+- breadboard power rails are real connection groups
+- stripboard rows are electrically grouped as continuous copper strips
+- perfboard holes remain isolated unless the user explicitly wires them
+- wires can run component → board hole, board hole → board hole, or board hole → component
+- selecting one breadboard hole highlights the other holes in its electrical group
+- project JSON v5 preserves board-hole wire endpoints while still loading older component-only projects
+- wires now leave endpoints through short escape segments and staggered routing lanes to reduce overlap
+
+This lets BloomCircuit document the physical bench build rather than drawing every connection as a component-to-component abstraction.
+
 ## Raspberry Pi offline app
 
 BloomCircuit can run as a local desktop-style app on Raspberry Pi with no internet connection.

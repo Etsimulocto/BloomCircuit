@@ -480,6 +480,30 @@ body.etch-mode .net-OTHER {
   pointer-events: none;
 }
 
+.board-node {
+  fill: transparent;
+  stroke: transparent;
+  stroke-width: 1.5;
+  cursor: crosshair;
+  pointer-events: all;
+}
+
+.board-node:hover {
+  fill: rgba(255, 224, 138, .72);
+  stroke: #111;
+}
+
+.board-node.group-pending {
+  fill: rgba(141, 214, 168, .34);
+  stroke: rgba(37, 99, 235, .55);
+}
+
+.board-node.pending {
+  fill: #ffe08a;
+  stroke: #111;
+  stroke-width: 2.2;
+}
+
 .board-slot {
   fill: var(--canvas-bg);
   stroke: #7b8288;

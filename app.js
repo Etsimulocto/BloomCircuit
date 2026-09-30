@@ -260,6 +260,110 @@
     };
   }
 
+  function endpointKey(ref) {
+    if (!ref || typeof ref !== "object") return "";
+    if (ref.compId && ref.pinId) return "component:" + ref.compId + ":" + ref.pinId;
+    if (ref.boardId && ref.nodeId) return "board:" + ref.boardId + ":" + ref.nodeId;
+    return "";
+  }
+
+  function sameEndpoint(a,b) {
+    const ak=endpointKey(a);
+    return !!ak && ak === endpointKey(b);
+  }
+
+  function boardNodeLocal(board,nodeId) {
+    if (!board || typeof nodeId !== "string") return null;
+    const g=boardGeometry(board);
+    let match=nodeId.match(/^h_(\d+)_(\d+)$/);
+    if (match) {
+      const row=Number(match[1]);
+      const col=Number(match[2]);
+      if (row < 0 || row >= board.holesY || col < 0 || col >= board.holesX) return null;
+      return { kind:"hole",row,col,x:boardHoleX(col,g),y:boardHoleY(board,row,g) };
+    }
+    match=nodeId.match(/^r_(\d+)_(\d+)$/);
+    if (match && board.type === "breadboardRails") {
+      const rail=Number(match[1]);
+      const col=Number(match[2]);
+      if (rail < 0 || rail > 3 || col < 0 || col >= board.holesX) return null;
+      const railYs=[14,26,g.height-26,g.height-14];
+      return { kind:"rail",rail,col,x:boardHoleX(col,g),y:railYs[rail] };
+    }
+    return null;
+  }
+
+  function boardElectricalGroup(board,nodeId) {
+    const node=boardNodeLocal(board,nodeId);
+    if (!node) return "";
+    if (node.kind === "rail") return "rail:" + node.rail;
+    if (board.type === "perf") return "isolated:" + node.row + ":" + node.col;
+    if (board.type === "strip") return "strip:" + node.row;
+    const half=Math.ceil(board.holesY/2);
+    return "terminal:" + node.col + ":" + (node.row < half ? "top" : "bottom");
+  }
+
+  function boardNodeLabel(board,nodeId) {
+    const node=boardNodeLocal(board,nodeId);
+    if (!node) return "unknown hole";
+    if (node.kind === "rail") {
+      const names=["TOP +","TOP -","BOTTOM +","BOTTOM -"];
+      return names[node.rail] + " " + (node.col+1);
+    }
+    if (board.type === "breadboard" || board.type === "breadboardRails") {
+      const rowLabel=node.row < 26 ? String.fromCharCode(65+node.row) : "R"+(node.row+1);
+      return rowLabel + (node.col+1);
+    }
+    return "R"+(node.row+1)+"C"+(node.col+1);
+  }
+
+  function boardGroupLabel(board,nodeId) {
+    const node=boardNodeLocal(board,nodeId);
+    if (!node) return "";
+    if (node.kind === "rail") {
+      return ["top + rail","top - rail","bottom + rail","bottom - rail"][node.rail];
+    }
+    if (board.type === "perf") return "isolated hole";
+    if (board.type === "strip") return "connected strip row " + (node.row+1);
+    const half=Math.ceil(board.holesY/2);
+    const first=node.row < half ? 0 : half;
+    const last=node.row < half ? half-1 : board.holesY-1;
+    const firstLabel=first < 26 ? String.fromCharCode(65+first) : "R"+(first+1);
+    const lastLabel=last < 26 ? String.fromCharCode(65+last) : "R"+(last+1);
+    return "connected " + firstLabel + "–" + lastLabel + " column " + (node.col+1);
+  }
+
+  function boardNodeWorld(boardId,nodeId) {
+    const board=getBoard(boardId);
+    const node=boardNodeLocal(board,nodeId);
+    if (!board || !node) return null;
+    const g=boardGeometry(board);
+    const angle=((Number(board.rotation)||0)%360+360)%360;
+    const scale=clamp(Number(board.scale)||1,.1,10);
+    const cx=g.width/2;
+    const cy=g.height/2;
+    const rad=angle*Math.PI/180;
+    const dx=(node.x-cx)*scale;
+    const dy=(node.y-cy)*scale;
+    return {
+      x:board.x+cx+dx*Math.cos(rad)-dy*Math.sin(rad),
+      y:board.y+cy+dx*Math.sin(rad)+dy*Math.cos(rad)
+    };
+  }
+
+  function endpointWorld(ref) {
+    if (ref && ref.compId && ref.pinId) return pinWorld(ref.compId,ref.pinId);
+    if (ref && ref.boardId && ref.nodeId) return boardNodeWorld(ref.boardId,ref.nodeId);
+    return null;
+  }
+
+  function endpointRole(ref) {
+    if (!ref || !ref.compId || !ref.pinId) return null;
+    const comp=getComponent(ref.compId);
+    const pin=getPinDef(comp,ref.pinId);
+    return pin && pin.role || null;
+  }
+
   function connectionLabel(pinDef, comp) {
     if (comp.type === "pi40") {
       if ([1,2,4,6,19].includes(pinDef.number)) return pinDef.number + " " + pinDef.name;
@@ -350,7 +454,7 @@
       cx: pinDef.x,
       cy: pinDef.y,
       r: 5,
-      class: "pin" + (state.pendingPin && state.pendingPin.compId === comp.id && state.pendingPin.pinId === pinDef.id ? " pending" : ""),
+      class: "pin" + (sameEndpoint(state.pendingPin,{compId:comp.id,pinId:pinDef.id}) ? " pending" : ""),
       "data-comp-id": comp.id,
       "data-pin-id": pinDef.id
     });
@@ -426,14 +530,35 @@
     componentsLayer.appendChild(group);
   }
 
-  function wirePath(a, b) {
-    const dx = Math.abs(b.x - a.x);
-    if (dx > 50) {
-      const mx = snap((a.x + b.x) / 2);
-      return "M " + a.x + " " + a.y + " H " + mx + " V " + b.y + " H " + b.x;
+  function wireLaneOffset(wire) {
+    const id=String(wire && wire.id || "wire");
+    let hash=0;
+    for (let i=0;i<id.length;i+=1) hash=((hash*31)+id.charCodeAt(i))>>>0;
+    return ((hash % 7)-3)*GRID;
+  }
+
+  function wirePath(a,b,wire) {
+    const dx=b.x-a.x;
+    const dy=b.y-a.y;
+    const lane=wireLaneOffset(wire);
+
+    // Give every wire a short escape segment before it enters a routing lane.
+    // The staggered lane offset keeps bundles readable instead of stacking them.
+    if (Math.abs(dx) >= Math.abs(dy)) {
+      const dir=dx >= 0 ? 1 : -1;
+      const escape=Math.max(GRID,Math.min(GRID*2,Math.abs(dx)/3 || GRID));
+      const ax=a.x+dir*escape;
+      const bx=b.x-dir*escape;
+      const laneY=snap((a.y+b.y)/2+lane);
+      return "M "+a.x+" "+a.y+" H "+ax+" V "+laneY+" H "+bx+" V "+b.y+" H "+b.x;
     }
-    const my = snap((a.y + b.y) / 2);
-    return "M " + a.x + " " + a.y + " V " + my + " H " + b.x + " V " + b.y;
+
+    const dir=dy >= 0 ? 1 : -1;
+    const escape=Math.max(GRID,Math.min(GRID*2,Math.abs(dy)/3 || GRID));
+    const ay=a.y+dir*escape;
+    const by=b.y-dir*escape;
+    const laneX=snap((a.x+b.x)/2+lane);
+    return "M "+a.x+" "+a.y+" V "+ay+" H "+laneX+" V "+by+" H "+b.x+" V "+b.y;
   }
 
   function blankWireNotes() {
@@ -541,8 +666,8 @@
   }
 
   function renderWire(wire) {
-    const a = pinWorld(wire.from.compId, wire.from.pinId);
-    const b = pinWorld(wire.to.compId, wire.to.pinId);
+    const a = endpointWorld(wire.from);
+    const b = endpointWorld(wire.to);
     if (!a || !b) return;
 
     const isWireSelected = state.selected &&
@@ -550,7 +675,7 @@
       state.selected.id === wire.id;
     const baseWidth = clamp(Number(wire.width) || 4, 1, 12);
     const path = svgEl("path", {
-      d: wirePath(a,b),
+      d: wirePath(a,b,wire),
       class: "wire net-" + wire.net + (isWireSelected ? " selected" : ""),
       style: "stroke:" + (wire.color || NET_COLORS[wire.net] || NET_COLORS.OTHER) + ";stroke-width:" + (isWireSelected ? baseWidth + 3 : baseWidth),
       "data-id": wire.id
@@ -646,6 +771,34 @@
       : null;
   }
 
+  function renderBoardNode(group,board,nodeId,x,y) {
+    const ref={ boardId:board.id,nodeId };
+    const ownGroup=boardElectricalGroup(board,nodeId);
+    let pendingGroup="";
+    if (state.pendingPin && state.pendingPin.boardId === board.id) {
+      pendingGroup=boardElectricalGroup(board,state.pendingPin.nodeId);
+    }
+    const classes=["board-node"];
+    if (sameEndpoint(state.pendingPin,ref)) classes.push("pending");
+    else if (pendingGroup && ownGroup === pendingGroup) classes.push("group-pending");
+
+    const node=svgEl("circle",{
+      cx:x,cy:y,r:5.5,
+      class:classes.join(" "),
+      "data-board-id":board.id,
+      "data-node-id":nodeId
+    });
+    const title=svgEl("title");
+    title.textContent=boardNodeLabel(board,nodeId)+" • "+boardGroupLabel(board,nodeId);
+    node.appendChild(title);
+    node.addEventListener("pointerdown",e=>e.stopPropagation());
+    node.addEventListener("click",e=>{
+      e.stopPropagation();
+      handleBoardNodeClick(board.id,nodeId);
+    });
+    group.appendChild(node);
+  }
+
   function renderBoard(board) {
     const g = boardGeometry(board);
     const isSelected = state.selected && state.selected.kind === "board" && state.selected.id === board.id;
@@ -715,9 +868,11 @@
           class:"board-rail" + (index % 2 === 0 ? " power" : "")
         }));
         for (let col=0; col<board.holesX; col+=1) {
+          const x=boardHoleX(col,g);
           group.appendChild(svgEl("circle",{
-            cx:boardHoleX(col,g),cy:y,r:2.8,class:"board-hole"
+            cx:x,cy:y,r:2.8,class:"board-hole"
           }));
+          renderBoardNode(group,board,"r_"+index+"_"+col,x,y);
         }
       });
     }
@@ -726,9 +881,11 @@
     for (let row=0; row<board.holesY; row+=1) {
       const y=boardHoleY(board,row,g);
       for (let col=0; col<board.holesX; col+=1) {
+        const x=boardHoleX(col,g);
         group.appendChild(svgEl("circle",{
-          cx:boardHoleX(col,g),cy:y,r:2.8,class:"board-hole"
+          cx:x,cy:y,r:2.8,class:"board-hole"
         }));
+        renderBoardNode(group,board,"h_"+row+"_"+col,x,y);
       }
     }
 
@@ -860,18 +1017,20 @@
   }
 
   function describePin(ref) {
-    const comp = getComponent(ref.compId);
-    const pinDef = getPinDef(comp, ref.pinId);
+    if (ref && ref.boardId && ref.nodeId) {
+      const board=getBoard(ref.boardId);
+      if (!board || !boardNodeLocal(board,ref.nodeId)) return "unknown board hole";
+      const typeNames={perf:"Perfboard",strip:"Stripboard",breadboard:"Breadboard",breadboardRails:"Breadboard + rails"};
+      return (typeNames[board.type] || "Board") + " / " + boardNodeLabel(board,ref.nodeId) + " (" + boardGroupLabel(board,ref.nodeId) + ")";
+    }
+    const comp = getComponent(ref && ref.compId);
+    const pinDef = getPinDef(comp, ref && ref.pinId);
     if (!comp || !pinDef || !components[comp.type]) return "unknown pin";
     return components[comp.type].title + " / " + connectionLabel(pinDef, comp);
   }
 
   function safetyWarning(from, to, net) {
-    const aComp = getComponent(from.compId);
-    const bComp = getComponent(to.compId);
-    const a = getPinDef(aComp, from.pinId);
-    const b = getPinDef(bComp, to.pinId);
-    const roles = [a && a.role, b && b.role];
+    const roles = [endpointRole(from),endpointRole(to)];
 
     if (net === "5V" && roles.some(role => role === "gpio" || role === "3v3" || role === "gnd")) {
       return "WARNING: 5V net touches a GPIO, 3V3, or GND pin. Verify before powering.";
@@ -885,50 +1044,56 @@
     return "";
   }
 
-  function handlePinClick(compId, pinId) {
-    const ref = { compId, pinId };
-
+  function handleConnectionClick(ref) {
     if (!state.pendingPin) {
-      state.pendingPin = ref;
+      state.pendingPin={ ...ref };
       setWarning("");
-      setStatus("Start: " + describePin(ref) + ". Choose destination pin.");
+      setStatus("Start: " + describePin(ref) + ". Choose destination pin or board hole.");
       render();
       return;
     }
 
-    if (state.pendingPin.compId === compId && state.pendingPin.pinId === pinId) {
-      state.pendingPin = null;
+    if (sameEndpoint(state.pendingPin,ref)) {
+      state.pendingPin=null;
       setStatus("Wire cancelled.");
       render();
       return;
     }
 
-    const net = netType.value;
-    const exists = state.wires.some(w =>
-      ((w.from.compId === state.pendingPin.compId && w.from.pinId === state.pendingPin.pinId && w.to.compId === compId && w.to.pinId === pinId) ||
-       (w.to.compId === state.pendingPin.compId && w.to.pinId === state.pendingPin.pinId && w.from.compId === compId && w.from.pinId === pinId))
+    const net=netType.value;
+    const exists=state.wires.some(w =>
+      (sameEndpoint(w.from,state.pendingPin) && sameEndpoint(w.to,ref)) ||
+      (sameEndpoint(w.to,state.pendingPin) && sameEndpoint(w.from,ref))
     );
 
     if (!exists) {
-      const wire = {
-        id: uid("wire"),
-        from: { ...state.pendingPin },
-        to: ref,
+      const wire={
+        id:uid("wire"),
+        from:{ ...state.pendingPin },
+        to:{ ...ref },
         net,
         color:null,
         width:4,
         notes:blankWireNotes()
       };
       state.wires.push(wire);
-      state.selected = { kind:"wire", id:wire.id };
-      setWarning(safetyWarning(wire.from, wire.to, net));
+      state.selected={ kind:"wire",id:wire.id };
+      setWarning(safetyWarning(wire.from,wire.to,net));
       setStatus(net + " wire: " + describePin(wire.from) + " → " + describePin(wire.to));
     } else {
-      setStatus("Those pins are already connected.");
+      setStatus("Those connection points are already wired together.");
     }
 
-    state.pendingPin = null;
+    state.pendingPin=null;
     render();
+  }
+
+  function handlePinClick(compId,pinId) {
+    handleConnectionClick({ compId,pinId });
+  }
+
+  function handleBoardNodeClick(boardId,nodeId) {
+    handleConnectionClick({ boardId,nodeId });
   }
 
   function clientToSvg(e) {
@@ -964,6 +1129,7 @@
 
   function beginBoardDrag(e,boardId) {
     if (e.button !== undefined && e.button !== 0) return;
+    if (e.target.classList && e.target.classList.contains("board-node")) return;
     const board=getBoard(boardId);
     if (!board) return;
     const p=clientToSvg(e);
@@ -1040,7 +1206,9 @@
     }
 
     if (state.selected.kind === "board") {
-      state.boards=state.boards.filter(board => board.id !== state.selected.id);
+      const id=state.selected.id;
+      state.boards=state.boards.filter(board => board.id !== id);
+      state.wires=state.wires.filter(w => w.from.boardId !== id && w.to.boardId !== id);
       state.selected=null;
     } else if (state.selected.kind === "component") {
       const id = state.selected.id;
@@ -1072,7 +1240,7 @@
   function saveProject() {
     const data = {
       format:"BloomCircuit",
-      version:4,
+      version:5,
       projectName:projectName.value.trim() || "BloomCircuit",
       gridPx:GRID,
       mmPerPx:MM_PER_PX,
@@ -1128,10 +1296,22 @@
     }));
 
     const validIds = new Set(goodComponents.map(c => c.id));
+    const boardMap=new Map(goodBoards.map(board => [board.id,board]));
+    const validEndpoint=ref => {
+      if (!ref || typeof ref !== "object") return false;
+      if (ref.compId && ref.pinId) return validIds.has(ref.compId) && typeof ref.pinId === "string";
+      if (ref.boardId && ref.nodeId) {
+        const board=boardMap.get(ref.boardId);
+        return !!board && !!boardNodeLocal(board,ref.nodeId);
+      }
+      return false;
+    };
+    const normalizeEndpoint=ref => ref.compId
+      ? { compId:String(ref.compId),pinId:String(ref.pinId) }
+      : { boardId:String(ref.boardId),nodeId:String(ref.nodeId) };
     const goodWires = data.wires.filter(w =>
       w && typeof w.id === "string" &&
-      w.from && w.to &&
-      validIds.has(w.from.compId) && validIds.has(w.to.compId) &&
+      validEndpoint(w.from) && validEndpoint(w.to) &&
       ["5V","3V3","GND","DATA","OTHER"].includes(w.net)
     ).map(w => {
       const normalizeNote = raw => ({
@@ -1141,6 +1321,8 @@
       });
       return {
         ...w,
+        from:normalizeEndpoint(w.from),
+        to:normalizeEndpoint(w.to),
         color:typeof w.color === "string" ? w.color : null,
         width:clamp(Number(w.width) || 4,1,12),
         notes:{
@@ -1189,7 +1371,7 @@
 
     clone.querySelectorAll(".selected").forEach(el => el.classList.remove("selected"));
     clone.querySelectorAll(".pending").forEach(el => el.classList.remove("pending"));
-    clone.querySelectorAll(".wire-note-handle,.wire-note-plus").forEach(el => el.remove());
+    clone.querySelectorAll(".wire-note-handle,.wire-note-plus,.board-node").forEach(el => el.remove());
     clone.setAttribute("xmlns",NS);
     clone.setAttribute("width",(CANVAS_WIDTH*MM_PER_PX).toFixed(2)+"mm");
     clone.setAttribute("height",(CANVAS_HEIGHT*MM_PER_PX).toFixed(2)+"mm");
@@ -1244,8 +1426,6 @@
   }
 
   function loadHappyJarz() {
-    state.boards = [];
-    state.boards = [];
     state.boards = [];
     state.components = [];
     state.wires = [];
@@ -1640,6 +1820,16 @@
     const g=boardGeometry(board);
     board.x=snap(clamp(board.x,0,CANVAS_WIDTH-g.width));
     board.y=snap(clamp(board.y,0,CANVAS_HEIGHT-g.height));
+
+    // Resizing or changing board type can remove physical holes/rails.
+    state.wires=state.wires.filter(w => {
+      if (w.from.boardId === board.id && !boardNodeLocal(board,w.from.nodeId)) return false;
+      if (w.to.boardId === board.id && !boardNodeLocal(board,w.to.nodeId)) return false;
+      return true;
+    });
+    if (state.pendingPin && state.pendingPin.boardId === board.id && !boardNodeLocal(board,state.pendingPin.nodeId)) {
+      state.pendingPin=null;
+    }
     render();
   }
 
@@ -1690,6 +1880,7 @@
     const board=selectedBoard();
     if (!board) return;
     state.boards=state.boards.filter(item => item.id !== board.id);
+    state.wires=state.wires.filter(w => w.from.boardId !== board.id && w.to.boardId !== board.id);
     state.selected=null;
     setStatus("Board underlay deleted.");
     render();
@@ -1987,6 +2178,7 @@
 
   document.getElementById("clearBtn").addEventListener("click",() => {
     if (!window.confirm("Clear the entire BloomCircuit canvas?")) return;
+    state.boards = [];
     state.components = [];
     state.wires = [];
     state.canvasSettings = { ...CANVAS_DEFAULTS };

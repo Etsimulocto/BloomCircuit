@@ -524,10 +524,14 @@ new = '''  document.getElementById("deleteBoardBtn").addEventListener("click",()
 '''
 app = replace_once(app, old, new, "delete board button wires")
 
-old = '''    state.components = [];
+old = '''  document.getElementById("clearBtn").addEventListener("click",() => {
+    if (!window.confirm("Clear the entire BloomCircuit canvas?")) return;
+    state.components = [];
     state.wires = [];
 '''
-new = '''    state.boards = [];
+new = '''  document.getElementById("clearBtn").addEventListener("click",() => {
+    if (!window.confirm("Clear the entire BloomCircuit canvas?")) return;
+    state.boards = [];
     state.components = [];
     state.wires = [];
 '''
