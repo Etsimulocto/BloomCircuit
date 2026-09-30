@@ -1,13 +1,5 @@
 #!/usr/bin/env python3
-"""
-HAPPY JARZ Controller v0.2.0
-BloomCore-style bench/service UI for Windows, Raspberry Pi, and Linux.
-
-Failure boundary:
-- This program owns USB discovery, UI, logging, and protocol commands.
-- It does NOT own APA106 pulse timing.
-- If local ESP32 LED diagnostics pass but this app fails, debug this layer first.
-"""
+"""HAPPY JARZ Controller v0.2.1 — BloomCore bench/service UI."""
 
 from __future__ import annotations
 
@@ -23,7 +15,7 @@ import serial
 from serial.tools import list_ports
 
 APP_NAME = "HAPPY JARZ Controller"
-APP_VERSION = "0.2.0"
+APP_VERSION = "0.2.1"
 BAUD = 115200
 SCAN_SECONDS = 1.0
 HANDSHAKE_TIMEOUT = 0.45
@@ -38,9 +30,6 @@ TEXT = "#eef3ff"
 MUTED = "#8fa2c6"
 ACCENT = "#8b5cf6"
 ACCENT_2 = "#22d3ee"
-GOOD = "#34d399"
-WARN = "#f59e0b"
-DANGER = "#fb7185"
 
 
 class JarSerial:
@@ -51,8 +40,7 @@ class JarSerial:
         self.running = True
         self.lock = threading.Lock()
         self.reader_thread: threading.Thread | None = None
-        self.scan_thread = threading.Thread(target=self._scan_loop, daemon=True)
-        self.scan_thread.start()
+        threading.Thread(target=self._scan_loop, daemon=True).start()
 
     def _emit(self, kind: str, payload=None):
         self.events.put((kind, payload))
@@ -144,26 +132,16 @@ class HappyJarzApp(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title(f"{APP_NAME} v{APP_VERSION}")
-        self.geometry("980x760")
-        self.minsize(900, 690)
+        self.geometry("980x650")
+        self.minsize(840, 590)
         self.configure(bg=BG)
 
         LOG_DIR.mkdir(parents=True, exist_ok=True)
         self.events: queue.Queue = queue.Queue()
         self.link = JarSerial(self.events)
-
-        self.identity_vars = {
-            "serial": tk.StringVar(value="—"),
-            "hw": tk.StringVar(value="—"),
-            "fw": tk.StringVar(value="—"),
-        }
+        self.identity_vars = {k: tk.StringVar(value="—") for k in ("serial", "hw", "fw")}
         self.connection_var = tk.StringVar(value="WAITING FOR JAR")
-        self.touch_vars = {
-            "c1": tk.StringVar(value="—"),
-            "c2": tk.StringVar(value="—"),
-            "up": tk.StringVar(value="—"),
-            "down": tk.StringVar(value="—"),
-        }
+        self.touch_vars = {k: tk.StringVar(value="—") for k in ("c1", "c2", "up", "down")}
         self.brightness_var = tk.IntVar(value=75)
         self.pattern_var = tk.StringVar(value="SOLID")
         self.led_colors = {1: (255, 80, 120), 2: (80, 120, 255)}
@@ -182,7 +160,6 @@ class HappyJarzApp(tk.Tk):
             style.theme_use("clam")
         except tk.TclError:
             pass
-
         style.configure(".", background=BG, foreground=TEXT, fieldbackground=PANEL_2,
                         bordercolor=BORDER, lightcolor=BORDER, darkcolor=BORDER,
                         font=("TkDefaultFont", 10))
@@ -193,124 +170,98 @@ class HappyJarzApp(tk.Tk):
         style.configure("Panel.TLabel", background=PANEL, foreground=TEXT)
         style.configure("Muted.TLabel", background=BG, foreground=MUTED)
         style.configure("PanelMuted.TLabel", background=PANEL, foreground=MUTED)
-        style.configure("Title.TLabel", background=BG, foreground=TEXT,
-                        font=("TkDefaultFont", 24, "bold"))
-        style.configure("Section.TLabel", background=PANEL, foreground=TEXT,
-                        font=("TkDefaultFont", 11, "bold"))
-        style.configure("Value.TLabel", background=PANEL, foreground=ACCENT_2,
-                        font=("TkFixedFont", 12, "bold"))
-        style.configure("TouchValue.TLabel", background=PANEL_2, foreground=TEXT,
-                        font=("TkFixedFont", 15, "bold"))
-        style.configure("TButton", background=PANEL_2, foreground=TEXT,
-                        borderwidth=0, padding=(12, 8))
+        style.configure("Title.TLabel", background=BG, foreground=TEXT, font=("TkDefaultFont", 21, "bold"))
+        style.configure("Section.TLabel", background=PANEL, foreground=TEXT, font=("TkDefaultFont", 10, "bold"))
+        style.configure("Value.TLabel", background=PANEL, foreground=ACCENT_2, font=("TkFixedFont", 11, "bold"))
+        style.configure("TouchValue.TLabel", background=PANEL_2, foreground=TEXT, font=("TkFixedFont", 13, "bold"))
+        style.configure("TButton", background=PANEL_2, foreground=TEXT, borderwidth=0, padding=(10, 6))
         style.map("TButton", background=[("active", "#24324d")], foreground=[("active", "#ffffff")])
-        style.configure("Accent.TButton", background=ACCENT, foreground="#ffffff",
-                        borderwidth=0, padding=(12, 9), font=("TkDefaultFont", 10, "bold"))
+        style.configure("Accent.TButton", background=ACCENT, foreground="#ffffff", borderwidth=0,
+                        padding=(10, 7), font=("TkDefaultFont", 10, "bold"))
         style.map("Accent.TButton", background=[("active", "#a78bfa")])
-        style.configure("Danger.TButton", background="#3a1e2a", foreground="#ffd5df",
-                        borderwidth=0, padding=(12, 8))
+        style.configure("Danger.TButton", background="#3a1e2a", foreground="#ffd5df", borderwidth=0, padding=(10, 6))
         style.map("Danger.TButton", background=[("active", "#5a2438")])
         style.configure("TScale", background=PANEL, troughcolor="#26334c")
-        style.configure("TCombobox", fieldbackground=PANEL_2, background=PANEL_2,
-                        foreground=TEXT, arrowcolor=TEXT, bordercolor=BORDER, padding=6)
-        style.map("TCombobox", fieldbackground=[("readonly", PANEL_2)],
-                  foreground=[("readonly", TEXT)], selectbackground=[("readonly", PANEL_2)])
-        style.configure("Vertical.TScrollbar", background=PANEL_2, troughcolor=PANEL,
-                        bordercolor=PANEL, arrowcolor=MUTED)
+        style.configure("TCombobox", fieldbackground=PANEL_2, background=PANEL_2, foreground=TEXT,
+                        arrowcolor=TEXT, bordercolor=BORDER, padding=5)
+        style.map("TCombobox", fieldbackground=[("readonly", PANEL_2)], foreground=[("readonly", TEXT)])
+        style.configure("Vertical.TScrollbar", background=PANEL_2, troughcolor=PANEL, bordercolor=PANEL, arrowcolor=MUTED)
 
     @staticmethod
-    def _card(parent, padding=14):
+    def _card(parent, padding=10):
         outer = tk.Frame(parent, bg=BORDER, bd=0)
         inner = ttk.Frame(outer, style="Panel.TFrame", padding=padding)
         inner.pack(fill="both", expand=True, padx=1, pady=1)
         return outer, inner
 
     def _build_ui(self):
-        root = ttk.Frame(self, padding=18)
+        root = ttk.Frame(self, padding=12)
         root.pack(fill="both", expand=True)
 
         header = ttk.Frame(root)
-        header.pack(fill="x", pady=(0, 14))
-
+        header.pack(fill="x", pady=(0, 8))
         left = ttk.Frame(header)
         left.pack(side="left", fill="x", expand=True)
         ttk.Label(left, text="HAPPY JARZ", style="Title.TLabel").pack(anchor="w")
-        ttk.Label(left, text="LIGHT + TOUCH CONTROL CONSOLE  •  BLOOMCORE",
-                  style="Muted.TLabel").pack(anchor="w", pady=(2, 0))
+        ttk.Label(left, text="LIGHT + TOUCH CONTROL CONSOLE  •  BLOOMCORE", style="Muted.TLabel").pack(anchor="w")
+        self.status_pill = tk.Label(header, textvariable=self.connection_var, bg="#2a2417", fg="#ffd77a",
+                                    padx=12, pady=6, font=("TkDefaultFont", 9, "bold"), bd=0)
+        self.status_pill.pack(side="right", padx=(10, 0))
 
-        self.status_pill = tk.Label(
-            header, textvariable=self.connection_var, bg="#2a2417", fg="#ffd77a",
-            padx=14, pady=8, font=("TkDefaultFont", 10, "bold"), bd=0
-        )
-        self.status_pill.pack(side="right", padx=(12, 0))
-
-        device_outer, device = self._card(root, 12)
-        device_outer.pack(fill="x", pady=(0, 12))
-        ttk.Label(device, text="DEVICE", style="Section.TLabel").grid(row=0, column=0, sticky="w", padx=(0, 18))
+        device_outer, device = self._card(root, 8)
+        device_outer.pack(fill="x", pady=(0, 8))
+        ttk.Label(device, text="DEVICE", style="Section.TLabel").grid(row=0, column=0, sticky="w", padx=(0, 14))
         for col, (label, key) in enumerate((("SERIAL", "serial"), ("HARDWARE", "hw"), ("FIRMWARE", "fw")), start=1):
             box = ttk.Frame(device, style="Panel.TFrame")
-            box.grid(row=0, column=col, sticky="ew", padx=8)
+            box.grid(row=0, column=col, sticky="ew", padx=6)
             ttk.Label(box, text=label, style="PanelMuted.TLabel", font=("TkDefaultFont", 8, "bold")).pack(anchor="w")
             ttk.Label(box, textvariable=self.identity_vars[key], style="Value.TLabel").pack(anchor="w")
             device.columnconfigure(col, weight=1)
 
         lights = ttk.Frame(root)
-        lights.pack(fill="x", pady=(0, 12))
+        lights.pack(fill="x", pady=(0, 8))
         lights.columnconfigure(0, weight=1)
         lights.columnconfigure(1, weight=1)
-
         for led in (1, 2):
-            outer, box = self._card(lights, 14)
-            outer.grid(row=0, column=led - 1, sticky="nsew", padx=(0, 6) if led == 1 else (6, 0))
-
+            outer, box = self._card(lights, 10)
+            outer.grid(row=0, column=led - 1, sticky="nsew", padx=(0, 4) if led == 1 else (4, 0))
             top = ttk.Frame(box, style="Panel.TFrame")
             top.pack(fill="x")
             ttk.Label(top, text=f"LIGHT {led}", style="Section.TLabel").pack(side="left")
-            swatch = tk.Label(top, text="     ", bg="#%02x%02x%02x" % self.led_colors[led],
-                              relief="flat", bd=0, padx=4, pady=5)
+            swatch = tk.Label(top, text="    ", bg="#%02x%02x%02x" % self.led_colors[led], padx=3, pady=3, bd=0)
             swatch.pack(side="right")
             self.led_swatches[led] = swatch
-
-            ttk.Label(box, text="Independent APA106 output", style="PanelMuted.TLabel").pack(anchor="w", pady=(2, 12))
-            ttk.Button(box, text="Choose color", style="Accent.TButton",
-                       command=lambda n=led: self._choose_color(n)).pack(fill="x")
-
             row = ttk.Frame(box, style="Panel.TFrame")
             row.pack(fill="x", pady=(8, 0))
-            ttk.Button(row, text="White test", command=lambda n=led: self._set_led(n, 255, 255, 255)).pack(side="left", fill="x", expand=True)
-            ttk.Button(row, text="Off", style="Danger.TButton",
-                       command=lambda n=led: self._set_led(n, 0, 0, 0)).pack(side="left", fill="x", expand=True, padx=(8, 0))
+            ttk.Button(row, text="Choose color", style="Accent.TButton", command=lambda n=led: self._choose_color(n)).pack(side="left", fill="x", expand=True)
+            ttk.Button(row, text="White", command=lambda n=led: self._set_led(n, 255, 255, 255)).pack(side="left", padx=(6, 0))
+            ttk.Button(row, text="Off", style="Danger.TButton", command=lambda n=led: self._set_led(n, 0, 0, 0)).pack(side="left", padx=(6, 0))
 
-        settings_outer, settings = self._card(root, 14)
-        settings_outer.pack(fill="x", pady=(0, 12))
-        ttk.Label(settings, text="SCENE CONTROL", style="Section.TLabel").grid(row=0, column=0, columnspan=4, sticky="w")
-        ttk.Label(settings, text="Brightness", style="PanelMuted.TLabel").grid(row=1, column=0, sticky="w", pady=(12, 0))
-
+        settings_outer, settings = self._card(root, 9)
+        settings_outer.pack(fill="x", pady=(0, 8))
+        ttk.Label(settings, text="SCENE CONTROL", style="Section.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(settings, text="Brightness", style="PanelMuted.TLabel").grid(row=1, column=0, sticky="w", pady=(6, 0))
         self.brightness_label = ttk.Label(settings, text="75%", style="Value.TLabel", width=5)
-        self.brightness_label.grid(row=1, column=2, sticky="e", pady=(12, 0))
+        self.brightness_label.grid(row=1, column=2, sticky="e", pady=(6, 0))
         scale = ttk.Scale(settings, from_=0, to=100, orient="horizontal", command=self._brightness_changed)
-        scale.grid(row=1, column=1, sticky="ew", padx=10, pady=(12, 0))
+        scale.grid(row=1, column=1, sticky="ew", padx=8, pady=(6, 0))
         scale.set(self.brightness_var.get())
-
-        ttk.Label(settings, text="Pattern", style="PanelMuted.TLabel").grid(row=2, column=0, sticky="w", pady=(12, 0))
+        ttk.Label(settings, text="Pattern", style="PanelMuted.TLabel").grid(row=2, column=0, sticky="w", pady=(6, 0))
         patterns = ttk.Combobox(settings, state="readonly", textvariable=self.pattern_var,
                                 values=("OFF", "SOLID", "FADE", "RAINBOW", "PULSE"))
-        patterns.grid(row=2, column=1, sticky="ew", padx=10, pady=(12, 0))
+        patterns.grid(row=2, column=1, sticky="ew", padx=8, pady=(6, 0))
         patterns.bind("<<ComboboxSelected>>", lambda _e: self.link.send(f"SET PATTERN {self.pattern_var.get()}"))
-        ttk.Button(settings, text="Save to Jar", style="Accent.TButton",
-                   command=lambda: self.link.send("SAVE")).grid(row=2, column=2, sticky="e", pady=(12, 0))
+        ttk.Button(settings, text="Save to Jar", style="Accent.TButton", command=lambda: self.link.send("SAVE")).grid(row=2, column=2, sticky="e", pady=(6, 0))
         settings.columnconfigure(1, weight=1)
 
-        touch_outer, touch = self._card(root, 12)
-        touch_outer.pack(fill="x", pady=(0, 12))
-        ttk.Label(touch, text="LIVE CAPACITIVE TOUCH", style="Section.TLabel").grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 10))
-        labels = (("COLOR 1", "c1"), ("COLOR 2", "c2"), ("CYCLE UP", "up"), ("CYCLE DOWN", "down"))
-        for col, (name, key) in enumerate(labels):
-            tile = ttk.Frame(touch, style="Panel2.TFrame", padding=10)
-            tile.grid(row=1, column=col, sticky="nsew", padx=(0 if col == 0 else 5, 0 if col == 3 else 5))
-            ttk.Label(tile, text=name, background=PANEL_2, foreground=MUTED,
-                      font=("TkDefaultFont", 8, "bold")).pack()
-            ttk.Label(tile, textvariable=self.touch_vars[key], style="TouchValue.TLabel").pack(pady=(3, 0))
+        touch_outer, touch = self._card(root, 8)
+        touch_outer.pack(fill="x", pady=(0, 8))
+        ttk.Label(touch, text="LIVE CAPACITIVE TOUCH", style="Section.TLabel").grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 5))
+        for col, (name, key) in enumerate((("COLOR 1", "c1"), ("COLOR 2", "c2"), ("CYCLE UP", "up"), ("CYCLE DOWN", "down"))):
+            tile = ttk.Frame(touch, style="Panel2.TFrame", padding=6)
+            tile.grid(row=1, column=col, sticky="nsew", padx=(0 if col == 0 else 3, 0 if col == 3 else 3))
+            ttk.Label(tile, text=name, background=PANEL_2, foreground=MUTED, font=("TkDefaultFont", 8, "bold")).pack()
+            ttk.Label(tile, textvariable=self.touch_vars[key], style="TouchValue.TLabel").pack()
             touch.columnconfigure(col, weight=1)
 
         bottom = ttk.Frame(root)
@@ -319,24 +270,23 @@ class HappyJarzApp(tk.Tk):
         bottom.columnconfigure(1, weight=1)
         bottom.rowconfigure(0, weight=1)
 
-        diag_outer, diag = self._card(bottom, 12)
-        diag_outer.grid(row=0, column=0, sticky="nsw", padx=(0, 12))
-        ttk.Label(diag, text="DIAGNOSTICS", style="Section.TLabel").pack(anchor="w", pady=(0, 10))
+        diag_outer, diag = self._card(bottom, 8)
+        diag_outer.grid(row=0, column=0, sticky="nsw", padx=(0, 8))
+        ttk.Label(diag, text="DIAGNOSTICS", style="Section.TLabel").pack(anchor="w", pady=(0, 6))
         ttk.Button(diag, text="RGB test", command=lambda: self.link.send("TEST RGB")).pack(fill="x")
-        ttk.Button(diag, text="Touch test", command=lambda: self.link.send("TEST TOUCH")).pack(fill="x", pady=6)
+        ttk.Button(diag, text="Touch test", command=lambda: self.link.send("TEST TOUCH")).pack(fill="x", pady=4)
         ttk.Button(diag, text="Get status", command=lambda: self.link.send("GET STATUS")).pack(fill="x")
-        ttk.Button(diag, text="Ping", command=lambda: self.link.send("PING")).pack(fill="x", pady=(6, 0))
+        ttk.Button(diag, text="Ping", command=lambda: self.link.send("PING")).pack(fill="x", pady=(4, 0))
 
-        log_outer, logs = self._card(bottom, 8)
+        log_outer, logs = self._card(bottom, 6)
         log_outer.grid(row=0, column=1, sticky="nsew")
-        ttk.Label(logs, text="SESSION LOG", style="Section.TLabel").pack(anchor="w", padx=4, pady=(2, 6))
-        log_body = ttk.Frame(logs, style="Panel.TFrame")
-        log_body.pack(fill="both", expand=True)
-        self.log_text = tk.Text(log_body, height=9, wrap="word", state="disabled",
-                                bg="#080d18", fg="#b9c7df", insertbackground=TEXT,
-                                selectbackground="#3b4d70", relief="flat", bd=0,
-                                padx=10, pady=8, font=("TkFixedFont", 9))
-        scroll = ttk.Scrollbar(log_body, orient="vertical", command=self.log_text.yview)
+        ttk.Label(logs, text="SESSION LOG  •  touch telemetry hidden", style="Section.TLabel").pack(anchor="w", padx=4, pady=(1, 4))
+        body = ttk.Frame(logs, style="Panel.TFrame")
+        body.pack(fill="both", expand=True)
+        self.log_text = tk.Text(body, height=6, wrap="word", state="disabled", bg="#080d18", fg="#b9c7df",
+                                insertbackground=TEXT, selectbackground="#3b4d70", relief="flat", bd=0,
+                                padx=8, pady=6, font=("TkFixedFont", 9))
+        scroll = ttk.Scrollbar(body, orient="vertical", command=self.log_text.yview)
         self.log_text.configure(yscrollcommand=scroll.set)
         self.log_text.pack(side="left", fill="both", expand=True)
         scroll.pack(side="right", fill="y")
@@ -347,7 +297,6 @@ class HappyJarzApp(tk.Tk):
         if not hex_color:
             return
         rgb = tuple(int(hex_color[i:i + 2], 16) for i in (1, 3, 5))
-        self.led_colors[led] = rgb
         self._set_led(led, *rgb)
 
     def _set_led(self, led: int, r: int, g: int, b: int):
@@ -374,17 +323,21 @@ class HappyJarzApp(tk.Tk):
         return fields
 
     def _handle_line(self, line: str):
+        # Live touch telemetry updates the tiles silently. It no longer floods
+        # the persistent/session logs, so command/status diagnostics stay readable.
+        if line.startswith("HJ|TOUCH|"):
+            fields = self._parse_fields(line)
+            for key in self.touch_vars:
+                if key in fields:
+                    self.touch_vars[key].set(fields[key])
+            return
+
         self._log(f"RX  {line}")
         if line.startswith("HJ|IDENTITY|"):
             fields = self._parse_fields(line)
             for key in ("serial", "hw", "fw"):
                 if key in fields:
                     self.identity_vars[key].set(fields[key])
-        elif line.startswith("HJ|TOUCH|"):
-            fields = self._parse_fields(line)
-            for key in self.touch_vars:
-                if key in fields:
-                    self.touch_vars[key].set(fields[key])
         elif line.startswith("HJ|STATUS|"):
             fields = self._parse_fields(line)
             if "brightness" in fields:
