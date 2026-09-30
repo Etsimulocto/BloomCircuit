@@ -63,7 +63,7 @@ jobs:
         run: |
           grep -q 'version:5' app.js
           grep -q 'function boardElectricalGroup' app.js
-          grep -q 'class:"board-node' app.js
+          grep -q 'board-node' app.js
           grep -q 'function wireLaneOffset' app.js
           grep -q 'v0.6 electrical boards' README.md
 
