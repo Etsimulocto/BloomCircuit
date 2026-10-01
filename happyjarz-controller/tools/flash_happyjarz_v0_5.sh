@@ -3,7 +3,7 @@ set -euo pipefail
 
 # HAPPY JARZ v0.5 safe Pi flash helper.
 # Stops the USB controller/watcher so /dev/ttyACM* is free, stages the v0.5
-# sketch, applies compatibility + Wi-Fi + USB clock + touch + OLED patches,
+# sketch, applies compatibility + Wi-Fi + USB clock + touch + OLED/menu patches,
 # compiles, uploads, then restarts the watcher.
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -12,6 +12,7 @@ REPO="$(cd "$CONTROLLER_DIR/.." && pwd)"
 SRC="$CONTROLLER_DIR/firmware/happyjarz_integrated_v0_5.ino"
 TOUCH_PATCH="$HERE/patch_happyjarz_touch.py"
 OLED_PATCH="$HERE/patch_happyjarz_oled.py"
+MENU_PATCH="$HERE/patch_happyjarz_menu_controls.py"
 WORK="$HOME/hjflash/happyjarz_integrated_v0_5"
 SKETCH="$WORK/happyjarz_integrated_v0_5.ino"
 FQBN="esp32:esp32:esp32s3:CDCOnBoot=cdc"
@@ -21,18 +22,12 @@ if ! command -v arduino-cli >/dev/null 2>&1; then
   exit 1
 fi
 
-if [[ ! -f "$SRC" ]]; then
-  echo "ERROR: firmware source missing: $SRC"
-  exit 1
-fi
-if [[ ! -f "$TOUCH_PATCH" ]]; then
-  echo "ERROR: touch patch missing: $TOUCH_PATCH"
-  exit 1
-fi
-if [[ ! -f "$OLED_PATCH" ]]; then
-  echo "ERROR: OLED patch missing: $OLED_PATCH"
-  exit 1
-fi
+for required in "$SRC" "$TOUCH_PATCH" "$OLED_PATCH" "$MENU_PATCH"; do
+  if [[ ! -f "$required" ]]; then
+    echo "ERROR: required file missing: $required"
+    exit 1
+  fi
+done
 
 PORT="${1:-}"
 if [[ -z "$PORT" ]]; then
@@ -222,9 +217,9 @@ PY
 # Harden touch before layering the OLED/menu UI on top.
 python3 "$TOUCH_PATCH" "$SKETCH"
 
-# Add the OLED UI to the staged sketch only. This keeps the known-good source
-# recoverable while the screen/menu layout is still being tuned.
+# Add the OLED UI, then restore the original proven light-control map on HOME.
 python3 "$OLED_PATCH" "$SKETCH"
+python3 "$MENU_PATCH" "$SKETCH"
 
 # Never let background telemetry monopolize the USB CDC path after the host
 # closes. Local touch handling must remain independent of the desktop app.
@@ -249,4 +244,4 @@ echo "Upload complete. Restarting HAPPY JARZ plug watcher..."
 nohup python3 "$CONTROLLER_DIR/happyjarz_plug_watch.py" \
   >> "$HOME/.happyjarz/plug_watch_manual_start.log" 2>&1 &
 
-echo "Done. Touch layer hardened; OLED menus active."
+echo "Done. HOME keeps original controls; RIGHT opens the OLED menu."
