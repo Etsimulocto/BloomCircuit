@@ -1,21 +1,23 @@
 # HAPPY JARZ Controller
 
-**Status:** bench-proven controller + field-service layer, firmware v0.4
+**Status:** bench-proven controller + field-service layer, current firmware staging path v0.5, desktop controller v0.3.2
 
-This subsystem is the PC/Raspberry Pi side of the HAPPY JARZ powered stand. It sits above the bench-proven ESP32-S3 light/touch/display layer and is intentionally designed so desktop-side changes do not rewrite the known-good APA106 timing.
+This subsystem is the PC/Raspberry Pi side of the HAPPY JARZ powered stand. It sits above the known-good ESP32-S3 light/touch/OLED layer and is intentionally designed so desktop-side changes do not rewrite the proven APA106 timing.
 
 ## Current proven behavior
 
-- identify a Jar over USB serial with `HJ|IDENTITY|serial=HJ-001|hw=V1|fw=0.4`
+- identify a Jar over USB serial
 - reconnect after unplug/replug
 - independently control LED 1 and LED 2 colors
-- set brightness
-- select patterns: `SOLID`, `FADE`, `PULSE`, `RAINBOW`, `RANDOM`, `OFF`
-- watch all four capacitive-touch channels live
-- run RGB / touch diagnostics
-- save settings to the Jar
+- enforce the current **50% maximum brightness** used by the bench-proven build
+- expose the expanded sensory/holiday/color pattern library
+- watch six capacitive-touch inputs live
+- run RGB / touch / input diagnostics
+- configure Wi-Fi and scan networks visible to the ESP32-S3
+- set/sync the clock over Wi-Fi or directly from the host computer over USB
+- save persistent Jar settings
 - keep session/service logs
-- launch the controller automatically when a Jar is plugged in
+- launch `happyjarz_controller_v0_3_2.py` automatically when a Jar is plugged in
 - check the tracked GitHub branch on startup and every 6 hours
 - apply only safe fast-forward updates; never overwrite local edits
 - restart the watcher after a safe update when the controller is not open
@@ -30,31 +32,109 @@ Controller: **ESP32-S3 SuperMini**
 - APA106 #1 DOUT -> APA106 #2 DIN
 - APA106 VCC -> **5V**
 - common GND with ESP32
-- local decoupling capacitor at each lamp
 
 The tested lamps accept the ESP32-S3's 3.3V GPIO data while powered from 5V, so the current prototype does not require a separate logic-level-shifter IC. Do not route 5V into an ESP32 GPIO.
 
+The working data order is **RGB**, not GRB.
+
 ### Capacitive touch
 
-- GPIO1 = COLOR 1 -> next color for Light 1
-- GPIO2 = COLOR 2 -> next color for Light 2
-- GPIO4 = CYCLE UP -> next pattern
-- GPIO5 = CYCLE DOWN -> previous pattern
+Physical map:
 
-Touch calibration samples a boot baseline, requires roughly 20% over baseline, uses ~60 ms qualification, and applies slow drift compensation only while untouched.
+- GPIO4 = UP
+- GPIO5 = DOWN
+- GPIO9 = LEFT
+- GPIO10 = RIGHT
+- GPIO1 = A
+- GPIO2 = B
+
+Current HOME behavior:
+
+- A = next Light 1 palette color
+- B = next Light 2 palette color
+- UP = next pattern
+- DOWN = previous pattern
+- RIGHT = enter OLED menu
+- LEFT = no HOME action
+
+Inside OLED menus, navigation owns the controls so HOME light actions do not fall through.
+
+The touch layer uses the original proven direct `touchRead()` behavior with the roughly +20% threshold and ~60 ms qualification. Do not reintroduce the abandoned hysteresis/cooldown/release state machine that caused same-button repeat failures.
 
 ### OLED
 
-Small 4-wire I2C OLED:
+Current 4-wire I2C OLED:
 
 - VCC -> 3.3V
 - GND -> GND
 - SDA -> GPIO8
 - SCL -> GPIO6
-- address -> `0x3C`
-- tested successfully with Adafruit SSD1306 / Adafruit GFX
+- I2C address `0x3C`
+- U8g2 renderer
+- 128x64 layout
 
-Firmware shows startup stats for a few seconds, then rotates short positive HAPPY JARZ messages.
+The UI uses centered text and HOME/menu/detail/status pages.
+
+## Lighting + pattern library
+
+Current maximum LED brightness is **50%**. This is an intentional bench decision: higher abrupt white loads could drive the lamps blue, while 50% is already bright enough for the sensory/fidget use case.
+
+Current pattern names:
+
+`SOLID`, `FADE`, `PULSE`, `RAINBOW`, `RANDOM`, `HUE_FADE`, `DUAL_HUE`, `BREATH`, `DRIFT`, `AURORA`, `OCEAN`, `LAVENDER`, `SUNSET`, `CHRISTMAS`, `HALLOWEEN`, `VALENTINE`, `EASTER`, `FOURTH`, `THANKSGIVING`, `CANDY`, `GALAXY`, `FIRE`, `ICE`, `FOREST`, `NEON`, `TWINKLE`, `SPARKLE`, `COLOR_SWAP`, `COMET`, `FIREFLY`, `BUBBLEGUM`, `OFF`.
+
+Many modes calculate continuous RGB values instead of stepping only through the small physical-button palette.
+
+## OLED screensavers
+
+The current firmware automatically enters screensaver mode after **10 seconds of inactivity**.
+
+Modes:
+
+- **SAYINGS** — horizontally scrolling marquee with a large built-in positive/funny/maker/glitter saying bank
+- **SPIRAL** — procedural spiral generator
+- **TRIPPY** — procedural waves, rings, graphic-EQ bars, point fields, line lattices, dots and related geometry
+
+Physical controls while a saver is active:
+
+- LEFT / RIGHT = previous / next saver
+- B = exit saver
+- SPIRAL/TRIPPY: UP = faster
+- SPIRAL/TRIPPY: DOWN = slower
+- SPIRAL/TRIPPY: A = reseed / generate a new universe
+
+The art modes do not randomize every frame. A seed creates a coherent recipe; that recipe animates smoothly until it is reseeded.
+
+Procedural entropy currently mixes live board state including uptime, microsecond timing jitter, ESP32 temperature, Wi-Fi RSSI when available, all six touch readings, brightness, current LED RGB state and PRNG state. Seed-derived parameters control angle, radius growth, squash, wobble, point counts, phase, centers, line spacing, dot density, ring spacing, wave frequencies, amplitudes, slopes, mirroring and related variables.
+
+## Custom/business marquee sayings
+
+The controller includes an editable marquee panel intended for banks, clinics, shops, offices, events, gifts and other installations.
+
+- 8 persistent custom message slots
+- up to 96 characters per slot
+- saved in ESP32 Preferences
+- survives unplug/restart
+- `BUILTIN`, `CUSTOM`, or `MIXED` saying source
+- custom messages use the same scrolling marquee display
+
+The desktop UI can load the current messages from the Jar, edit them, send/save them, clear them, and switch the saying source.
+
+## Current desktop controller
+
+`happyjarz_controller_v0_3_2.py` is the current launcher target used by `happyjarz_plug_watch.py`.
+
+The OLED/Screensaver panel reflects the actual current firmware:
+
+- SAYINGS / SPIRAL / TRIPPY preview buttons
+- NEW UNIVERSE / reseed
+- speed up/down
+- exit saver
+- live saver status
+- fixed 10-second idle behavior
+- custom marquee editor
+
+The obsolete `OFF/CLOCK/PLASMA/STARS/BOUNCE` placeholder list, fake idle-delay setting, and non-working OLED brightness slider have been removed from the current UI.
 
 ## Known-good APA106 timing
 
@@ -64,8 +144,34 @@ Do not replace this casually. The integrated firmware uses the Arduino ESP32 HAL
 - bit 0 ~= 4 ticks high / 14 ticks low
 - bit 1 ~= 14 ticks high / 4 ticks low
 - ~100 us reset/latch
+- RGB byte order
 
 Generic NeoPixel/FastLED attempts were not the proven path for this hardware.
+
+## Current Pi flash workflow
+
+Use the standard helper instead of manually rebuilding the staged sketch:
+
+```bash
+cd ~/BloomCircuit
+git pull --ff-only
+bash happyjarz-controller/tools/flash_happyjarz_v0_5.sh
+```
+
+The helper:
+
+1. stops the controller and plug watcher so the serial port is free
+2. stages `firmware/happyjarz_integrated_v0_5.ino`
+3. applies the current compatibility, touch, OLED/menu, sensory-pattern, screensaver, expanded-sayings, custom-sayings, procedural-art and saver-protocol patches
+4. compiles with Arduino CLI
+5. uploads to the detected `/dev/ttyACM*` or `/dev/ttyUSB*` port
+6. restarts the plug watcher
+
+Current Arduino CLI FQBN:
+
+```text
+esp32:esp32:esp32s3:CDCOnBoot=cdc
+```
 
 ## Desktop requirements
 
@@ -80,7 +186,7 @@ bash install_pi_autostart.sh
 
 The installer uses Debian packages (`python3`, `python3-tk`, `python3-serial`) so it does not fight Bookworm's PEP 668 protected Python environment.
 
-The autostart entry runs `happyjarz_plug_watch.py`, not the full GUI. The watcher stays quiet until a HAPPY JARZ is detected, then opens `happyjarz_controller.py`.
+The autostart entry runs `happyjarz_plug_watch.py`, not the full GUI. The watcher stays quiet until a HAPPY JARZ is detected, then opens the current v0.3.2 controller.
 
 Manual watcher test:
 
@@ -110,7 +216,7 @@ The watcher also acts as the field updater.
 - logs update decisions
 - restarts itself after its own code changes when safe
 
-This is intended for deployed units in other regions/countries so fixes, compatibility patches, regional content, sayings, and controller changes can be delivered through the repository without requiring manual `git pull` each time.
+This is intended for deployed units so fixes, compatibility patches, regional content, sayings and controller changes can be delivered through the repository without requiring a manual Git workflow from the end user.
 
 ## Logs
 
@@ -123,13 +229,9 @@ Service logs are stored under:
 
 These are the first files to request when diagnosing a remote unit.
 
-## USB protocol
+## Protocol + firmware
 
-See [`PROTOCOL.md`](PROTOCOL.md).
-
-## Firmware
-
-See [`firmware/README.md`](firmware/README.md).
+See [`PROTOCOL.md`](PROTOCOL.md), [`APP_PROTOCOL_V0_3.md`](APP_PROTOCOL_V0_3.md), and [`firmware/README.md`](firmware/README.md).
 
 ## BloomCore failure boundary
 
@@ -139,4 +241,4 @@ If the desktop UI is wrong but the ESP32's local LED/touch/display behavior stil
 
 If the ESP32's local behavior fails, troubleshoot the firmware/hardware layer before changing the desktop app.
 
-Every feature should carry its own diagnostic path.
+**Every feature should carry its own diagnostic path.**
