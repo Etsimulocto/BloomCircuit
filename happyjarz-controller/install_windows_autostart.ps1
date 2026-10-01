@@ -9,11 +9,11 @@ if (-not $Python) {
 & $Python.Source -m pip install --user -r (Join-Path $Here "requirements.txt")
 
 $Startup = [Environment]::GetFolderPath("Startup")
-$Launcher = Join-Path $Startup "HappyJarzController.cmd"
-$Script = Join-Path $Here "happyjarz_controller.py"
+$Launcher = Join-Path $Startup "HappyJarzPlugWatch.cmd"
+$Watcher = Join-Path $Here "happyjarz_plug_watch.py"
 
-$Command = '@echo off' + "`r`n" + 'start "" "' + $Python.Source + '" "' + $Script + '"' + "`r`n"
+$Command = '@echo off' + "`r`n" + 'start "" "' + $Python.Source + '" "' + $Watcher + '"' + "`r`n"
 Set-Content -Path $Launcher -Value $Command -Encoding ASCII
 
 Write-Host "Installed: $Launcher"
-Write-Host "HAPPY JARZ Controller will start at Windows login and wait for a Jar to be plugged in."
+Write-Host "The watcher will start at Windows login and open the HAPPY JARZ controller when a Jar is plugged in."
