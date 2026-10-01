@@ -3,8 +3,8 @@ set -euo pipefail
 
 # HAPPY JARZ v0.5 safe Pi flash helper.
 # Stops the USB controller/watcher so /dev/ttyACM* is free, stages the v0.5
-# sketch, applies the Arduino .ino enum-prototype compatibility patch, compiles,
-# uploads, then restarts the plug watcher.
+# sketch, applies Arduino .ino compatibility + Wi-Fi state-machine patches,
+# compiles, uploads, then restarts the plug watcher.
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONTROLLER_DIR="$(cd "$HERE/.." && pwd)"
@@ -58,6 +58,85 @@ sed -i \
   -e 's/static bool updateInputState(InputIndex idx)/static bool updateInputState(uint8_t idx)/' \
   -e 's/updateInputState((InputIndex)i)/updateInputState(i)/' \
   "$SKETCH"
+
+# v0.5 Wi-Fi hardening: repeated WIFI CONNECT commands used to call WiFi.begin()
+# again while the station was already associating, which ESP-IDF rejects with
+# "sta is connecting, cannot set config". Patch the staged copy into a small
+# non-blocking connection state machine. Repeated clicks become harmless and NTP
+# still starts automatically after association succeeds.
+python3 - "$SKETCH" <<'PY'
+from pathlib import Path
+import sys
+
+p = Path(sys.argv[1])
+s = p.read_text(encoding="utf-8")
+
+old = '''static void connectWifi() {
+  if (!wifiSsid.length()) return;
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(wifiSsid.c_str(), wifiPassword.c_str());
+}
+'''
+new = '''static bool wifiConnecting = false;
+static unsigned long wifiConnectStartedMs = 0;
+static constexpr unsigned long WIFI_CONNECT_TIMEOUT_MS = 20000;
+
+static void connectWifi() {
+  if (!wifiSsid.length()) {
+    Serial.println("HJ|ERR|message=wifi ssid is empty");
+    return;
+  }
+
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("HJ|EVENT|wifi=CONNECTED");
+    return;
+  }
+
+  // Do not reconfigure the STA while ESP-IDF is already associating.
+  if (wifiConnecting && millis() - wifiConnectStartedMs < WIFI_CONNECT_TIMEOUT_MS) {
+    Serial.println("HJ|EVENT|wifi=CONNECTING");
+    return;
+  }
+
+  wifiConnecting = false;
+  WiFi.mode(WIFI_STA);
+  WiFi.disconnect(false, false);
+  delay(75);
+  WiFi.begin(wifiSsid.c_str(), wifiPassword.c_str());
+  wifiConnecting = true;
+  wifiConnectStartedMs = millis();
+  Serial.println("HJ|EVENT|wifi=CONNECTING");
+}
+'''
+if old not in s:
+    raise SystemExit("Wi-Fi patch failed: connectWifi block not found")
+s = s.replace(old, new, 1)
+
+old_loop = '''  static bool timeStarted=false;
+  if(!timeStarted && WiFi.status()==WL_CONNECTED){startTimeSync();timeStarted=true;Serial.println("HJ|EVENT|wifi=CONNECTED");}
+  if(timeStarted && WiFi.status()!=WL_CONNECTED) timeStarted=false;
+  delay(5);
+}'''
+new_loop = '''  static bool timeStarted=false;
+  if (WiFi.status()==WL_CONNECTED) {
+    wifiConnecting=false;
+    if(!timeStarted){startTimeSync();timeStarted=true;Serial.println("HJ|EVENT|wifi=CONNECTED");}
+  } else {
+    if(timeStarted) timeStarted=false;
+    if(wifiConnecting && millis()-wifiConnectStartedMs>=WIFI_CONNECT_TIMEOUT_MS){
+      wifiConnecting=false;
+      WiFi.disconnect(false, false);
+      Serial.println("HJ|EVENT|wifi=FAILED");
+    }
+  }
+  delay(5);
+}'''
+if old_loop not in s:
+    raise SystemExit("Wi-Fi patch failed: loop block not found")
+s = s.replace(old_loop, new_loop, 1)
+
+p.write_text(s, encoding="utf-8")
+PY
 
 echo "Compiling..."
 arduino-cli compile --fqbn "$FQBN" "$WORK"
