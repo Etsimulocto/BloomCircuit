@@ -10,6 +10,7 @@ Goals:
 - add a short release lockout so one touch produces one clean event
 - keep slow baseline tracking while untouched
 - print baseline/threshold diagnostics after calibration
+- print ESP32 reset reason on boot so unexpected USB drops are diagnosable
 """
 
 from pathlib import Path
@@ -20,6 +21,9 @@ if len(sys.argv) != 2:
 
 p = Path(sys.argv[1])
 s = p.read_text(encoding="utf-8")
+
+if '#include "esp_system.h"' not in s:
+    s = s.replace('#include <Arduino.h>\n', '#include <Arduino.h>\n#include "esp_system.h"\n', 1)
 
 old_read = 'static uint32_t readTouchPin(uint8_t pin) { return touchRead(pin); }'
 new_read = '''static uint32_t readTouchPin(uint8_t pin) {
@@ -38,7 +42,6 @@ s = s.replace(old_read, new_read, 1)
 s = s.replace('pad.threshold = pad.baseline + (pad.baseline / 5U);',
               'pad.threshold = pad.baseline + (pad.baseline / 6U);')
 
-# Add service diagnostics so TEST INPUT tells us exactly what every pad is using.
 cal_end = '''  bHomeSent = false;
 }
 
@@ -89,22 +92,19 @@ static bool updateInputState(uint8_t idx) {
   uint32_t value = readTouchPin(pad.pin);
   unsigned long now = millis();
 
-  // Enter at the full threshold, but release at roughly +7.7% above baseline.
-  // This hysteresis prevents a held finger from rapidly toggling around one edge.
+  // Enter at the full threshold, release lower. This hysteresis prevents a
+  // held finger from rapidly toggling around one threshold edge.
   uint32_t releaseThreshold = pad.baseline + (pad.baseline / 13U);
   bool enterAbove = value >= pad.threshold;
   bool stayAbove = value >= releaseThreshold;
 
   if (!pad.touching) {
-    // A short refractory period prevents one physical touch/release from becoming
-    // several menu/light events if the capacitive value rings near threshold.
     if (now - touchReleasedMs[idx] < 180UL) return false;
 
     if (enterAbove) {
       pad.touching = true;
       pad.enteredMs = now;
     } else {
-      // Track ambient drift only while unquestionably untouched.
       pad.baseline = (pad.baseline * 255U + value) / 256U;
       pad.threshold = pad.baseline + (pad.baseline / 6U);
     }
@@ -133,7 +133,6 @@ if old_test not in s:
     raise SystemExit("Touch patch failed: TEST INPUT handler not found")
 s = s.replace(old_test, new_test, 1)
 
-# Let OLED/current draw settle before measuring the idle capacitance.
 old_start = '''    uint8_t savedBrightness=brightnessPercent;
     brightnessPercent=25; ledColor[0]={0,0,255};ledColor[1]={0,0,255};showLeds();
     calibrateInputs();'''
@@ -145,5 +144,13 @@ new_start = '''    uint8_t savedBrightness=brightnessPercent;
 if old_start not in s:
     raise SystemExit("Touch patch failed: startup calibration block not found")
 s = s.replace(old_start, new_start, 1)
+
+boot_needle = '  Serial.begin(115200); delay(250); rxLine.reserve(128); randomSeed((uint32_t)micros());\n'
+boot_repl = '''  Serial.begin(115200); delay(250); rxLine.reserve(128); randomSeed((uint32_t)micros());
+  Serial.print("HJ|BOOT|reset_reason="); Serial.println((int)esp_reset_reason());
+'''
+if boot_needle not in s:
+    raise SystemExit("Touch patch failed: setup boot diagnostic insertion point not found")
+s = s.replace(boot_needle, boot_repl, 1)
 
 p.write_text(s, encoding="utf-8")
