@@ -182,6 +182,17 @@ class HappyJarzApp(base.HappyJarzApp):
 
         super()._handle_line(line)
 
+    def _on_close(self):
+        # The base controller enables continuous touch telemetry on connect.
+        # Stop it explicitly before releasing the USB port so the jar returns
+        # to standalone mode cleanly instead of streaming into a dead host.
+        try:
+            self.link.send("STREAM TOUCH OFF")
+        except Exception:
+            pass
+        self.link.close()
+        self.destroy()
+
 
 if __name__ == "__main__":
     HappyJarzApp().mainloop()
