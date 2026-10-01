@@ -5,6 +5,7 @@ Applied to the staged v0.5 sketch after touch + OLED patches.
 - remove blue/green boot-test colors from normal startup
 - preserve saved LED RGB/pattern state across USB reconnect/reset
 - desktop LED/pattern commands always return OLED UI to HOME so local A/B/UP/DOWN work
+- expand TEST RGB to identify whether combined RGB channels fail
 """
 
 from pathlib import Path
@@ -16,9 +17,8 @@ if len(sys.argv) != 2:
 p = Path(sys.argv[1])
 s = p.read_text(encoding="utf-8")
 
-# Touch hardening runs before this patch, so match the CURRENT staged startup
-# block (including its 350 ms settle + calibration diagnostic), not the old
-# pre-touch version.
+# Touch patch runs before this patch, so match the CURRENT staged startup
+# block rather than the pre-touch version.
 old_boot = '''    uint8_t savedBrightness=brightnessPercent;
     brightnessPercent=25; ledColor[0]={0,0,255};ledColor[1]={0,0,255};showLeds();
     delay(350);
@@ -52,5 +52,28 @@ for old, new, label in ((old_led1,new_led1,"LED1"),(old_led2,new_led2,"LED2"),(o
     if old not in s:
         raise SystemExit(f"LED recovery patch failed: {label} command block not found")
     s = s.replace(old, new, 1)
+
+# Diagnostic only: single-channel colors work, but WHITE was observed as BLUE.
+# Add two-channel combinations at low brightness so one TEST RGB run tells us
+# whether the fault is generic to combined-channel frames or specific to white.
+old_test = '''    Rgb s0=ledColor[0],s1=ledColor[1];uint8_t sb=brightnessPercent;String sp=patternName;patternName="SOLID";brightnessPercent=35;
+    const Rgb tests[]={{255,0,0},{0,255,0},{0,0,255},{255,255,255}};
+    for(const auto &c:tests){ledColor[0]=c;ledColor[1]=c;showLeds();delay(350);} ledColor[0]=s0;ledColor[1]=s1;brightnessPercent=sb;patternName=sp;resetPatternEngine();if(sp=="SOLID")showLeds();
+'''
+new_test = '''    Rgb s0=ledColor[0],s1=ledColor[1];uint8_t sb=brightnessPercent;String sp=patternName;patternName="SOLID";brightnessPercent=12;
+    const Rgb tests[]={
+      {255,0,0},      // red
+      {0,255,0},      // green
+      {0,0,255},      // blue
+      {255,255,0},    // yellow = R+G
+      {255,0,255},    // magenta = R+B
+      {0,255,255},    // cyan = G+B
+      {255,255,255}   // white = R+G+B
+    };
+    for(const auto &c:tests){ledColor[0]=c;ledColor[1]=c;showLeds();delay(500);} ledColor[0]=s0;ledColor[1]=s1;brightnessPercent=sb;patternName=sp;resetPatternEngine();if(sp=="SOLID")showLeds();
+'''
+if old_test not in s:
+    raise SystemExit("LED recovery patch failed: TEST RGB body not found")
+s = s.replace(old_test, new_test, 1)
 
 p.write_text(s, encoding="utf-8")
