@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""HAPPY JARZ Controller v0.3.1 — Wi-Fi scan + USB host time sync.
+"""HAPPY JARZ Controller v0.3.1 — Wi-Fi scan + USB host time + sensory patterns.
 
-This is intentionally a thin layer over the known-good v0.3.0 controller.
-The parent controller keeps ownership of serial, lights, clock, alarms, display,
-diagnostics, and password redaction. This layer adds network discovery/SSID
-selection and offline clock sync from the computer connected over USB.
+Thin layer over the known-good v0.3.0 controller. The parent keeps ownership
+of serial, lights, clock, alarms, display, diagnostics, and password redaction.
+This layer adds network discovery, USB host-time sync, the expanded HAPPY JARZ
+sensory pattern library, and the bench-proven 50% brightness ceiling.
 """
 
 from __future__ import annotations
@@ -15,18 +15,57 @@ from tkinter import ttk
 
 import happyjarz_controller as base
 
+PATTERN_LIBRARY = (
+    "SOLID", "FADE", "PULSE", "RAINBOW", "RANDOM",
+    "HUE_FADE", "DUAL_HUE", "BREATH", "DRIFT", "AURORA", "OCEAN", "LAVENDER", "SUNSET",
+    "CHRISTMAS", "HALLOWEEN", "VALENTINE", "EASTER", "FOURTH", "THANKSGIVING",
+    "CANDY", "GALAXY", "FIRE", "ICE", "FOREST", "NEON", "TWINKLE", "SPARKLE", "COLOR_SWAP",
+    "COMET", "FIREFLY", "BUBBLEGUM", "OFF",
+)
+
 
 class HappyJarzApp(base.HappyJarzApp):
     def __init__(self):
-        # Plain Python attributes may exist before Tk.__init__, but Tk variables
-        # must be created only after the base class creates the root window.
         self.wifi_scan_rows: dict[str, str] = {}
         self.wifi_scan_state = None
         self.wifi_scan_list = None
         self.host_time_state = None
         super().__init__()
         self.title(f"{base.APP_NAME} v0.3.1")
-        self._log("Wi-Fi scan/select + USB host-time layer v0.3.1 active")
+        self._log("Wi-Fi scan/select + USB host-time + sensory pattern library active")
+
+    @staticmethod
+    def _walk_widgets(parent):
+        for child in parent.winfo_children():
+            yield child
+            yield from HappyJarzApp._walk_widgets(child)
+
+    def _build_control_tab(self, root):
+        # Build the proven v0.3.0 Lights tab first, then extend only the two
+        # controls that changed: pattern choices and brightness ceiling.
+        super()._build_control_tab(root)
+
+        for widget in self._walk_widgets(root):
+            if isinstance(widget, ttk.Combobox):
+                try:
+                    if str(widget.cget("textvariable")) == str(self.pattern_var):
+                        widget.configure(values=PATTERN_LIBRARY)
+                except tk.TclError:
+                    pass
+
+            if isinstance(widget, ttk.Scale):
+                try:
+                    # The Lights tab has one brightness slider. The firmware
+                    # also clamps at 50%, so the UI and jar agree.
+                    widget.configure(to=50)
+                    if float(widget.get()) > 50:
+                        widget.set(50)
+                except (tk.TclError, ValueError):
+                    pass
+
+        if self.brightness_var.get() > 50:
+            self.brightness_var.set(50)
+            self.brightness_label.configure(text="50%")
 
     def _build_setup_tab(self, root):
         if self.wifi_scan_state is None:
@@ -34,7 +73,6 @@ class HappyJarzApp(base.HappyJarzApp):
         if self.host_time_state is None:
             self.host_time_state = tk.StringVar(master=self, value="Ready — no Wi-Fi required")
 
-        # Keep every existing setup control exactly as-is.
         super()._build_setup_tab(root)
 
         outer, hosttime = self._card(root, 10)
@@ -60,12 +98,10 @@ class HappyJarzApp(base.HappyJarzApp):
 
         outer, scan = self._card(root, 10)
         outer.pack(fill="both", expand=True, pady=(8, 0))
-
         head = ttk.Frame(scan, style="Panel.TFrame")
         head.pack(fill="x")
         ttk.Label(head, text="VISIBLE 2.4 GHz WI-FI NETWORKS", style="Section.TLabel").pack(side="left")
         ttk.Label(head, textvariable=self.wifi_scan_state, style="PanelMuted.TLabel").pack(side="right")
-
         ttk.Label(
             scan,
             text="These are networks the ESP32-S3 itself can see. Select one, then enter its password above and press Send Wi-Fi.",
@@ -74,7 +110,6 @@ class HappyJarzApp(base.HappyJarzApp):
 
         body = ttk.Frame(scan, style="Panel.TFrame")
         body.pack(fill="both", expand=True)
-
         self.wifi_scan_list = tk.Listbox(
             body,
             height=7,
@@ -183,9 +218,6 @@ class HappyJarzApp(base.HappyJarzApp):
         super()._handle_line(line)
 
     def _on_close(self):
-        # The base controller enables continuous touch telemetry on connect.
-        # Stop it explicitly before releasing the USB port so the jar returns
-        # to standalone mode cleanly instead of streaming into a dead host.
         try:
             self.link.send("STREAM TOUCH OFF")
         except Exception:
