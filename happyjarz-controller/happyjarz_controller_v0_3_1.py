@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
-"""HAPPY JARZ Controller v0.3.1 — adds ESP32 Wi-Fi scan/selection UI.
+"""HAPPY JARZ Controller v0.3.1 — Wi-Fi scan + USB host time sync.
 
 This is intentionally a thin layer over the known-good v0.3.0 controller.
 The parent controller keeps ownership of serial, lights, clock, alarms, display,
-diagnostics, and password redaction. This layer only adds network discovery and
-SSID selection.
+diagnostics, and password redaction. This layer adds network discovery/SSID
+selection and offline clock sync from the computer connected over USB.
 """
 
 from __future__ import annotations
 
+import time
 import tkinter as tk
 from tkinter import ttk
 
@@ -17,23 +18,45 @@ import happyjarz_controller as base
 
 class HappyJarzApp(base.HappyJarzApp):
     def __init__(self):
-        # The base constructor creates the Tk root and then calls _build_ui().
-        # Plain Python attributes may exist beforehand, but Tk variables must
-        # be created only after Tk.__init__ has established the interpreter.
+        # Plain Python attributes may exist before Tk.__init__, but Tk variables
+        # must be created only after the base class creates the root window.
         self.wifi_scan_rows: dict[str, str] = {}
         self.wifi_scan_state = None
         self.wifi_scan_list = None
+        self.host_time_state = None
         super().__init__()
         self.title(f"{base.APP_NAME} v0.3.1")
-        self._log("Wi-Fi scan/select layer v0.3.1 active")
+        self._log("Wi-Fi scan/select + USB host-time layer v0.3.1 active")
 
     def _build_setup_tab(self, root):
-        # By the time this override runs, the base Tk root is fully initialized.
         if self.wifi_scan_state is None:
             self.wifi_scan_state = tk.StringVar(master=self, value="Not scanned yet")
+        if self.host_time_state is None:
+            self.host_time_state = tk.StringVar(master=self, value="Ready — no Wi-Fi required")
 
         # Keep every existing setup control exactly as-is.
         super()._build_setup_tab(root)
+
+        outer, hosttime = self._card(root, 10)
+        outer.pack(fill="x", pady=(8, 0))
+        head = ttk.Frame(hosttime, style="Panel.TFrame")
+        head.pack(fill="x")
+        ttk.Label(head, text="USB HOST TIME", style="Section.TLabel").pack(side="left")
+        ttk.Label(head, textvariable=self.host_time_state, style="PanelMuted.TLabel").pack(side="right")
+        ttk.Label(
+            hosttime,
+            text="Set the jar clock from this computer over USB. Internet/Wi-Fi is not required; the timezone field above is used for local display time.",
+            style="PanelMuted.TLabel",
+        ).pack(anchor="w", pady=(5, 7))
+        row = ttk.Frame(hosttime, style="Panel.TFrame")
+        row.pack(fill="x")
+        ttk.Button(
+            row,
+            text="SYNC TIME FROM THIS COMPUTER",
+            style="Accent.TButton",
+            command=self._sync_host_time,
+        ).pack(side="left")
+        ttk.Button(row, text="Get Jar Time", command=lambda: self.link.send("GET TIME STATUS")).pack(side="left", padx=6)
 
         outer, scan = self._card(root, 10)
         outer.pack(fill="both", expand=True, pady=(8, 0))
@@ -76,6 +99,15 @@ class HappyJarzApp(base.HappyJarzApp):
         ttk.Button(row, text="SCAN WI-FI", style="Accent.TButton", command=self._scan_wifi).pack(side="left")
         ttk.Button(row, text="Use Selected", command=self._select_scanned_network).pack(side="left", padx=6)
         ttk.Button(row, text="Get Wi-Fi Status", command=lambda: self.link.send("GET WIFI STATUS")).pack(side="left")
+
+    def _sync_host_time(self):
+        epoch = int(time.time())
+        timezone = self.timezone_var.get().strip() or "America/Chicago"
+        if self.host_time_state is not None:
+            self.host_time_state.set("Syncing…")
+        self.link.send(f"SET TIMEZONE {timezone}")
+        self.link.send(f"SET CLOCK UNIX {epoch}")
+        self.after(250, lambda: self.link.send("GET TIME STATUS"))
 
     def _scan_wifi(self):
         if self.wifi_scan_list is not None:
@@ -137,6 +169,16 @@ class HappyJarzApp(base.HappyJarzApp):
                 self.wifi_scan_state.set(f"{count} visible network(s)")
             self._log(f"RX  {line}")
             return
+
+        if line.startswith("HJ|TIME|"):
+            fields = self._parse_fields(line)
+            local_time = fields.get("local", "")
+            synced = fields.get("synced", "0") in ("1", "true", "TRUE")
+            if self.host_time_state is not None:
+                if synced and local_time:
+                    self.host_time_state.set(f"Jar time: {local_time}")
+                else:
+                    self.host_time_state.set("Clock not set")
 
         super()._handle_line(line)
 
