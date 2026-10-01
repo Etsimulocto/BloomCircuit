@@ -7,14 +7,16 @@ The four original JAR controls are unconditional everywhere:
   UP    -> next light pattern
   DOWN  -> previous light pattern
 
-OLED navigation uses only the previously-unused directional pair:
-  RIGHT -> next OLED screen/menu page
-  LEFT  -> previous OLED screen/menu page
+OLED navigation uses only:
+  RIGHT -> next OLED screen
+  LEFT  -> previous OLED screen
 
-No OLED/menu state is allowed to capture A/B/UP/DOWN.
+This patch intentionally replaces the whole JAR-control block by structure,
+not by an exact previous text snapshot, so staged OLED edits cannot break it.
 """
 
 from pathlib import Path
+import re
 import subprocess
 import sys
 
@@ -24,37 +26,14 @@ if len(sys.argv) != 2:
 p = Path(sys.argv[1])
 s = p.read_text(encoding="utf-8")
 
-old = '''  if (inputMode == "JAR") {
-    if (uiScreen == UI_HOME) {
-      // Preserve the original known-good local controls exactly.
-      if (q[IN_A] && !latched[IN_A]) { paletteIndex1=(paletteIndex1+1)%9; Rgb c=palette[paletteIndex1]; hjSetLed(1,c.r,c.g,c.b); oledDirty=true; }
-      if (q[IN_B] && !latched[IN_B]) { paletteIndex2=(paletteIndex2+1)%9; Rgb c=palette[paletteIndex2]; hjSetLed(2,c.r,c.g,c.b); oledDirty=true; }
-      if (q[IN_UP] && !latched[IN_UP]) { localPatternIndex=(localPatternIndex+1)%6; hjSetPattern(patterns[localPatternIndex]); oledDirty=true; }
-      if (q[IN_DOWN] && !latched[IN_DOWN]) { localPatternIndex=(localPatternIndex+5)%6; hjSetPattern(patterns[localPatternIndex]); oledDirty=true; }
-
-      // RIGHT was unused in the original light-control layer, so it owns MENU.
-      if (q[IN_RIGHT] && !latched[IN_RIGHT]) { uiOpenMainMenu(); }
-    } else if (uiScreen == UI_MAIN_MENU) {
-      if (q[IN_UP] && !latched[IN_UP]) { uiCursor=(uiCursor+4)%5; oledDirty=true; }
-      if (q[IN_DOWN] && !latched[IN_DOWN]) { uiCursor=(uiCursor+1)%5; oledDirty=true; }
-      if (q[IN_A] && !latched[IN_A]) { uiSelectMain(); }
-      if (q[IN_B] && !latched[IN_B]) { uiGoHome(); }
-    } else {
-      // Detail/status pages are view-only for now. B backs to main menu.
-      if (q[IN_B] && !latched[IN_B]) { uiOpenMainMenu(); }
-    }
-  }
-'''
-
-new = '''  if (inputMode == "JAR") {
+new_block = '''  if (inputMode == "JAR") {
     // ORIGINAL LIGHT CONTROLS: always active, regardless of OLED page.
     if (q[IN_A] && !latched[IN_A]) { paletteIndex1=(paletteIndex1+1)%9; Rgb c=palette[paletteIndex1]; hjSetLed(1,c.r,c.g,c.b); oledDirty=true; }
     if (q[IN_B] && !latched[IN_B]) { paletteIndex2=(paletteIndex2+1)%9; Rgb c=palette[paletteIndex2]; hjSetLed(2,c.r,c.g,c.b); oledDirty=true; }
     if (q[IN_UP] && !latched[IN_UP]) { localPatternIndex=(localPatternIndex+1)%6; hjSetPattern(patterns[localPatternIndex]); oledDirty=true; }
     if (q[IN_DOWN] && !latched[IN_DOWN]) { localPatternIndex=(localPatternIndex+5)%6; hjSetPattern(patterns[localPatternIndex]); oledDirty=true; }
 
-    // OLED browsing is isolated to LEFT/RIGHT only. Cycle through HOME plus the
-    // five useful status/detail screens; never steal A/B/UP/DOWN.
+    // OLED browsing is isolated to LEFT/RIGHT only.
     if (q[IN_RIGHT] && !latched[IN_RIGHT]) {
       switch (uiScreen) {
         case UI_HOME: uiScreen=UI_CLOCK; break;
@@ -80,10 +59,18 @@ new = '''  if (inputMode == "JAR") {
   }
 '''
 
-if old not in s:
-    raise SystemExit("menu isolation patch failed: expected restored menu input block not found")
+# Replace exactly the JAR-mode block immediately before the edge-event comment.
+# This is deliberately structural rather than matching one historical menu body.
+pattern = re.compile(
+    r'  if \(inputMode == "JAR"\) \{.*?\n  \}\n\n  // Send edge events for menu/game layers and desktop diagnostics\.',
+    re.DOTALL,
+)
+match = pattern.search(s)
+if not match:
+    raise SystemExit("menu isolation patch failed: current JAR input block not found")
 
-s = s.replace(old, new, 1)
+replacement = new_block + '\n  // Send edge events for menu/game layers and desktop diagnostics.'
+s = s[:match.start()] + replacement + s[match.end():]
 p.write_text(s, encoding="utf-8")
 
 recovery = Path(__file__).with_name("patch_happyjarz_led_recovery.py")
