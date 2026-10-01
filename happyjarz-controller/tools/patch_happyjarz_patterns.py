@@ -83,6 +83,7 @@ static void servicePattern() {
 
   unsigned long now = millis();
   uint8_t bri = safeBrightness(brightnessPercent);
+  if (bri == 0) { allOff(); return; }
 
   if (patternName == "FADE" || patternName == "BREATH") {
     uint16_t interval = patternName == "BREATH" ? 35 : 22;
@@ -109,53 +110,38 @@ static void servicePattern() {
     showPair(wheel((uint8_t)patternStep), wheel((uint8_t)(patternStep+96)), bri);
     patternStep++; return;
   }
-
   if (patternName == "HUE_FADE") {
     if (now-patternLastMs < 45) return; patternLastMs=now;
-    Rgb c=wheel((uint8_t)patternStep);
-    showPair(c,c,bri); patternStep++; return;
+    Rgb c=wheel((uint8_t)patternStep); showPair(c,c,bri); patternStep++; return;
   }
-
   if (patternName == "DUAL_HUE") {
     if (now-patternLastMs < 45) return; patternLastMs=now;
-    showPair(wheel((uint8_t)patternStep),wheel((uint8_t)(patternStep+128)),bri);
-    patternStep++; return;
+    showPair(wheel((uint8_t)patternStep),wheel((uint8_t)(patternStep+128)),bri); patternStep++; return;
   }
-
   if (patternName == "DRIFT") {
     if (now-patternLastMs < 70) return; patternLastMs=now;
     uint8_t t=triangle8(patternStep,220);
-    Rgb a=blendRgb({20,0,90},{0,120,255},t);
-    Rgb b=blendRgb({0,50,120},{130,0,190},(uint8_t)(255-t));
-    showPair(a,b,bri); patternStep++; return;
+    showPair(blendRgb({20,0,90},{0,120,255},t),blendRgb({0,50,120},{130,0,190},(uint8_t)(255-t)),bri); patternStep++; return;
   }
-
   if (patternName == "AURORA") {
     if (now-patternLastMs < 55) return; patternLastMs=now;
     uint8_t t=triangle8(patternStep,240);
-    showPair(blendRgb({0,180,90},{100,0,220},t), blendRgb({0,80,255},{0,220,120},(uint8_t)(255-t)), bri);
-    patternStep++; return;
+    showPair(blendRgb({0,180,90},{100,0,220},t),blendRgb({0,80,255},{0,220,120},(uint8_t)(255-t)),bri); patternStep++; return;
   }
-
   if (patternName == "OCEAN") {
     if (now-patternLastMs < 65) return; patternLastMs=now;
     uint8_t t=triangle8(patternStep,180);
-    showPair(blendRgb({0,20,100},{0,180,255},t),blendRgb({0,120,180},{0,30,130},t),bri);
-    patternStep++; return;
+    showPair(blendRgb({0,20,100},{0,180,255},t),blendRgb({0,120,180},{0,30,130},t),bri); patternStep++; return;
   }
-
   if (patternName == "LAVENDER") {
     if (now-patternLastMs < 70) return; patternLastMs=now;
-    uint8_t t=triangle8(patternStep,220);
-    Rgb c=blendRgb({90,20,150},{230,120,255},t); showPair(c,c,bri);
-    patternStep++; return;
+    uint8_t t=triangle8(patternStep,220); Rgb c=blendRgb({90,20,150},{230,120,255},t);
+    showPair(c,c,bri); patternStep++; return;
   }
-
   if (patternName == "SUNSET") {
     if (now-patternLastMs < 60) return; patternLastMs=now;
     uint8_t t=triangle8(patternStep,200);
-    showPair(blendRgb({255,30,0},{255,130,20},t),blendRgb({255,0,100},{100,0,180},t),bri);
-    patternStep++; return;
+    showPair(blendRgb({255,30,0},{255,130,20},t),blendRgb({255,0,100},{100,0,180},t),bri); patternStep++; return;
   }
 
   if (patternName == "CHRISTMAS") {
@@ -189,7 +175,7 @@ static void servicePattern() {
   if (patternName == "CANDY") {
     if (now-patternLastMs < 320) return; patternLastMs=now;
     static const Rgb p[]={{255,20,120},{0,220,255},{255,180,0},{120,255,80},{170,40,255}};
-    uint8_t i=random(5),j=random(5); showPair(p[i],p[j],bri); return;
+    showPair(p[random(5)],p[random(5)],bri); return;
   }
   if (patternName == "GALAXY") {
     if (now-patternLastMs < 90) return; patternLastMs=now;
@@ -200,13 +186,11 @@ static void servicePattern() {
   }
   if (patternName == "FIRE") {
     if (now-patternLastMs < 80) return; patternLastMs=now;
-    Rgb a={(uint8_t)random(180,256),(uint8_t)random(20,100),0};
-    Rgb b={(uint8_t)random(180,256),(uint8_t)random(10,80),0}; showPair(a,b,bri); return;
+    showPair({(uint8_t)random(180,256),(uint8_t)random(20,100),0},{(uint8_t)random(180,256),(uint8_t)random(10,80),0},bri); return;
   }
   if (patternName == "ICE") {
     if (now-patternLastMs < 100) return; patternLastMs=now;
-    Rgb a={(uint8_t)random(80,180),(uint8_t)random(170,256),255};
-    Rgb b={(uint8_t)random(20,110),(uint8_t)random(100,220),255}; showPair(a,b,bri); return;
+    showPair({(uint8_t)random(80,180),(uint8_t)random(170,256),255},{(uint8_t)random(20,110),(uint8_t)random(100,220),255},bri); return;
   }
   if (patternName == "FOREST") {
     if (now-patternLastMs < 90) return; patternLastMs=now;
@@ -219,9 +203,9 @@ static void servicePattern() {
   }
   if (patternName == "TWINKLE") {
     if (now-patternLastMs < 180) return; patternLastMs=now;
-    Rgb base0=blendRgb(ledColor[0],{255,255,255},(uint8_t)random(30,150));
-    Rgb base1=blendRgb(ledColor[1],{255,255,255},(uint8_t)random(30,150));
-    showPair(base0,base1,(uint8_t)random(max(8,(int)bri/3),(int)bri+1)); return;
+    Rgb a=blendRgb(ledColor[0],{255,255,255},(uint8_t)random(30,150));
+    Rgb b=blendRgb(ledColor[1],{255,255,255},(uint8_t)random(30,150));
+    uint8_t low=(uint8_t)max(1,(int)bri/3); showPair(a,b,(uint8_t)random((long)low,(long)bri+1L)); return;
   }
   if (patternName == "SPARKLE") {
     if (now-patternLastMs < 110) return; patternLastMs=now;
@@ -235,19 +219,16 @@ static void servicePattern() {
   if (patternName == "COMET") {
     if (now-patternLastMs < 120) return; patternLastMs=now;
     uint8_t t=triangle8(patternStep,64);
-    Rgb dim0=blendRgb({0,0,0},ledColor[0],t),dim1=blendRgb({0,0,0},ledColor[1],(uint8_t)(255-t));
-    showPair(dim0,dim1,bri); patternStep++; return;
+    showPair(blendRgb({0,0,0},ledColor[0],t),blendRgb({0,0,0},ledColor[1],(uint8_t)(255-t)),bri); patternStep++; return;
   }
   if (patternName == "FIREFLY") {
     if (now-patternLastMs < 160) return; patternLastMs=now;
-    Rgb dark={0,5,0}; Rgb glow={160,255,30};
-    showPair(random(5)==0?glow:dark,random(5)==0?glow:dark,bri); return;
+    Rgb dark={0,5,0}; Rgb glow={160,255,30}; showPair(random(5)==0?glow:dark,random(5)==0?glow:dark,bri); return;
   }
   if (patternName == "BUBBLEGUM") {
     if (now-patternLastMs < 55) return; patternLastMs=now;
     uint8_t t=triangle8(patternStep,170); showPair(blendRgb({255,30,180},{80,180,255},t),blendRgb({120,40,255},{255,120,200},(uint8_t)(255-t)),bri); patternStep++; return;
   }
-
   if (patternName == "RANDOM") {
     if (now-patternLastMs < 300) return; patternLastMs=now;
     showPair({(uint8_t)random(256),(uint8_t)random(256),(uint8_t)random(256)},
@@ -258,8 +239,7 @@ static void servicePattern() {
 static void hjSetLed(uint8_t led,uint8_t r,uint8_t g,uint8_t b){
   patternName="SOLID"; resetPatternEngine();
   if (led < 1 || led > LED_COUNT) return;
-  ledColor[led-1]={r,g,b};
-  showLeds();
+  ledColor[led-1]={r,g,b}; showLeds();
 }
 static void hjSetBrightness(uint8_t p){
   brightnessPercent=constrain(p,0,HJ_MAX_BRIGHTNESS);
@@ -271,8 +251,6 @@ static void hjSetPattern(const String &name){
 }
 '''
 
-# Replace the original high-level pattern engine, but preserve Wi-Fi and the
-# proven low-level RMT writer above it.
 engine_re = re.compile(
     r'// -----------------------------\n// Pattern engine\n// -----------------------------\n.*?\n// -----------------------------\n// Wi-Fi / NTP\n// -----------------------------',
     re.DOTALL,
@@ -282,26 +260,21 @@ if not m:
     raise SystemExit("pattern patch failed: pattern engine block not found")
 s = s[:m.start()] + pattern_block + '\n// -----------------------------\n// Wi-Fi / NTP\n// -----------------------------' + s[m.end():]
 
-# Clamp any saved legacy brightness above the newly selected product maximum.
 load_needle = '  brightnessPercent = prefs.getUChar("bright", 75);\n'
 if load_needle not in s:
     raise SystemExit("pattern patch failed: saved brightness load not found")
-s = s.replace(load_needle, '  brightnessPercent = min((uint8_t)HJ_MAX_BRIGHTNESS, prefs.getUChar("bright", HJ_MAX_BRIGHTNESS));\n', 1)
+s = s.replace(load_needle, '  brightnessPercent = min((uint8_t)50, prefs.getUChar("bright", (uint8_t)50));\n', 1)
 
-# Replace the local physical-button pattern list with the full library.
 local_re = re.compile(r'static const String patterns\[\] = \{.*?\};\nstatic int localPatternIndex=0;', re.DOTALL)
 if not local_re.search(s):
     raise SystemExit("pattern patch failed: local pattern list not found")
 s = local_re.sub('static int localPatternIndex=0;', s, count=1)
 
-# Menu isolation patch currently hardcodes the old six-pattern count.
 s = s.replace('localPatternIndex=(localPatternIndex+1)%6; hjSetPattern(patterns[localPatternIndex]);',
               'localPatternIndex=(localPatternIndex+1)%PATTERN_COUNT; hjSetPattern(PATTERN_NAMES[localPatternIndex]);')
 s = s.replace('localPatternIndex=(localPatternIndex+5)%6; hjSetPattern(patterns[localPatternIndex]);',
               'localPatternIndex=(localPatternIndex+PATTERN_COUNT-1)%PATTERN_COUNT; hjSetPattern(PATTERN_NAMES[localPatternIndex]);')
 
-# Recovery patch has already wrapped SET PATTERN with uiGoHome(); retain that
-# behavior while accepting every library entry through one validator.
 handler_re = re.compile(
     r'if\(line\.startsWith\("SET PATTERN "\)\)\{String v=line\.substring\(12\);v\.trim\(\);if\(.*?\)\{uiGoHome\(\);hjSetPattern\(v\);oledDirty=true;ack\("SET PATTERN"\);\}else err\("unknown pattern"\);return;\}',
     re.DOTALL,
@@ -309,8 +282,5 @@ handler_re = re.compile(
 if not handler_re.search(s):
     raise SystemExit("pattern patch failed: recovered SET PATTERN handler not found")
 s = handler_re.sub('if(line.startsWith("SET PATTERN ")){String v=line.substring(12);v.trim();if(isPatternName(v)){uiGoHome();hjSetPattern(v);oledDirty=true;ack("SET PATTERN");}else err("unknown pattern");return;}', s, count=1)
-
-# Old parser allows 0-100; accept it for protocol compatibility but clamp in
-# hjSetBrightness(). Also report the actual applied value through status.
 
 p.write_text(s, encoding="utf-8")
