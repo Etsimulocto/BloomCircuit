@@ -2,14 +2,8 @@
 """Add desktop serial controls/status for the current HAPPY JARZ screensaver engine.
 
 Runs after patch_happyjarz_saver_controls.py. Before adding protocol commands it
-also applies the particle-universe layer so the standard flasher needs no new
-manual step.
-
-The SPIRAL/TRIPPY generators intentionally evolve over time, so this wrapper
-must not depend on an exact historical hjReseedTrippy() function body. The older
-particle patch still uses that legacy marker; we temporarily normalize only that
-function while the particle patch runs, then restore the current entropy-aware
-implementation before compile.
+applies smooth SPIRAL/TRIPPY drift, then the particle-universe layer, so the
+standard flasher needs no new manual step.
 
 Protocol:
   GET SAVER STATUS
@@ -23,7 +17,6 @@ Protocol:
   SET SAVER MODE SAYINGS|SPIRAL|TRIPPY|PARTICLES
 """
 from pathlib import Path
-import re
 import subprocess
 import sys
 
@@ -31,46 +24,47 @@ if len(sys.argv) != 2:
     raise SystemExit("usage: patch_happyjarz_saver_protocol.py <staged .ino>")
 
 p = Path(sys.argv[1])
-particle_patch = Path(__file__).with_name("patch_happyjarz_particle_universe.py")
-if not particle_patch.exists():
-    raise SystemExit(f"saver protocol patch failed: missing {particle_patch.name}")
 
-# Capture the CURRENT reseed function structurally. Do not make the patch chain
-# depend on whatever state initialization happens to live inside it this week.
+smooth_patch = Path(__file__).with_name("patch_happyjarz_saver_smooth_drift.py")
+if not smooth_patch.exists():
+    raise SystemExit(f"saver protocol patch failed: missing {smooth_patch.name}")
+subprocess.run([sys.executable, str(smooth_patch), str(p)], check=True)
+
+# The particle patch predates the evolving TRIPPY reseed body and still matches
+# the original small function literally. Normalize only that function while the
+# particle patch runs, then restore the current smooth-drift version afterward.
 s = p.read_text(encoding="utf-8")
-trippy_re = re.compile(r'static void hjReseedTrippy\(\) \{.*?\n\}', re.S)
-m = trippy_re.search(s)
-if not m:
-    raise SystemExit("saver protocol patch failed: hjReseedTrippy function not found")
-current_trippy = m.group(0)
-
-legacy_trippy = '''static void hjReseedTrippy() {
+fn_start = s.find("static void hjReseedTrippy() {")
+if fn_start < 0:
+    raise SystemExit("saver protocol patch failed: hjReseedTrippy not found")
+fn_end = s.find("\n}", fn_start)
+if fn_end < 0:
+    raise SystemExit("saver protocol patch failed: hjReseedTrippy end not found")
+fn_end += 2
+current_reseed = s[fn_start:fn_end]
+legacy_reseed = '''static void hjReseedTrippy() {
   hjTrippySeed = hjBoardEntropy() ^ 0x54524950UL;
   hjArtStep = 0;
 }'''
-
-# The particle layer predates the evolving-art state and still expects the old
-# literal block. Normalize just long enough for that patch to insert its code.
-s = s[:m.start()] + legacy_trippy + s[m.end():]
+s = s[:fn_start] + legacy_reseed + s[fn_end:]
 p.write_text(s, encoding="utf-8")
 
-try:
-    subprocess.run([sys.executable, str(particle_patch), str(p)], check=True)
-except Exception:
-    # Restore the staged source before surfacing the failure, which makes failed
-    # flash attempts easier to inspect and avoids leaving a fake legacy function.
-    failed = p.read_text(encoding="utf-8")
-    if legacy_trippy in failed:
-        failed = failed.replace(legacy_trippy, current_trippy, 1)
-        p.write_text(failed, encoding="utf-8")
-    raise
+particle_patch = Path(__file__).with_name("patch_happyjarz_particle_universe.py")
+if not particle_patch.exists():
+    raise SystemExit(f"saver protocol patch failed: missing {particle_patch.name}")
+subprocess.run([sys.executable, str(particle_patch), str(p)], check=True)
 
-# Restore the real current reseed function after the particle patch has used its
-# compatibility marker. The entropy/random-walk state from saver-controls stays.
 s = p.read_text(encoding="utf-8")
-if legacy_trippy not in s:
-    raise SystemExit("saver protocol patch failed: compatibility reseed marker disappeared")
-s = s.replace(legacy_trippy, current_trippy, 1)
+legacy_pos = s.find(legacy_reseed)
+if legacy_pos < 0:
+    raise SystemExit("saver protocol patch failed: normalized reseed marker disappeared")
+s = s[:legacy_pos] + current_reseed + s[legacy_pos + len(legacy_reseed):]
+
+# Insert protocol helpers after the restored reseed function without depending
+# on its exact internal implementation.
+marker = current_reseed
+if marker not in s:
+    raise SystemExit("saver protocol patch failed: restored reseed marker not found")
 
 helpers = r'''
 
@@ -120,10 +114,7 @@ static void hjPrintSaverStatus() {
   Serial.print("|repel="); Serial.println(hjParticleRepel ? 1 : 0);
 }
 '''
-
-if current_trippy not in s:
-    raise SystemExit("saver protocol patch failed: restored reseed function not found")
-s = s.replace(current_trippy, current_trippy + helpers, 1)
+s = s.replace(marker, marker + helpers, 1)
 
 cmd_needle = '  if(line=="SAVE"){persistSettings();ack("SAVE");return;}\n'
 if cmd_needle not in s:
