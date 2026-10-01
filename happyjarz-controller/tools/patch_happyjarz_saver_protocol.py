@@ -41,6 +41,8 @@ if marker not in s:
 
 helpers = r'''
 
+static void hjReseedParticles();
+
 static const char *hjSaverModeName() {
   if (hjScreensaverMode == 0) return "SAYINGS";
   if (hjScreensaverMode == 1) return "SPIRAL";
