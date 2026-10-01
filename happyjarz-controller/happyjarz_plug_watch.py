@@ -30,7 +30,7 @@ UPDATE_RETRY_SECONDS = 15 * 60
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent
-CONTROLLER = HERE / "happyjarz_controller_v0_3_1.py"
+CONTROLLER = HERE / "happyjarz_controller_v0_3_2.py"
 LOG_DIR = Path.home() / ".happyjarz"
 WATCH_LOG = LOG_DIR / "plug_watch.log"
 LAUNCH_LOG = LOG_DIR / "controller_launch.log"
