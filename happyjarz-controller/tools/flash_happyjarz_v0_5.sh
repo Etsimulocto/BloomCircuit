@@ -3,8 +3,8 @@ set -euo pipefail
 
 # HAPPY JARZ v0.5 safe Pi flash helper.
 # Stops the USB controller/watcher so /dev/ttyACM* is free, stages the v0.5
-# sketch, applies Arduino .ino compatibility + Wi-Fi state-machine patches,
-# compiles, uploads, then restarts the plug watcher.
+# sketch, applies Arduino .ino compatibility + Wi-Fi state-machine/diagnostic
+# patches, compiles, uploads, then restarts the plug watcher.
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONTROLLER_DIR="$(cd "$HERE/.." && pwd)"
@@ -59,11 +59,10 @@ sed -i \
   -e 's/updateInputState((InputIndex)i)/updateInputState(i)/' \
   "$SKETCH"
 
-# v0.5 Wi-Fi hardening: repeated WIFI CONNECT commands used to call WiFi.begin()
-# again while the station was already associating, which ESP-IDF rejects with
-# "sta is connecting, cannot set config". Patch the staged copy into a small
-# non-blocking connection state machine. Repeated clicks become harmless and NTP
-# still starts automatically after association succeeds.
+# v0.5 Wi-Fi hardening + diagnostics. Repeated WIFI CONNECT commands no longer
+# reconfigure the STA while association is in progress. If a 20-second attempt
+# fails, the firmware scans for the configured SSID and prints visibility,
+# signal, channel, and encryption type so the next failure is actionable.
 python3 - "$SKETCH" <<'PY'
 from pathlib import Path
 import sys
@@ -92,7 +91,6 @@ static void connectWifi() {
     return;
   }
 
-  // Do not reconfigure the STA while ESP-IDF is already associating.
   if (wifiConnecting && millis() - wifiConnectStartedMs < WIFI_CONNECT_TIMEOUT_MS) {
     Serial.println("HJ|EVENT|wifi=CONNECTING");
     return;
@@ -106,6 +104,27 @@ static void connectWifi() {
   wifiConnecting = true;
   wifiConnectStartedMs = millis();
   Serial.println("HJ|EVENT|wifi=CONNECTING");
+}
+
+static void diagnoseWifiFailure() {
+  int count = WiFi.scanNetworks(false, true);
+  bool found = false;
+  if (count > 0) {
+    for (int i = 0; i < count; ++i) {
+      if (WiFi.SSID(i) == wifiSsid) {
+        found = true;
+        Serial.print("HJ|WIFI_DIAG|found=1|ssid="); Serial.print(wifiSsid);
+        Serial.print("|rssi="); Serial.print(WiFi.RSSI(i));
+        Serial.print("|channel="); Serial.print(WiFi.channel(i));
+        Serial.print("|enc="); Serial.println((int)WiFi.encryptionType(i));
+        break;
+      }
+    }
+  }
+  if (!found) {
+    Serial.print("HJ|WIFI_DIAG|found=0|ssid="); Serial.println(wifiSsid);
+  }
+  WiFi.scanDelete();
 }
 '''
 if old not in s:
@@ -127,6 +146,7 @@ new_loop = '''  static bool timeStarted=false;
       wifiConnecting=false;
       WiFi.disconnect(false, false);
       Serial.println("HJ|EVENT|wifi=FAILED");
+      diagnoseWifiFailure();
     }
   }
   delay(5);
