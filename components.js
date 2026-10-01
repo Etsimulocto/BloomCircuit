@@ -116,6 +116,28 @@
     return pins;
   }
 
+
+  function esp32S3SuperMiniPins() {
+    const left = [
+      ["TX / UART0 TX","uart"],["RX / UART0 RX","uart"],["GPIO1","gpio"],["GPIO2","gpio"],["GPIO3","gpio"],
+      ["GPIO4","gpio"],["GPIO5","gpio"],["GPIO6","gpio"],["GPIO7","gpio"],["GPIO38","gpio"],["GPIO37","gpio"],
+      ["GPIO34","gpio"],["GPIO33","gpio"],["GPIO21","gpio"],["GPIO18","gpio"],["GPIO17","gpio"],["GPIO16","gpio"],
+      ["GPIO15","gpio"],["GPIO14","gpio"]
+    ];
+    const right = [
+      ["5V","5v"],["GND","gnd"],["3V3 OUT","3v3"],["GPIO13","gpio"],["GPIO12","gpio"],
+      ["GPIO11","gpio"],["GPIO10","gpio"],["GPIO9","gpio"],["GPIO8","gpio"],["GPIO36","gpio"],["GPIO35","gpio"],
+      ["GPIO48","gpio"],["GPIO47","gpio"],["GPIO46","gpio"],["GPIO45","gpio"],["GPIO42","gpio"],["GPIO41","gpio"],
+      ["GPIO40","gpio"],["GPIO39","gpio"]
+    ];
+    const w = 220, h = 410, pins = [];
+    left.forEach((p,i) => pins.push(pin("l"+(i+1), p[0], p[1], 0, 34+i*19, "left")));
+    right.forEach((p,i) => pins.push(pin("r"+(i+1), p[0], p[1], w, 34+i*19, "right")));
+    pins.push(pin("batp","B+ LiPo","power",82,h,"bottom"));
+    pins.push(pin("batm","B- LiPo","gnd",138,h,"bottom"));
+    return pins;
+  }
+
   function picoPins() {
     const namesL = [
       ["GP0","gpio"],["GP1","gpio"],["GND","gnd"],["GP2","gpio"],["GP3","gpio"],["GP4","gpio"],["GP5","gpio"],["GND","gnd"],["GP6","gpio"],["GP7","gpio"],
@@ -146,6 +168,10 @@
     esp32dev: {
       title:"ESP32 DevKit / WROOM-32", palette:"ESP32 DevKit", category:"Controllers", kind:"rect", width:210, height:300,
       subtitle:"Common 30-pin DevKit layout", keywords:["esp32","wroom","wifi","bluetooth","microcontroller"], pins:esp32Pins()
+    },
+    esp32s3_supermini_hw747: {
+      title:"ESP32-S3 SuperMini HW-747", palette:"ESP32-S3 SuperMini HW-747", category:"Controllers", kind:"rect", width:220, height:410,
+      subtitle:"HW-747 V0.0.2 • USB-C • LiPo charge pads", keywords:["esp32","s3","supermini","hw-747","wifi","bluetooth","lipo","battery","usb-c"], pins:esp32S3SuperMiniPins()
     },
     pico: {
       title:"Raspberry Pi Pico", palette:"Raspberry Pi Pico", category:"Controllers", kind:"rect", width:210, height:390,
