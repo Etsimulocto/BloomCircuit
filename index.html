@@ -175,6 +175,16 @@
 
       <section id="componentTools" hidden>
         <h2>Component</h2>
+        <label>Display name
+          <input id="componentTitle" type="text" maxlength="120" placeholder="Use library name">
+        </label>
+        <label>Value / note
+          <input id="componentValue" type="text" maxlength="160" placeholder="220Ω, LED #1, etc.">
+        </label>
+        <label>Pin label overrides
+          <textarea id="componentPinLabels" rows="5" spellcheck="false" placeholder="p1 = GPIO1&#10;p2 = GPIO2&#10;p14 = 3V3"></textarea>
+        </label>
+        <p class="hint">Optional. One pin per line as <code>pin-id = label</code>. This changes only this placed component.</p>
         <div class="tool-row">
           <button id="rotateLeftBtn" type="button" title="Rotate left 90 degrees">↶ 90°</button>
           <button id="rotateRightBtn" type="button" title="Rotate right 90 degrees">↷ 90°</button>
@@ -276,7 +286,7 @@
   </main>
 
   <footer>
-    Click a library part to add it. Drag to move. Double-click a component to rename/value it. Click pins to wire.
+    Click a library part to add it. Drag to move. Select a component to edit its name, value, pin labels, style, scale, or rotation. Click pins to wire.
   </footer>
 
   <dialog id="componentDialog" class="component-maker-dialog">
