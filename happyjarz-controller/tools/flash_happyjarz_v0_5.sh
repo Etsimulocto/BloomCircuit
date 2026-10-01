@@ -3,13 +3,14 @@ set -euo pipefail
 
 # HAPPY JARZ v0.5 safe Pi flash helper.
 # Stops the USB controller/watcher so /dev/ttyACM* is free, stages the v0.5
-# sketch, applies compatibility + Wi-Fi + USB clock + OLED dashboard patches,
+# sketch, applies compatibility + Wi-Fi + USB clock + touch + OLED patches,
 # compiles, uploads, then restarts the watcher.
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONTROLLER_DIR="$(cd "$HERE/.." && pwd)"
 REPO="$(cd "$CONTROLLER_DIR/.." && pwd)"
 SRC="$CONTROLLER_DIR/firmware/happyjarz_integrated_v0_5.ino"
+TOUCH_PATCH="$HERE/patch_happyjarz_touch.py"
 OLED_PATCH="$HERE/patch_happyjarz_oled.py"
 WORK="$HOME/hjflash/happyjarz_integrated_v0_5"
 SKETCH="$WORK/happyjarz_integrated_v0_5.ino"
@@ -22,6 +23,10 @@ fi
 
 if [[ ! -f "$SRC" ]]; then
   echo "ERROR: firmware source missing: $SRC"
+  exit 1
+fi
+if [[ ! -f "$TOUCH_PATCH" ]]; then
+  echo "ERROR: touch patch missing: $TOUCH_PATCH"
   exit 1
 fi
 if [[ ! -f "$OLED_PATCH" ]]; then
@@ -43,7 +48,7 @@ if [[ -z "$PORT" ]]; then
   exit 1
 fi
 
-echo "HAPPY JARZ v0.5 flasher + centered OLED dashboard"
+echo "HAPPY JARZ v0.5 flasher + touch hardening + OLED menus"
 echo "Repo: $REPO"
 echo "Port: $PORT"
 echo
@@ -214,8 +219,11 @@ s = s.replace(old_loop, new_loop, 1)
 p.write_text(s, encoding="utf-8")
 PY
 
+# Harden touch before layering the OLED/menu UI on top.
+python3 "$TOUCH_PATCH" "$SKETCH"
+
 # Add the OLED UI to the staged sketch only. This keeps the known-good source
-# recoverable while the screen layout is still being tuned.
+# recoverable while the screen/menu layout is still being tuned.
 python3 "$OLED_PATCH" "$SKETCH"
 
 # Never let background telemetry monopolize the USB CDC path after the host
@@ -225,7 +233,6 @@ sed -i \
   -e 's/if(touchStreamCompat && millis()-lastTouchCompatMs>=100)/if(touchStreamCompat \&\& Serial \&\& millis()-lastTouchCompatMs>=100)/' \
   "$SKETCH"
 
-# U8g2 is the only new dependency for the OLED dashboard. Install if missing.
 if ! arduino-cli lib list | grep -q '^U8g2[[:space:]]'; then
   echo "Installing U8g2 OLED library..."
   arduino-cli lib install U8g2
@@ -242,4 +249,4 @@ echo "Upload complete. Restarting HAPPY JARZ plug watcher..."
 nohup python3 "$CONTROLLER_DIR/happyjarz_plug_watch.py" \
   >> "$HOME/.happyjarz/plug_watch_manual_start.log" 2>&1 &
 
-echo "Done. OLED dashboard: four centered lines; LEFT/RIGHT changes pages."
+echo "Done. Touch layer hardened; OLED menus active."
