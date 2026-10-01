@@ -28,8 +28,6 @@ class HappyJarzApp(previous.HappyJarzApp):
         if self.saver_state is None:
             self.saver_state = tk.StringVar(master=self, value="Idle • auto-start after 10 seconds")
 
-        # Current OLED + saver system. Do not call the old base implementation;
-        # it still contains the obsolete OFF/CLOCK/PLASMA/STARS/BOUNCE UI.
         outer, display = self._card(root, 10)
         outer.pack(fill="x", pady=(0, 8))
 
@@ -43,11 +41,11 @@ class HappyJarzApp(previous.HappyJarzApp):
         ttk.Label(info, text="Idle delay", style="PanelMuted.TLabel").grid(row=0, column=0, sticky="w")
         ttk.Label(info, text="10 seconds", style="Value.TLabel").grid(row=0, column=1, sticky="w", padx=(10, 24))
         ttk.Label(info, text="Modes", style="PanelMuted.TLabel").grid(row=0, column=2, sticky="w")
-        ttk.Label(info, text="SAYINGS  •  SPIRAL  •  TRIPPY", style="Value.TLabel").grid(row=0, column=3, sticky="w", padx=(10, 0))
+        ttk.Label(info, text="SAYINGS • SPIRAL • TRIPPY • PARTICLES", style="Value.TLabel").grid(row=0, column=3, sticky="w", padx=(10, 0))
 
         ttk.Label(
             display,
-            text="On the jar: LEFT / RIGHT = change saver  •  B = exit  •  SPIRAL/TRIPPY: UP/DOWN = speed, A = generate a new board-seeded universe",
+            text="On the jar: LEFT / RIGHT = change saver • B = exit • ART: UP/DOWN = speed, A = NEW UNIVERSE from live board entropy",
             style="PanelMuted.TLabel",
         ).pack(anchor="w", pady=(1, 7))
 
@@ -56,13 +54,19 @@ class HappyJarzApp(previous.HappyJarzApp):
         ttk.Button(row, text="SAYINGS", command=lambda: self.link.send("SET SAVER MODE SAYINGS")).pack(side="left")
         ttk.Button(row, text="SPIRAL", command=lambda: self.link.send("SET SAVER MODE SPIRAL")).pack(side="left", padx=5)
         ttk.Button(row, text="TRIPPY", command=lambda: self.link.send("SET SAVER MODE TRIPPY")).pack(side="left")
-        ttk.Button(row, text="NEW UNIVERSE (A)", style="Accent.TButton", command=lambda: self.link.send("SAVER RESEED")).pack(side="left", padx=(10, 5))
+        ttk.Button(row, text="PARTICLES", command=lambda: self.link.send("SET SAVER MODE PARTICLES")).pack(side="left", padx=5)
+        ttk.Button(row, text="NEW UNIVERSE (A)", style="Accent.TButton", command=lambda: self.link.send("SAVER RESEED")).pack(side="left", padx=(8, 5))
         ttk.Button(row, text="SPEED −", command=lambda: self.link.send("SAVER SPEED DOWN")).pack(side="left")
         ttk.Button(row, text="SPEED +", command=lambda: self.link.send("SAVER SPEED UP")).pack(side="left", padx=5)
         ttk.Button(row, text="EXIT (B)", command=lambda: self.link.send("SAVER EXIT")).pack(side="left")
         ttk.Button(row, text="Refresh", command=lambda: self.link.send("GET SAVER STATUS")).pack(side="right")
 
-        # Keep the physical-input utilities, but describe the current mappings.
+        ttk.Label(
+            display,
+            text="PARTICLES: 7–18 moving points + 1–3 gravity wells; each seed can change attraction/repulsion, orbit bias, damping, links, wrap/bounce and connection distance.",
+            style="PanelMuted.TLabel",
+        ).pack(anchor="w", pady=(7, 0))
+
         outer, mapping = self._card(root, 9)
         outer.pack(fill="x", pady=(0, 8))
         ttk.Label(mapping, text="CONTROL MAP", style="Section.TLabel").pack(anchor="w")
@@ -82,7 +86,6 @@ class HappyJarzApp(previous.HappyJarzApp):
         ):
             ttk.Button(row, text=label, command=lambda c=command: self.link.send(c)).pack(side="left", padx=(0, 6))
 
-        # Business/user editable marquee messages.
         outer, panel = self._card(root, 9)
         outer.pack(fill="both", expand=True)
 
@@ -177,15 +180,22 @@ class HappyJarzApp(previous.HappyJarzApp):
             fields = self._parse_fields(line)
             active = fields.get("active", "0") in ("1", "true", "TRUE")
             mode = fields.get("mode", "SAYINGS")
-            speed = ""
+            state = "ACTIVE" if active else "idle"
             if mode == "SPIRAL":
-                speed = fields.get("spiral_speed", "1")
+                detail = f"speed {fields.get('spiral_speed', '1')}/8"
             elif mode == "TRIPPY":
-                speed = fields.get("trippy_speed", "1")
+                detail = f"speed {fields.get('trippy_speed', '1')}/8"
+            elif mode == "PARTICLES":
+                detail = (
+                    f"speed {fields.get('particle_speed', '1')}/8 • "
+                    f"{fields.get('particles', '?')} particles • "
+                    f"{fields.get('attractors', '?')} wells • "
+                    f"links {fields.get('links', '?')} • wrap {fields.get('wrap', '?')} • repel {fields.get('repel', '?')}"
+                )
+            else:
+                detail = "marquee"
             if self.saver_state is not None:
-                state = "ACTIVE" if active else "idle"
-                suffix = f" • speed {speed}/8" if speed else " • marquee"
-                self.saver_state.set(f"{mode} • {state}{suffix}")
+                self.saver_state.set(f"{mode} • {state} • {detail}")
             self._log(f"RX  {line}")
             return
 
