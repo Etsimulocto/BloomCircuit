@@ -3,8 +3,8 @@ set -euo pipefail
 
 # HAPPY JARZ v0.5 safe Pi flash helper.
 # Stops the USB controller/watcher so /dev/ttyACM* is free, stages the v0.5
-# sketch, applies compatibility + Wi-Fi + USB clock + touch + OLED/menu patches,
-# compiles, uploads, then restarts the watcher.
+# sketch, applies compatibility + Wi-Fi + USB clock + touch + OLED/menu +
+# sensory pattern patches, compiles, uploads, then restarts the watcher.
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONTROLLER_DIR="$(cd "$HERE/.." && pwd)"
@@ -13,6 +13,7 @@ SRC="$CONTROLLER_DIR/firmware/happyjarz_integrated_v0_5.ino"
 TOUCH_PATCH="$HERE/patch_happyjarz_touch.py"
 OLED_PATCH="$HERE/patch_happyjarz_oled.py"
 MENU_PATCH="$HERE/patch_happyjarz_menu_controls.py"
+PATTERN_PATCH="$HERE/patch_happyjarz_patterns.py"
 WORK="$HOME/hjflash/happyjarz_integrated_v0_5"
 SKETCH="$WORK/happyjarz_integrated_v0_5.ino"
 FQBN="esp32:esp32:esp32s3:CDCOnBoot=cdc"
@@ -22,7 +23,7 @@ if ! command -v arduino-cli >/dev/null 2>&1; then
   exit 1
 fi
 
-for required in "$SRC" "$TOUCH_PATCH" "$OLED_PATCH" "$MENU_PATCH"; do
+for required in "$SRC" "$TOUCH_PATCH" "$OLED_PATCH" "$MENU_PATCH" "$PATTERN_PATCH"; do
   if [[ ! -f "$required" ]]; then
     echo "ERROR: required file missing: $required"
     exit 1
@@ -43,7 +44,7 @@ if [[ -z "$PORT" ]]; then
   exit 1
 fi
 
-echo "HAPPY JARZ v0.5 flasher + touch hardening + OLED menus"
+echo "HAPPY JARZ v0.5 flasher + OLED menus + sensory pattern library"
 echo "Repo: $REPO"
 echo "Port: $PORT"
 echo
@@ -56,8 +57,6 @@ sleep 1
 mkdir -p "$WORK"
 cp "$SRC" "$SKETCH"
 
-# Arduino's .ino preprocessor may synthesize function prototypes before the
-# InputIndex enum is visible. Keep the staged compatibility fix.
 sed -i \
   -e 's/static bool updateInputState(InputIndex idx)/static bool updateInputState(uint8_t idx)/' \
   -e 's/updateInputState((InputIndex)i)/updateInputState(i)/' \
@@ -214,15 +213,11 @@ s = s.replace(old_loop, new_loop, 1)
 p.write_text(s, encoding="utf-8")
 PY
 
-# Harden touch before layering the OLED/menu UI on top.
 python3 "$TOUCH_PATCH" "$SKETCH"
-
-# Add the OLED UI, then restore the original proven light-control map on HOME.
 python3 "$OLED_PATCH" "$SKETCH"
 python3 "$MENU_PATCH" "$SKETCH"
+python3 "$PATTERN_PATCH" "$SKETCH"
 
-# Never let background telemetry monopolize the USB CDC path after the host
-# closes. Local touch handling must remain independent of the desktop app.
 sed -i \
   -e 's/if (inputStream && millis()-lastInputStreamMs>=100)/if (inputStream \&\& Serial \&\& millis()-lastInputStreamMs>=100)/' \
   -e 's/if(touchStreamCompat && millis()-lastTouchCompatMs>=100)/if(touchStreamCompat \&\& Serial \&\& millis()-lastTouchCompatMs>=100)/' \
@@ -244,4 +239,4 @@ echo "Upload complete. Restarting HAPPY JARZ plug watcher..."
 nohup python3 "$CONTROLLER_DIR/happyjarz_plug_watch.py" \
   >> "$HOME/.happyjarz/plug_watch_manual_start.log" 2>&1 &
 
-echo "Done. HOME keeps original controls; RIGHT opens the OLED menu."
+echo "Done. 50% max brightness; expanded sensory pattern library enabled."
