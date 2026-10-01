@@ -16,18 +16,20 @@ if len(sys.argv) != 2:
 p = Path(sys.argv[1])
 s = p.read_text(encoding="utf-8")
 
+# Touch hardening runs before this patch, so match the CURRENT staged startup
+# block (including its 350 ms settle + calibration diagnostic), not the old
+# pre-touch version.
 old_boot = '''    uint8_t savedBrightness=brightnessPercent;
     brightnessPercent=25; ledColor[0]={0,0,255};ledColor[1]={0,0,255};showLeds();
-    delay(250);
+    delay(350);
     calibrateInputs();
     printTouchCalibration();
     ledColor[0]={0,255,0};ledColor[1]={0,255,0};showLeds();delay(180);
     loadSettings();brightnessPercent=savedBrightness;if(patternName=="SOLID")showLeds();
 '''
-new_boot = '''    // Do not overwrite user colors during ordinary boot/reconnect. The USB-C
-    // connector on the prototype is mechanically touchy, so a brief reset must
-    // restore state quietly instead of flashing diagnostic blue/green.
-    delay(250);
+new_boot = '''    // Quiet boot/reconnect: never overwrite user LED colors just because USB
+    // power wobbled. Let rails settle, calibrate touch, then restore settings.
+    delay(350);
     calibrateInputs();
     printTouchCalibration();
     loadSettings();
@@ -36,7 +38,7 @@ new_boot = '''    // Do not overwrite user colors during ordinary boot/reconnect
     else resetPatternEngine();
 '''
 if old_boot not in s:
-    raise SystemExit("LED recovery patch failed: startup color-test block not found")
+    raise SystemExit("LED recovery patch failed: current staged startup block not found")
 s = s.replace(old_boot, new_boot, 1)
 
 old_led1 = 'if(line.startsWith("SET LED1 COLOR ")){if(parseRgb(line,1))ack("SET LED1 COLOR");else err("invalid LED1 RGB values");return;}'
