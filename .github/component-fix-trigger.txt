@@ -1,0 +1,1 @@
+Apply the editable/readable component patch workflow.
