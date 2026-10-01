@@ -4,7 +4,7 @@ set -euo pipefail
 # HAPPY JARZ v0.5 safe Pi flash helper.
 # Stops the USB controller/watcher so /dev/ttyACM* is free, stages the v0.5
 # sketch, applies Arduino .ino compatibility + Wi-Fi state-machine/diagnostic
-# patches, compiles, uploads, then restarts the plug watcher.
+# + scan/select protocol patches, compiles, uploads, then restarts the plug watcher.
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONTROLLER_DIR="$(cd "$HERE/.." && pwd)"
@@ -44,7 +44,7 @@ echo "Port: $PORT"
 echo
 
 echo "Stopping controller/watcher so the USB port is free..."
-pkill -f '[h]appyjarz_controller.py' 2>/dev/null || true
+pkill -f '[h]appyjarz_controller' 2>/dev/null || true
 pkill -f '[h]appyjarz_plug_watch.py' 2>/dev/null || true
 sleep 1
 
@@ -59,10 +59,6 @@ sed -i \
   -e 's/updateInputState((InputIndex)i)/updateInputState(i)/' \
   "$SKETCH"
 
-# v0.5 Wi-Fi hardening + diagnostics. Repeated WIFI CONNECT commands no longer
-# reconfigure the STA while association is in progress. If a 20-second attempt
-# fails, the firmware scans for the configured SSID and prints visibility,
-# signal, channel, and encryption type so the next failure is actionable.
 python3 - "$SKETCH" <<'PY'
 from pathlib import Path
 import sys
@@ -79,6 +75,42 @@ old = '''static void connectWifi() {
 new = '''static bool wifiConnecting = false;
 static unsigned long wifiConnectStartedMs = 0;
 static constexpr unsigned long WIFI_CONNECT_TIMEOUT_MS = 20000;
+
+static String wifiSecurityName(wifi_auth_mode_t mode) {
+  switch (mode) {
+    case WIFI_AUTH_OPEN: return "OPEN";
+    case WIFI_AUTH_WEP: return "WEP";
+    case WIFI_AUTH_WPA_PSK: return "WPA";
+    case WIFI_AUTH_WPA2_PSK: return "WPA2";
+    case WIFI_AUTH_WPA_WPA2_PSK: return "WPA/WPA2";
+    case WIFI_AUTH_WPA2_ENTERPRISE: return "WPA2-ENT";
+    case WIFI_AUTH_WPA3_PSK: return "WPA3";
+    case WIFI_AUTH_WPA2_WPA3_PSK: return "WPA2/WPA3";
+    default: return String((int)mode);
+  }
+}
+
+static void scanWifiNetworks() {
+  if (wifiConnecting) {
+    WiFi.disconnect(false, false);
+    wifiConnecting = false;
+    delay(100);
+  }
+  WiFi.mode(WIFI_STA);
+  Serial.println("HJ|WIFI_SCAN|BEGIN");
+  int count = WiFi.scanNetworks(false, true);
+  if (count < 0) count = 0;
+  for (int i = 0; i < count; ++i) {
+    String ssid = WiFi.SSID(i);
+    if (!ssid.length()) continue;
+    Serial.print("HJ|WIFI_SCAN|NET|ssid="); Serial.print(ssid);
+    Serial.print("|rssi="); Serial.print(WiFi.RSSI(i));
+    Serial.print("|channel="); Serial.print(WiFi.channel(i));
+    Serial.print("|security="); Serial.println(wifiSecurityName(WiFi.encryptionType(i)));
+  }
+  Serial.print("HJ|WIFI_SCAN|END|count="); Serial.println(count);
+  WiFi.scanDelete();
+}
 
 static void connectWifi() {
   if (!wifiSsid.length()) {
@@ -116,7 +148,7 @@ static void diagnoseWifiFailure() {
         Serial.print("HJ|WIFI_DIAG|found=1|ssid="); Serial.print(wifiSsid);
         Serial.print("|rssi="); Serial.print(WiFi.RSSI(i));
         Serial.print("|channel="); Serial.print(WiFi.channel(i));
-        Serial.print("|enc="); Serial.println((int)WiFi.encryptionType(i));
+        Serial.print("|security="); Serial.println(wifiSecurityName(WiFi.encryptionType(i)));
         break;
       }
     }
@@ -130,6 +162,12 @@ static void diagnoseWifiFailure() {
 if old not in s:
     raise SystemExit("Wi-Fi patch failed: connectWifi block not found")
 s = s.replace(old, new, 1)
+
+needle = '  if(line=="GET WIFI STATUS"){printWifiStatus();return;}\n'
+replacement = needle + '  if(line=="SCAN WIFI"){scanWifiNetworks();return;}\n'
+if needle not in s:
+    raise SystemExit("Wi-Fi scan command patch failed: protocol insertion point not found")
+s = s.replace(needle, replacement, 1)
 
 old_loop = '''  static bool timeStarted=false;
   if(!timeStarted && WiFi.status()==WL_CONNECTED){startTimeSync();timeStarted=true;Serial.println("HJ|EVENT|wifi=CONNECTED");}
@@ -169,4 +207,4 @@ echo "Upload complete. Restarting HAPPY JARZ plug watcher..."
 nohup python3 "$CONTROLLER_DIR/happyjarz_plug_watch.py" \
   >> "$HOME/.happyjarz/plug_watch_manual_start.log" 2>&1 &
 
-echo "Done. The controller should reopen after the watcher identifies HJ-001."
+echo "Done. Controller v0.3.1 should reopen with selectable Wi-Fi scanning."
