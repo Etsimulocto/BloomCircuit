@@ -16,6 +16,7 @@ MENU_PATCH="$HERE/patch_happyjarz_menu_controls.py"
 PATTERN_PATCH="$HERE/patch_happyjarz_patterns.py"
 SCREENSAVER_PATCH="$HERE/patch_happyjarz_screensavers.py"
 SAYINGS_PATCH="$HERE/patch_happyjarz_sayings_v2.py"
+CUSTOM_SAYINGS_PATCH="$HERE/patch_happyjarz_custom_sayings.py"
 WORK="$HOME/hjflash/happyjarz_integrated_v0_5"
 SKETCH="$WORK/happyjarz_integrated_v0_5.ino"
 FQBN="esp32:esp32:esp32s3:CDCOnBoot=cdc"
@@ -25,7 +26,7 @@ if ! command -v arduino-cli >/dev/null 2>&1; then
   exit 1
 fi
 
-for required in "$SRC" "$TOUCH_PATCH" "$OLED_PATCH" "$MENU_PATCH" "$PATTERN_PATCH" "$SCREENSAVER_PATCH" "$SAYINGS_PATCH"; do
+for required in "$SRC" "$TOUCH_PATCH" "$OLED_PATCH" "$MENU_PATCH" "$PATTERN_PATCH" "$SCREENSAVER_PATCH" "$SAYINGS_PATCH" "$CUSTOM_SAYINGS_PATCH"; do
   if [[ ! -f "$required" ]]; then
     echo "ERROR: required file missing: $required"
     exit 1
@@ -221,6 +222,7 @@ python3 "$MENU_PATCH" "$SKETCH"
 python3 "$PATTERN_PATCH" "$SKETCH"
 python3 "$SCREENSAVER_PATCH" "$SKETCH"
 python3 "$SAYINGS_PATCH" "$SKETCH"
+python3 "$CUSTOM_SAYINGS_PATCH" "$SKETCH"
 
 sed -i \
   -e 's/if (inputStream && millis()-lastInputStreamMs>=100)/if (inputStream \&\& Serial \&\& millis()-lastInputStreamMs>=100)/' \
@@ -243,4 +245,4 @@ echo "Upload complete. Restarting HAPPY JARZ plug watcher..."
 nohup python3 "$CONTROLLER_DIR/happyjarz_plug_watch.py" \
   >> "$HOME/.happyjarz/plug_watch_manual_start.log" 2>&1 &
 
-echo "Done. 50% max brightness; sensory patterns + 10-second OLED screensavers + expanded marquee sayings enabled."
+echo "Done. 50% max brightness; sensory patterns + screensavers + editable marquee sayings enabled."
