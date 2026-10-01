@@ -7,7 +7,8 @@ Goals:
 - average several touch samples to reject short spikes
 - use a saner +16.7% touch threshold after startup rails settle
 - add hysteresis so a held finger does not chatter on/off near threshold
-- add a short release lockout so one touch produces one clean event
+- one physical touch produces exactly one logical press
+- require a sustained real release before a pad can fire again
 - keep slow baseline tracking while untouched
 - print baseline/threshold diagnostics after calibration
 - print ESP32 reset reason on boot so unexpected USB drops are diagnosable
@@ -85,22 +86,40 @@ old_update = '''static bool updateInputState(uint8_t idx) {
   pad.qualified = q;
   return q;
 }'''
-new_update = '''static unsigned long touchReleasedMs[INPUT_COUNT] = {0,0,0,0,0,0};
+new_update = '''static bool touchNeedsRelease[INPUT_COUNT] = {false,false,false,false,false,false};
+static unsigned long touchReleaseStableMs[INPUT_COUNT] = {0,0,0,0,0,0};
 
 static bool updateInputState(uint8_t idx) {
   TouchPadState &pad = inputs[idx];
   uint32_t value = readTouchPin(pad.pin);
   unsigned long now = millis();
 
-  // Enter at the full threshold, release lower. This hysteresis prevents a
-  // held finger from rapidly toggling around one threshold edge.
+  // Enter at the full threshold, release at a lower threshold. This hysteresis
+  // keeps OLED/I2C noise from toggling a held finger around one edge.
   uint32_t releaseThreshold = pad.baseline + (pad.baseline / 13U);
   bool enterAbove = value >= pad.threshold;
   bool stayAbove = value >= releaseThreshold;
 
-  if (!pad.touching) {
-    if (now - touchReleasedMs[idx] < 180UL) return false;
+  // Once a press has ended, do not arm this pad again merely because some time
+  // passed. Require a genuine, continuous release for 250 ms. That makes one
+  // physical touch exactly one logical event, even if the signal chatters.
+  if (touchNeedsRelease[idx]) {
+    if (!stayAbove) {
+      if (touchReleaseStableMs[idx] == 0) touchReleaseStableMs[idx] = now;
+      if (now - touchReleaseStableMs[idx] >= 250UL) {
+        touchNeedsRelease[idx] = false;
+        touchReleaseStableMs[idx] = 0;
+        pad.baseline = (pad.baseline * 255U + value) / 256U;
+        pad.threshold = pad.baseline + (pad.baseline / 6U);
+        if (idx == IN_B) bHomeSent = false;
+      }
+    } else {
+      touchReleaseStableMs[idx] = 0;
+    }
+    return false;
+  }
 
+  if (!pad.touching) {
     if (enterAbove) {
       pad.touching = true;
       pad.enteredMs = now;
@@ -109,11 +128,13 @@ static bool updateInputState(uint8_t idx) {
       pad.threshold = pad.baseline + (pad.baseline / 6U);
     }
   } else if (!stayAbove) {
+    bool hadQualified = pad.qualified;
     pad.touching = false;
     pad.qualified = false;
     pad.enteredMs = 0;
     pad.qualifiedMs = 0;
-    touchReleasedMs[idx] = now;
+    touchReleaseStableMs[idx] = now;
+    touchNeedsRelease[idx] = hadQualified;
     if (idx == IN_B) bHomeSent = false;
     return false;
   }
