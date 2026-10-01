@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""HAPPY JARZ Controller v0.3.2 — editable business/custom marquee sayings."""
+"""HAPPY JARZ Controller v0.3.2 — current OLED/saver controls + editable marquee sayings."""
 
 from __future__ import annotations
 
@@ -15,20 +15,90 @@ class HappyJarzApp(previous.HappyJarzApp):
         self.custom_saying_text = None
         self.custom_saying_state = None
         self._custom_saying_rx: dict[int, str] = {}
+        self.saver_state = None
         super().__init__()
         self.title("HAPPY JARZ Controller v0.3.2")
-        self._log("Custom business marquee editor v0.3.2 active")
+        self._log("Current OLED screensaver controls + custom marquee editor active")
 
     def _build_display_tab(self, root):
-        super()._build_display_tab(root)
-
         if self.custom_saying_source is None:
             self.custom_saying_source = tk.StringVar(master=self, value="BUILTIN")
         if self.custom_saying_state is None:
             self.custom_saying_state = tk.StringVar(master=self, value="8 custom slots stored in jar")
+        if self.saver_state is None:
+            self.saver_state = tk.StringVar(master=self, value="Idle • auto-start after 10 seconds")
 
-        outer, panel = self._card(root, 10)
-        outer.pack(fill="both", expand=True, pady=(8, 0))
+        # Current OLED + saver system. Do not call the old base implementation;
+        # it still contains the obsolete OFF/CLOCK/PLASMA/STARS/BOUNCE UI.
+        outer, display = self._card(root, 10)
+        outer.pack(fill="x", pady=(0, 8))
+
+        head = ttk.Frame(display, style="Panel.TFrame")
+        head.pack(fill="x")
+        ttk.Label(head, text="OLED + PROCEDURAL SCREENSAVERS", style="Section.TLabel").pack(side="left")
+        ttk.Label(head, textvariable=self.saver_state, style="PanelMuted.TLabel").pack(side="right")
+
+        bri = ttk.Frame(display, style="Panel.TFrame")
+        bri.pack(fill="x", pady=(8, 5))
+        ttk.Label(bri, text="OLED brightness", style="PanelMuted.TLabel").pack(side="left")
+        scale = ttk.Scale(bri, from_=0, to=100, orient="horizontal", command=self._display_brightness_changed)
+        scale.set(self.display_brightness.get())
+        scale.pack(side="left", fill="x", expand=True, padx=8)
+        self.display_brightness_label = ttk.Label(bri, text=f"{self.display_brightness.get()}%", style="Value.TLabel", width=5)
+        self.display_brightness_label.pack(side="left")
+        ttk.Button(
+            bri,
+            text="Apply",
+            command=lambda: self.link.send(f"SET DISPLAY BRIGHTNESS {self.display_brightness.get()}"),
+        ).pack(side="left", padx=(6, 0))
+
+        info = ttk.Frame(display, style="Panel.TFrame")
+        info.pack(fill="x", pady=(3, 7))
+        ttk.Label(info, text="Idle delay", style="PanelMuted.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(info, text="10 seconds", style="Value.TLabel").grid(row=0, column=1, sticky="w", padx=(10, 24))
+        ttk.Label(info, text="Modes", style="PanelMuted.TLabel").grid(row=0, column=2, sticky="w")
+        ttk.Label(info, text="SAYINGS  •  SPIRAL  •  TRIPPY", style="Value.TLabel").grid(row=0, column=3, sticky="w", padx=(10, 0))
+
+        ttk.Label(
+            display,
+            text="On the jar: LEFT / RIGHT = change saver  •  B = exit  •  SPIRAL/TRIPPY: UP/DOWN = speed, A = generate a new board-seeded universe",
+            style="PanelMuted.TLabel",
+        ).pack(anchor="w", pady=(1, 7))
+
+        row = ttk.Frame(display, style="Panel.TFrame")
+        row.pack(fill="x")
+        ttk.Button(row, text="SAYINGS", command=lambda: self.link.send("SET SAVER MODE SAYINGS")).pack(side="left")
+        ttk.Button(row, text="SPIRAL", command=lambda: self.link.send("SET SAVER MODE SPIRAL")).pack(side="left", padx=5)
+        ttk.Button(row, text="TRIPPY", command=lambda: self.link.send("SET SAVER MODE TRIPPY")).pack(side="left")
+        ttk.Button(row, text="NEW UNIVERSE (A)", style="Accent.TButton", command=lambda: self.link.send("SAVER RESEED")).pack(side="left", padx=(10, 5))
+        ttk.Button(row, text="SPEED −", command=lambda: self.link.send("SAVER SPEED DOWN")).pack(side="left")
+        ttk.Button(row, text="SPEED +", command=lambda: self.link.send("SAVER SPEED UP")).pack(side="left", padx=5)
+        ttk.Button(row, text="EXIT (B)", command=lambda: self.link.send("SAVER EXIT")).pack(side="left")
+        ttk.Button(row, text="Refresh", command=lambda: self.link.send("GET SAVER STATUS")).pack(side="right")
+
+        # Keep the physical-input utilities, but describe the current mappings.
+        outer, mapping = self._card(root, 9)
+        outer.pack(fill="x", pady=(0, 8))
+        ttk.Label(mapping, text="CONTROL MAP", style="Section.TLabel").pack(anchor="w")
+        ttk.Label(
+            mapping,
+            text="HOME: A/B colors • UP/DOWN patterns • RIGHT menu     |     SAVER: LEFT/RIGHT mode • B exit • ART: UP/DOWN speed • A reseed",
+            style="PanelMuted.TLabel",
+        ).pack(anchor="w", pady=(5, 7))
+        row = ttk.Frame(mapping, style="Panel.TFrame")
+        row.pack(fill="x")
+        for label, command in (
+            ("JAR MODE", "SET INPUT MODE JAR"),
+            ("MENU MODE", "SET INPUT MODE MENU"),
+            ("GAME MODE", "SET INPUT MODE GAME"),
+            ("TEST INPUT", "TEST INPUT"),
+            ("GET INPUT", "GET INPUT"),
+        ):
+            ttk.Button(row, text=label, command=lambda c=command: self.link.send(c)).pack(side="left", padx=(0, 6))
+
+        # Business/user editable marquee messages.
+        outer, panel = self._card(root, 9)
+        outer.pack(fill="both", expand=True)
 
         head = ttk.Frame(panel, style="Panel.TFrame")
         head.pack(fill="x")
@@ -37,15 +107,15 @@ class HappyJarzApp(previous.HappyJarzApp):
 
         ttk.Label(
             panel,
-            text="For banks, clinics, shops, offices, events, gifts, etc. Enter up to 8 messages, one per line. Each message is saved inside the jar and survives unplugging.",
+            text="For banks, clinics, shops, offices, events, gifts, etc. Up to 8 messages; each is saved inside the jar and survives unplugging.",
             style="PanelMuted.TLabel",
-        ).pack(anchor="w", pady=(5, 7))
+        ).pack(anchor="w", pady=(5, 6))
 
         body = ttk.Frame(panel, style="Panel.TFrame")
         body.pack(fill="both", expand=True)
         self.custom_saying_text = tk.Text(
             body,
-            height=8,
+            height=6,
             wrap="none",
             bg="#080d18",
             fg="#eef3ff",
@@ -54,7 +124,7 @@ class HappyJarzApp(previous.HappyJarzApp):
             relief="flat",
             bd=0,
             padx=8,
-            pady=6,
+            pady=5,
             font=("TkFixedFont", 10),
         )
         scroll = ttk.Scrollbar(body, orient="vertical", command=self.custom_saying_text.yview)
@@ -63,8 +133,8 @@ class HappyJarzApp(previous.HappyJarzApp):
         scroll.pack(side="right", fill="y")
 
         controls = ttk.Frame(panel, style="Panel.TFrame")
-        controls.pack(fill="x", pady=(8, 0))
-        ttk.Label(controls, text="Screensaver sayings:", style="PanelMuted.TLabel").pack(side="left")
+        controls.pack(fill="x", pady=(7, 0))
+        ttk.Label(controls, text="SAYINGS source:", style="PanelMuted.TLabel").pack(side="left")
         source = ttk.Combobox(
             controls,
             state="readonly",
@@ -95,7 +165,6 @@ class HappyJarzApp(previous.HappyJarzApp):
             if len(lines) >= 8:
                 break
 
-        # Clear first so deleted/shortened lists do not leave stale slots behind.
         self.link.send("CLEAR CUSTOM SAYINGS")
         for slot, text in enumerate(lines, start=1):
             self.link.send(f"SET CUSTOM SAYING {slot} {text}")
@@ -118,6 +187,22 @@ class HappyJarzApp(previous.HappyJarzApp):
             self.custom_saying_state.set("Custom sayings cleared")
 
     def _handle_line(self, line: str):
+        if line.startswith("HJ|SAVER|"):
+            fields = self._parse_fields(line)
+            active = fields.get("active", "0") in ("1", "true", "TRUE")
+            mode = fields.get("mode", "SAYINGS")
+            speed = ""
+            if mode == "SPIRAL":
+                speed = fields.get("spiral_speed", "1")
+            elif mode == "TRIPPY":
+                speed = fields.get("trippy_speed", "1")
+            if self.saver_state is not None:
+                state = "ACTIVE" if active else "idle"
+                suffix = f" • speed {speed}/8" if speed else " • marquee"
+                self.saver_state.set(f"{mode} • {state}{suffix}")
+            self._log(f"RX  {line}")
+            return
+
         if line.startswith("HJ|CUSTOM_SAYINGS|BEGIN|"):
             fields = self._parse_fields(line)
             self._custom_saying_rx.clear()
@@ -157,6 +242,8 @@ class HappyJarzApp(previous.HappyJarzApp):
             return
 
         super()._handle_line(line)
+        if line.startswith("HJ|IDENTITY|"):
+            self.after(150, lambda: self.link.send("GET SAVER STATUS"))
 
 
 if __name__ == "__main__":
