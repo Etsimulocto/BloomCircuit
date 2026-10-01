@@ -10,11 +10,9 @@ While screensaver is active:
 
 SPIRAL and TRIPPY are not canned presets. A reseed mixes uptime, micros jitter,
 ESP32 temperature, Wi-Fi RSSI (when connected), six raw capacitive touch reads,
-current light state and Arduino PRNG state into a 32-bit seed. That seed is then
-expanded into drawing parameters so the combinations are effectively unbounded.
-
-Runs after screensaver/sayings/custom-sayings patches and leaves marquee/business
-message behavior alone.
+current light state and Arduino PRNG state into a 32-bit seed. Small bounded
+random-walk mutations continuously move the generated parameters so the art does
+not collapse into obvious repeating sin/cos loops.
 """
 from pathlib import Path
 import sys
@@ -33,6 +31,17 @@ state_block = r'''static uint8_t hjSpiralSpeed = 1;
 static uint8_t hjTrippySpeed = 1;
 static uint32_t hjSpiralSeed = 0x8255A11FUL;
 static uint32_t hjTrippySeed = 0x51A7C0DEUL;
+
+// Slow random-walk state. These values move continuously instead of tracing a
+// closed periodic path, so each generated universe keeps evolving.
+static float hjSpiralCxDrift = 0.0f, hjSpiralCyDrift = 0.0f;
+static float hjSpiralAngleDrift = 0.0f, hjSpiralSquashDrift = 0.0f;
+static float hjSpiralWobbleDrift = 0.0f;
+static float hjTrippyFreqDrift1 = 0.0f, hjTrippyFreqDrift2 = 0.0f;
+static float hjTrippyAmpDrift1 = 0.0f, hjTrippyAmpDrift2 = 0.0f;
+static float hjTrippyPhaseDrift = 0.0f;
+static uint32_t hjSpiralWanderState = 0x13572468UL;
+static uint32_t hjTrippyWanderState = 0x24681357UL;
 
 static uint32_t hjMix32(uint32_t x) {
   x ^= x >> 16; x *= 0x7feb352dUL;
@@ -76,13 +85,49 @@ static int hjSeedInt(uint32_t &state, int lo, int hi) {
   return lo + (int)(hjSeedNext(state) % (uint32_t)(hi - lo + 1));
 }
 
+static float hjClampF(float v, float lo, float hi) {
+  if (v < lo) return lo;
+  if (v > hi) return hi;
+  return v;
+}
+
+static void hjWanderSpiral() {
+  // Nudge only occasionally; between nudges the recipe stays visually coherent.
+  if ((hjArtStep % 37U) != 0U) return;
+  hjSpiralWanderState ^= hjBoardEntropy();
+  hjSpiralCxDrift      = hjClampF(hjSpiralCxDrift      + hjSeedFloat(hjSpiralWanderState,-1.25f, 1.25f), -12.0f, 12.0f);
+  hjSpiralCyDrift      = hjClampF(hjSpiralCyDrift      + hjSeedFloat(hjSpiralWanderState,-0.85f, 0.85f),  -8.0f,  8.0f);
+  hjSpiralAngleDrift   = hjClampF(hjSpiralAngleDrift   + hjSeedFloat(hjSpiralWanderState,-0.018f,0.018f),-0.16f, 0.16f);
+  hjSpiralSquashDrift  = hjClampF(hjSpiralSquashDrift  + hjSeedFloat(hjSpiralWanderState,-0.025f,0.025f),-0.24f, 0.24f);
+  hjSpiralWobbleDrift  = hjClampF(hjSpiralWobbleDrift  + hjSeedFloat(hjSpiralWanderState,-0.012f,0.012f),-0.11f, 0.11f);
+}
+
+static void hjWanderTrippy() {
+  if ((hjArtStep % 41U) != 0U) return;
+  hjTrippyWanderState ^= hjBoardEntropy();
+  hjTrippyFreqDrift1 = hjClampF(hjTrippyFreqDrift1 + hjSeedFloat(hjTrippyWanderState,-0.0035f,0.0035f),-0.030f,0.030f);
+  hjTrippyFreqDrift2 = hjClampF(hjTrippyFreqDrift2 + hjSeedFloat(hjTrippyWanderState,-0.0030f,0.0030f),-0.025f,0.025f);
+  hjTrippyAmpDrift1  = hjClampF(hjTrippyAmpDrift1  + hjSeedFloat(hjTrippyWanderState,-1.20f,1.20f),-9.0f,9.0f);
+  hjTrippyAmpDrift2  = hjClampF(hjTrippyAmpDrift2  + hjSeedFloat(hjTrippyWanderState,-0.90f,0.90f),-7.0f,7.0f);
+  hjTrippyPhaseDrift += hjSeedFloat(hjTrippyWanderState,-0.22f,0.22f);
+  if (hjTrippyPhaseDrift > 6.28318f) hjTrippyPhaseDrift -= 6.28318f;
+  if (hjTrippyPhaseDrift < -6.28318f) hjTrippyPhaseDrift += 6.28318f;
+}
+
 static void hjReseedSpiral() {
   hjSpiralSeed = hjBoardEntropy() ^ 0x53504952UL;
+  hjSpiralWanderState = hjSpiralSeed ^ 0xA5A55A5AUL;
+  hjSpiralCxDrift=hjSpiralCyDrift=0.0f;
+  hjSpiralAngleDrift=hjSpiralSquashDrift=hjSpiralWobbleDrift=0.0f;
   hjArtStep = 0;
 }
 
 static void hjReseedTrippy() {
   hjTrippySeed = hjBoardEntropy() ^ 0x54524950UL;
+  hjTrippyWanderState = hjTrippySeed ^ 0x5AA5A55AUL;
+  hjTrippyFreqDrift1=hjTrippyFreqDrift2=0.0f;
+  hjTrippyAmpDrift1=hjTrippyAmpDrift2=0.0f;
+  hjTrippyPhaseDrift=0.0f;
   hjArtStep = 0;
 }
 '''
@@ -101,24 +146,23 @@ old_spiral = '''static void oledRenderSaverSpiral() {
 }
 '''
 new_spiral = r'''static void oledRenderSaverSpiral() {
+  hjWanderSpiral();
   uint32_t g = hjSpiralSeed;
 
   float angleScale = hjSeedFloat(g, 0.12f, 0.62f);
   if (hjSeedInt(g,0,1)) angleScale = -angleScale;
+  angleScale += hjSpiralAngleDrift;
+  if (fabsf(angleScale) < 0.07f) angleScale = angleScale < 0 ? -0.07f : 0.07f;
+
   float radiusScale = hjSeedFloat(g, 0.24f, 0.62f);
-  float squash = hjSeedFloat(g, 0.45f, 1.15f);
-  float wobble = hjSeedFloat(g, 0.0f, 0.22f);
+  float squash = hjClampF(hjSeedFloat(g, 0.45f, 1.15f) + hjSpiralSquashDrift, 0.30f, 1.35f);
+  float wobble = hjClampF(hjSeedFloat(g, 0.0f, 0.22f) + hjSpiralWobbleDrift, 0.0f, 0.34f);
   float phase = hjSeedFloat(g, 0.0f, 6.28318f);
   int points = hjSeedInt(g, 52, 118);
-  int cxBase = hjSeedInt(g, 50, 78);
-  int cyBase = hjSeedInt(g, 24, 40);
+  int cx = hjSeedInt(g, 50, 78) + (int)hjSpiralCxDrift;
+  int cy = hjSeedInt(g, 24, 40) + (int)hjSpiralCyDrift;
   int thickness = hjSeedInt(g, 1, 2);
   int satelliteEvery = hjSeedInt(g, 7, 19);
-
-  // Slow drift comes from the animation step, while the recipe remains stable
-  // until A reseeds it. This makes one generated spiral evolve instead of flicker.
-  int cx = cxBase + (int)(5.0f * sinf(hjArtStep * 0.017f + phase));
-  int cy = cyBase + (int)(4.0f * cosf(hjArtStep * 0.013f + phase));
 
   for (int i=0; i<points; ++i) {
     float fi = (float)i;
@@ -157,21 +201,21 @@ old_trippy = '''static void oledRenderSaverTrippy() {
 }
 '''
 new_trippy = r'''static void oledRenderSaverTrippy() {
+  hjWanderTrippy();
   uint32_t g = hjTrippySeed;
 
   int family = hjSeedInt(g,0,4);
   int spacing = hjSeedInt(g,5,15);
-  float freq1 = hjSeedFloat(g,0.035f,0.14f);
-  float freq2 = hjSeedFloat(g,0.025f,0.11f);
-  float amp1 = hjSeedFloat(g,7.0f,27.0f);
-  float amp2 = hjSeedFloat(g,4.0f,20.0f);
-  float phase = hjSeedFloat(g,0.0f,6.28318f);
+  float freq1 = hjClampF(hjSeedFloat(g,0.035f,0.14f) + hjTrippyFreqDrift1,0.018f,0.18f);
+  float freq2 = hjClampF(hjSeedFloat(g,0.025f,0.11f) + hjTrippyFreqDrift2,0.014f,0.15f);
+  float amp1 = hjClampF(hjSeedFloat(g,7.0f,27.0f) + hjTrippyAmpDrift1,3.0f,31.0f);
+  float amp2 = hjClampF(hjSeedFloat(g,4.0f,20.0f) + hjTrippyAmpDrift2,2.0f,27.0f);
+  float phase = hjSeedFloat(g,0.0f,6.28318f) + hjTrippyPhaseDrift;
   int dotEvery = hjSeedInt(g,2,7);
   int ringStep = hjSeedInt(g,4,9);
   bool mirror = hjSeedInt(g,0,1);
 
   if (family == 0) {
-    // Wave + dots + crossing lines.
     int n=0;
     for (int x=0; x<128; x+=spacing,++n) {
       int y = (int)(32 + amp1*sinf((x + hjArtStep*2)*freq1 + phase));
@@ -180,7 +224,6 @@ new_trippy = r'''static void oledRenderSaverTrippy() {
       if ((n % dotEvery)==0) oled->drawCircle(x,y,(uint8_t)(1 + ((n+hjArtStep/8)%4)),U8G2_DRAW_ALL);
     }
   } else if (family == 1) {
-    // Drifting concentric orbit field.
     int cx=64+(int)(14*sinf(hjArtStep*0.019f+phase));
     int cy=32+(int)(10*cosf(hjArtStep*0.016f-phase));
     for (int r=3;r<38;r+=ringStep) {
@@ -189,7 +232,6 @@ new_trippy = r'''static void oledRenderSaverTrippy() {
       oled->drawCircle(cx+dx,cy+dy,r,U8G2_DRAW_ALL);
     }
   } else if (family == 2) {
-    // Graphic-EQ field, but each generated seed changes spacing/frequency/phase.
     int col=0;
     for (int x=0;x<128;x+=spacing,++col) {
       float wave=sinf(x*freq1 + hjArtStep*0.055f + phase) + cosf(x*freq2 - hjArtStep*0.031f);
@@ -200,7 +242,6 @@ new_trippy = r'''static void oledRenderSaverTrippy() {
       if ((col%dotEvery)==0) oled->drawPixel((x+hjArtStep)%128,(h+col*7)%64);
     }
   } else if (family == 3) {
-    // Lissajous-ish point cloud with a moving connector.
     int px=64,py=32;
     for (int i=0;i<84;++i) {
       float t=i*0.11f + hjArtStep*0.018f;
@@ -211,7 +252,6 @@ new_trippy = r'''static void oledRenderSaverTrippy() {
       px=x;py=y;
     }
   } else {
-    // Infinite line lattice; seed controls slope, gaps and phase.
     int tilt=hjSeedInt(g,6,28);
     for (int y=-64;y<128;y+=spacing) {
       int shift=(int)(amp1*sinf(hjArtStep*0.02f + y*freq1 + phase));
@@ -265,14 +305,5 @@ new_input = '''  if (hjScreensaverActive) {
 if old_input not in s:
     raise SystemExit("saver controls patch failed: screensaver input block not found")
 s = s.replace(old_input, new_input, 1)
-
-# Generate fresh recipes on entry to each art saver. The board state at that
-# instant influences the result; A can reseed again any time.
-old_next = '''static void hjScreensaverNext() {
-  hjScreensaverMode = (uint8_t)((hjScreensaverMode + 1U) % HJ_SCREENSAVER_COUNT);'''
-new_next = '''static void hjScreensaverNext() {
-  hjScreensaverMode = (uint8_t)((hjScreensaverMode + 1U) % HJ_SCREENSAVER_COUNT);'''
-# Keep function text unchanged here; add reseeding after the whole patch via
-# input-time lazy init to avoid colliding with sayings-v2's picker rewrites.
 
 p.write_text(s, encoding="utf-8")
