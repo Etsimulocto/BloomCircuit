@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """Add desktop serial controls/status for the current HAPPY JARZ screensaver engine.
 
-Runs after patch_happyjarz_saver_controls.py.
+Runs after patch_happyjarz_saver_controls.py. Before adding protocol commands it
+also applies the particle-universe layer so the standard flasher needs no new
+manual step.
+
 Protocol:
   GET SAVER STATUS
   SAVER ENTER
@@ -11,15 +14,21 @@ Protocol:
   SAVER RESEED
   SAVER SPEED UP
   SAVER SPEED DOWN
-  SET SAVER MODE SAYINGS|SPIRAL|TRIPPY
+  SET SAVER MODE SAYINGS|SPIRAL|TRIPPY|PARTICLES
 """
 from pathlib import Path
+import subprocess
 import sys
 
 if len(sys.argv) != 2:
     raise SystemExit("usage: patch_happyjarz_saver_protocol.py <staged .ino>")
 
 p = Path(sys.argv[1])
+particle_patch = Path(__file__).with_name("patch_happyjarz_particle_universe.py")
+if not particle_patch.exists():
+    raise SystemExit(f"saver protocol patch failed: missing {particle_patch.name}")
+subprocess.run([sys.executable, str(particle_patch), str(p)], check=True)
+
 s = p.read_text(encoding="utf-8")
 
 marker = '''static void hjReseedTrippy() {
@@ -35,12 +44,14 @@ helpers = r'''
 static const char *hjSaverModeName() {
   if (hjScreensaverMode == 0) return "SAYINGS";
   if (hjScreensaverMode == 1) return "SPIRAL";
-  return "TRIPPY";
+  if (hjScreensaverMode == 2) return "TRIPPY";
+  return "PARTICLES";
 }
 
 static void hjSaverReseedCurrent() {
   if (hjScreensaverMode == 1) hjReseedSpiral();
   else if (hjScreensaverMode == 2) hjReseedTrippy();
+  else if (hjScreensaverMode == 3) hjReseedParticles();
 }
 
 static void hjSaverPrepareCurrent() {
@@ -65,7 +76,13 @@ static void hjPrintSaverStatus() {
   Serial.print("|mode="); Serial.print(hjSaverModeName());
   Serial.print("|idle_ms="); Serial.print(HJ_SCREENSAVER_IDLE_MS);
   Serial.print("|spiral_speed="); Serial.print(hjSpiralSpeed);
-  Serial.print("|trippy_speed="); Serial.println(hjTrippySpeed);
+  Serial.print("|trippy_speed="); Serial.print(hjTrippySpeed);
+  Serial.print("|particle_speed="); Serial.print(hjParticleSpeed);
+  Serial.print("|particles="); Serial.print(hjParticleCount);
+  Serial.print("|attractors="); Serial.print(hjAttractorCount);
+  Serial.print("|links="); Serial.print(hjParticleLinks ? 1 : 0);
+  Serial.print("|wrap="); Serial.print(hjParticleWrap ? 1 : 0);
+  Serial.print("|repel="); Serial.println(hjParticleRepel ? 1 : 0);
 }
 '''
 s = s.replace(marker, marker + helpers, 1)
@@ -93,11 +110,13 @@ cmds = r'''  if(line=="GET SAVER STATUS"){hjPrintSaverStatus();return;}
   if(line=="SAVER SPEED UP"){
     if(hjScreensaverMode==1 && hjSpiralSpeed<8) hjSpiralSpeed++;
     else if(hjScreensaverMode==2 && hjTrippySpeed<8) hjTrippySpeed++;
+    else if(hjScreensaverMode==3 && hjParticleSpeed<8) hjParticleSpeed++;
     ack("SAVER SPEED UP"); hjPrintSaverStatus(); return;
   }
   if(line=="SAVER SPEED DOWN"){
     if(hjScreensaverMode==1 && hjSpiralSpeed>1) hjSpiralSpeed--;
     else if(hjScreensaverMode==2 && hjTrippySpeed>1) hjTrippySpeed--;
+    else if(hjScreensaverMode==3 && hjParticleSpeed>1) hjParticleSpeed--;
     ack("SAVER SPEED DOWN"); hjPrintSaverStatus(); return;
   }
   if(line.startsWith("SET SAVER MODE ")){
@@ -105,7 +124,8 @@ cmds = r'''  if(line=="GET SAVER STATUS"){hjPrintSaverStatus();return;}
     if(v=="SAYINGS") hjSaverSetMode(0,true);
     else if(v=="SPIRAL") hjSaverSetMode(1,true);
     else if(v=="TRIPPY") hjSaverSetMode(2,true);
-    else {err("saver mode must be SAYINGS SPIRAL or TRIPPY");return;}
+    else if(v=="PARTICLES") hjSaverSetMode(3,true);
+    else {err("saver mode must be SAYINGS SPIRAL TRIPPY or PARTICLES");return;}
     ack("SET SAVER MODE"); hjPrintSaverStatus(); return;
   }
 '''
