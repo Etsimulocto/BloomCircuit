@@ -10,9 +10,14 @@ HOME preserves the original proven control map exactly:
 RIGHT, previously unused by the JAR light-control layer, opens the OLED menu.
 Inside the menu only, UP/DOWN/A/B become navigation controls. B returns HOME.
 LEFT remains available for future use and does not steal a proven light action.
+
+After restoring the menu controls, apply the LED recovery patch so USB wobble/
+reconnects do not flash diagnostic blue/green and desktop light commands always
+return the local UI to HOME.
 """
 
 from pathlib import Path
+import subprocess
 import sys
 
 if len(sys.argv) != 2:
@@ -70,3 +75,8 @@ if old not in s:
 
 s = s.replace(old, new, 1)
 p.write_text(s, encoding="utf-8")
+
+recovery = Path(__file__).with_name("patch_happyjarz_led_recovery.py")
+if not recovery.exists():
+    raise SystemExit(f"menu control restore failed: missing LED recovery patch: {recovery}")
+subprocess.run([sys.executable, str(recovery), str(p)], check=True)
