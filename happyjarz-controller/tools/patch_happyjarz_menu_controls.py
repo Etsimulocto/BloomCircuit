@@ -18,6 +18,10 @@ OLED menu/detail screens = menu controls only:
 The same physical touch is never allowed to execute both a light action and a
 menu action. This replaces the whole JAR-control block structurally so staged
 OLED edits cannot stack a second control set on top of the original controls.
+
+The sensory-pattern patch runs later in staging and provides PATTERN_NAMES and
+PATTERN_COUNT. HOME UP/DOWN intentionally reference those final library symbols
+so the physical controls cycle the same pattern set as the desktop controller.
 """
 
 from pathlib import Path
@@ -33,7 +37,7 @@ s = p.read_text(encoding="utf-8")
 
 new_block = '''  if (inputMode == "JAR") {
     if (uiScreen == UI_HOME) {
-      // HOME MODE: original known-good jar controls only.
+      // HOME MODE: original jar controls only.
       if (q[IN_A] && !latched[IN_A]) {
         paletteIndex1=(paletteIndex1+1)%9;
         Rgb c=palette[paletteIndex1];
@@ -47,13 +51,13 @@ new_block = '''  if (inputMode == "JAR") {
         oledDirty=true;
       }
       if (q[IN_UP] && !latched[IN_UP]) {
-        localPatternIndex=(localPatternIndex+1)%6;
-        hjSetPattern(patterns[localPatternIndex]);
+        localPatternIndex=(localPatternIndex+1)%PATTERN_COUNT;
+        hjSetPattern(PATTERN_NAMES[localPatternIndex]);
         oledDirty=true;
       }
       if (q[IN_DOWN] && !latched[IN_DOWN]) {
-        localPatternIndex=(localPatternIndex+5)%6;
-        hjSetPattern(patterns[localPatternIndex]);
+        localPatternIndex=(localPatternIndex+PATTERN_COUNT-1)%PATTERN_COUNT;
+        hjSetPattern(PATTERN_NAMES[localPatternIndex]);
         oledDirty=true;
       }
       if (q[IN_RIGHT] && !latched[IN_RIGHT]) {
@@ -84,7 +88,6 @@ new_block = '''  if (inputMode == "JAR") {
   }
 '''
 
-# Replace exactly the JAR-mode block immediately before the edge-event comment.
 pattern = re.compile(
     r'  if \(inputMode == "JAR"\) \{.*?\n  \}\n\n  // Send edge events for menu/game layers and desktop diagnostics\.',
     re.DOTALL,
