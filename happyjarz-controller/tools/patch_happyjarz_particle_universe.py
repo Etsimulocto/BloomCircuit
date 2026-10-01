@@ -32,13 +32,14 @@ if state_marker not in s:
 state_block = r'''static constexpr uint8_t HJ_PARTICLE_MAX = 18;
 static constexpr uint8_t HJ_ATTRACTOR_MAX = 3;
 struct HjParticle { float x,y,vx,vy; };
-struct HjAttractor { float x,y,strength; };
+struct HjAttractor { float x,y,vx,vy,strength; };
 static HjParticle hjParticles[HJ_PARTICLE_MAX];
 static HjAttractor hjAttractors[HJ_ATTRACTOR_MAX];
 static uint8_t hjParticleCount = 12;
 static uint8_t hjAttractorCount = 1;
 static uint8_t hjParticleSpeed = 1;
 static uint32_t hjParticleSeed = 0xC05A1055UL;
+static uint32_t hjWellWanderState = 0x13579BDFUL;
 static float hjParticleDamping = 0.985f;
 static float hjParticleGravity = 0.055f;
 static float hjParticleOrbit = 0.018f;
@@ -60,8 +61,14 @@ if reseed_marker not in s:
 
 particle_code = r'''
 
+static float hjWellNoiseSigned() {
+  hjWellWanderState = hjMix32(hjWellWanderState + 0x9E3779B9UL + micros());
+  return ((float)(hjWellWanderState & 0xFFFFU) / 32767.5f) - 1.0f;
+}
+
 static void hjReseedParticles() {
   hjParticleSeed = hjBoardEntropy() ^ 0x50415254UL;
+  hjWellWanderState = hjMix32(hjParticleSeed ^ micros() ^ 0xA771AC7FUL);
   uint32_t g = hjParticleSeed;
 
   hjParticleCount = (uint8_t)hjSeedInt(g, 7, HJ_PARTICLE_MAX);
@@ -77,6 +84,8 @@ static void hjReseedParticles() {
   for (uint8_t i=0; i<hjAttractorCount; ++i) {
     hjAttractors[i].x = hjSeedFloat(g, 24.0f, 104.0f);
     hjAttractors[i].y = hjSeedFloat(g, 13.0f, 51.0f);
+    hjAttractors[i].vx = hjSeedFloat(g, -0.17f, 0.17f);
+    hjAttractors[i].vy = hjSeedFloat(g, -0.13f, 0.13f);
     hjAttractors[i].strength = hjSeedFloat(g, 0.65f, 1.55f);
     if (hjSeedInt(g,0,5)==0) hjAttractors[i].strength *= -1.0f;
   }
@@ -90,14 +99,54 @@ static void hjReseedParticles() {
   hjArtStep = 0;
 }
 
-static void hjParticleStepOnce() {
-  float t = (float)hjArtStep * 0.012f;
-
-  // Let attractors breathe/orbit slightly so a generated universe evolves.
+static void hjWanderAttractors() {
   for (uint8_t a=0; a<hjAttractorCount; ++a) {
-    float phase = (float)(a+1) * 2.17f + (float)(hjParticleSeed & 255U) * 0.009f;
-    float ax = hjAttractors[a].x + sinf(t*(0.33f + 0.08f*a) + phase) * (3.0f + 2.0f*a);
-    float ay = hjAttractors[a].y + cosf(t*(0.27f + 0.06f*a) - phase) * (2.0f + 1.5f*a);
+    // Small non-periodic velocity nudges. Each well has its own slightly
+    // different cadence so the group does not phase-lock into one loop.
+    uint16_t cadence = (uint16_t)(11U + a*7U + (hjParticleSeed >> (a*3U) & 7U));
+    if ((hjArtStep % cadence) == (uint16_t)(a % cadence)) {
+      hjAttractors[a].vx += hjWellNoiseSigned() * (0.026f + 0.008f*a);
+      hjAttractors[a].vy += hjWellNoiseSigned() * (0.020f + 0.006f*a);
+    }
+
+    // Very occasional stronger kick breaks long-lived orbital resonances.
+    if ((hjWellWanderState & 0x1FFU) == (uint32_t)(17U + a*31U)) {
+      hjAttractors[a].vx += hjWellNoiseSigned() * 0.10f;
+      hjAttractors[a].vy += hjWellNoiseSigned() * 0.08f;
+    }
+
+    // Mild drag keeps the wander smooth rather than jittery.
+    hjAttractors[a].vx *= 0.994f;
+    hjAttractors[a].vy *= 0.994f;
+
+    // Soft boundary steering begins before the edge, then hard-clamps only as
+    // a safety net. This avoids the wells bouncing in another simple loop.
+    if (hjAttractors[a].x < 14.0f) hjAttractors[a].vx += 0.018f;
+    if (hjAttractors[a].x > 114.0f) hjAttractors[a].vx -= 0.018f;
+    if (hjAttractors[a].y < 9.0f) hjAttractors[a].vy += 0.015f;
+    if (hjAttractors[a].y > 55.0f) hjAttractors[a].vy -= 0.015f;
+
+    if (hjAttractors[a].vx > 0.42f) hjAttractors[a].vx = 0.42f;
+    if (hjAttractors[a].vx < -0.42f) hjAttractors[a].vx = -0.42f;
+    if (hjAttractors[a].vy > 0.32f) hjAttractors[a].vy = 0.32f;
+    if (hjAttractors[a].vy < -0.32f) hjAttractors[a].vy = -0.32f;
+
+    hjAttractors[a].x += hjAttractors[a].vx;
+    hjAttractors[a].y += hjAttractors[a].vy;
+
+    if (hjAttractors[a].x < 4.0f) { hjAttractors[a].x=4.0f; hjAttractors[a].vx=fabsf(hjAttractors[a].vx)*0.67f; }
+    if (hjAttractors[a].x > 123.0f) { hjAttractors[a].x=123.0f; hjAttractors[a].vx=-fabsf(hjAttractors[a].vx)*0.67f; }
+    if (hjAttractors[a].y < 4.0f) { hjAttractors[a].y=4.0f; hjAttractors[a].vy=fabsf(hjAttractors[a].vy)*0.67f; }
+    if (hjAttractors[a].y > 59.0f) { hjAttractors[a].y=59.0f; hjAttractors[a].vy=-fabsf(hjAttractors[a].vy)*0.67f; }
+  }
+}
+
+static void hjParticleStepOnce() {
+  hjWanderAttractors();
+
+  for (uint8_t a=0; a<hjAttractorCount; ++a) {
+    float ax = hjAttractors[a].x;
+    float ay = hjAttractors[a].y;
 
     for (uint8_t i=0; i<hjParticleCount; ++i) {
       float dx = ax - hjParticles[i].x;
@@ -164,7 +213,7 @@ static void oledRenderSaverParticles() {
     else oled->drawPixel(x,y);
   }
 
-  // Tiny attractor markers make gravity wells visible without dominating art.
+  // Attractor markers now show their actual wandering positions.
   for (uint8_t a=0; a<hjAttractorCount; ++a) {
     int x=(int)hjAttractors[a].x, y=(int)hjAttractors[a].y;
     if (hjAttractors[a].strength >= 0) oled->drawCircle(x,y,2,U8G2_DRAW_ALL);
