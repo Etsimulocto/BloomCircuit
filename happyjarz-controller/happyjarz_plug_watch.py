@@ -30,7 +30,7 @@ UPDATE_RETRY_SECONDS = 15 * 60
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent
-CONTROLLER = HERE / "happyjarz_controller.py"
+CONTROLLER = HERE / "happyjarz_controller_v0_3_1.py"
 LOG_DIR = Path.home() / ".happyjarz"
 WATCH_LOG = LOG_DIR / "plug_watch.log"
 LAUNCH_LOG = LOG_DIR / "controller_launch.log"
@@ -93,7 +93,6 @@ def auto_update() -> bool:
     except subprocess.TimeoutExpired:
         log("Auto-update deferred: GitHub check timed out")
     except RuntimeError as exc:
-        # Offline, no upstream, or local conflict: keep the known-good copy.
         log(f"Auto-update deferred safely: {exc}")
     return False
 
@@ -104,7 +103,6 @@ def restart_watcher() -> None:
 
 
 def port_generation(port_name: str):
-    """Return a lightweight instance token for a serial device."""
     if os.name == "posix":
         try:
             st = os.stat(port_name)
@@ -119,7 +117,6 @@ def identify_happy_jar(port_name: str) -> str | None:
         with serial.Serial(port_name, BAUD, timeout=PROBE_TIMEOUT, write_timeout=0.5) as ser:
             time.sleep(BOOT_SETTLE_SECONDS)
             ser.reset_input_buffer()
-
             deadline = time.time() + HANDSHAKE_SECONDS
             next_hello = 0.0
             while time.time() < deadline:
@@ -128,7 +125,6 @@ def identify_happy_jar(port_name: str) -> str | None:
                     ser.write(b"HELLO\n")
                     ser.flush()
                     next_hello = now + 0.25
-
                 line = ser.readline().decode("utf-8", errors="replace").strip()
                 if line.startswith("HJ|IDENTITY|"):
                     return line
@@ -162,7 +158,6 @@ def main() -> None:
 
     log("HAPPY JARZ plug watcher started")
 
-    # Check once immediately at login/startup.
     if auto_update():
         restart_watcher()
 
@@ -176,7 +171,6 @@ def main() -> None:
             log(f"Controller PID {controller_proc.pid} exited")
             controller_proc = None
 
-        # Activate a previously downloaded watcher update once the GUI is closed.
         if update_pending_restart and controller_proc is None:
             restart_watcher()
 
@@ -198,7 +192,6 @@ def main() -> None:
                 launched_generation = None
                 retry_after.clear()
 
-        # Do not probe the serial port while our controller already owns it.
         if controller_proc is None:
             now = time.time()
             for port in sorted(current_ports):
