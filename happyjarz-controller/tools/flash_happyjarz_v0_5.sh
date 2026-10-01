@@ -2,8 +2,9 @@
 set -euo pipefail
 
 # HAPPY JARZ v0.5 safe Pi flash helper.
-# Stops the USB controller/watcher so /dev/ttyACM* is free, compiles the staged
-# v0.5 sketch, uploads it, then restarts the plug watcher.
+# Stops the USB controller/watcher so /dev/ttyACM* is free, stages the v0.5
+# sketch, applies the Arduino .ino enum-prototype compatibility patch, compiles,
+# uploads, then restarts the plug watcher.
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONTROLLER_DIR="$(cd "$HERE/.." && pwd)"
@@ -49,6 +50,14 @@ sleep 1
 
 mkdir -p "$WORK"
 cp "$SRC" "$SKETCH"
+
+# Arduino's .ino preprocessor may synthesize function prototypes before the
+# InputIndex enum is visible. Use uint8_t at that one function boundary in the
+# staged copy; behavior is identical because InputIndex is uint8_t-backed.
+sed -i \
+  -e 's/static bool updateInputState(InputIndex idx)/static bool updateInputState(uint8_t idx)/' \
+  -e 's/updateInputState((InputIndex)i)/updateInputState(i)/' \
+  "$SKETCH"
 
 echo "Compiling..."
 arduino-cli compile --fqbn "$FQBN" "$WORK"
