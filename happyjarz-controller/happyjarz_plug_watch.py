@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """HAPPY JARZ USB plug watcher.
 
-Starts at user login, stays invisible, and launches the controller when a
+Starts at user login, stays mostly invisible, and launches the controller when a
 HAPPY JARZ device identifies itself over USB serial.
 """
 
@@ -20,35 +20,52 @@ from serial.tools import list_ports
 BAUD = 115200
 PROBE_TIMEOUT = 0.25
 HANDSHAKE_SECONDS = 2.0
-BOOT_SETTLE_SECONDS = 0.35
-PORT_RELEASE_SECONDS = 0.60
-SCAN_SECONDS = 1.0
-RETRY_SECONDS = 2.0
+BOOT_SETTLE_SECONDS = 0.20
+SCAN_SECONDS = 0.20
+RETRY_SECONDS = 1.0
+PORT_RELEASE_SECONDS = 0.30
+
 HERE = Path(__file__).resolve().parent
 CONTROLLER = HERE / "happyjarz_controller.py"
 LOG_DIR = Path.home() / ".happyjarz"
-LOG_FILE = LOG_DIR / "plug_watch.log"
+WATCH_LOG = LOG_DIR / "plug_watch.log"
+LAUNCH_LOG = LOG_DIR / "controller_launch.log"
 
 
 def log(message: str) -> None:
     LOG_DIR.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    line = f"{stamp}  {message}"
+    line = f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}  {message}"
+    print(line, flush=True)
     try:
-        with LOG_FILE.open("a", encoding="utf-8") as fp:
+        with WATCH_LOG.open("a", encoding="utf-8") as fp:
             fp.write(line + "\n")
     except OSError:
         pass
-    # Useful when launched manually; harmless when run from desktop autostart.
-    print(line, flush=True)
 
 
-def is_happy_jar(port_name: str) -> bool:
-    """Ask a serial device to identify itself as a HAPPY JARZ controller."""
+def port_generation(port_name: str):
+    """Return a lightweight instance token for a serial device.
+
+    On Linux, /dev/ttyACM0 can disappear and be recreated with the same name.
+    The inode changes when that happens, which lets us detect a fast replug even
+    when polling never catches a long 'port missing' interval. On other systems,
+    fall back to the device name.
+    """
+    if os.name == "posix":
+        try:
+            st = os.stat(port_name)
+            return (port_name, st.st_dev, st.st_ino)
+        except OSError:
+            return None
+    return (port_name,)
+
+
+def identify_happy_jar(port_name: str) -> str | None:
     try:
         with serial.Serial(port_name, BAUD, timeout=PROBE_TIMEOUT, write_timeout=0.5) as ser:
             time.sleep(BOOT_SETTLE_SECONDS)
             ser.reset_input_buffer()
+
             deadline = time.time() + HANDSHAKE_SECONDS
             next_hello = 0.0
             while time.time() < deadline:
@@ -56,16 +73,14 @@ def is_happy_jar(port_name: str) -> bool:
                 if now >= next_hello:
                     ser.write(b"HELLO\n")
                     ser.flush()
-                    next_hello = now + 0.40
+                    next_hello = now + 0.25
 
                 line = ser.readline().decode("utf-8", errors="replace").strip()
                 if line.startswith("HJ|IDENTITY|"):
-                    log(f"Detected HAPPY JARZ on {port_name}: {line}")
-                    return True
-    except (serial.SerialException, OSError) as exc:
-        log(f"Probe failed on {port_name}: {exc}")
-        return False
-    return False
+                    return line
+    except (serial.SerialException, OSError):
+        return None
+    return None
 
 
 def launch_controller() -> subprocess.Popen:
@@ -76,52 +91,68 @@ def launch_controller() -> subprocess.Popen:
             python = str(candidate)
 
     LOG_DIR.mkdir(parents=True, exist_ok=True)
-    err_path = LOG_DIR / "controller_launch.log"
-    err_fp = err_path.open("a", encoding="utf-8")
-
-    env = os.environ.copy()
+    launch_fp = LAUNCH_LOG.open("a", encoding="utf-8")
     proc = subprocess.Popen(
         [python, str(CONTROLLER)],
         cwd=str(HERE),
-        env=env,
-        stdout=err_fp,
-        stderr=err_fp,
-        start_new_session=not sys.platform.startswith("win"),
+        stdout=launch_fp,
+        stderr=subprocess.STDOUT,
     )
-    log(f"Launched controller PID {proc.pid}; output -> {err_path}")
     return proc
 
 
 def main() -> None:
-    log("HAPPY JARZ plug watcher started")
     controller_proc: subprocess.Popen | None = None
-    launched_ports: set[str] = set()
+    launched_generation = None
     retry_after: dict[str, float] = {}
 
+    log("HAPPY JARZ plug watcher started")
+
     while True:
-        current_ports = {p.device for p in list_ports.comports()}
+        ports = {p.device: p for p in list_ports.comports()}
+        current_ports = set(ports)
 
-        launched_ports.intersection_update(current_ports)
-        retry_after = {p: t for p, t in retry_after.items() if p in current_ports}
-
+        # If the controller window was closed, allow the currently attached Jar
+        # to launch it again on a later plug/replug event.
         if controller_proc is not None and controller_proc.poll() is not None:
-            log(f"Controller exited with code {controller_proc.returncode}")
+            log(f"Controller PID {controller_proc.pid} exited")
             controller_proc = None
 
+        # Track the actual device instance, not just '/dev/ttyACM0'. A fast
+        # unplug/replug can reuse that pathname but creates a new device node.
+        attached_generations = {
+            name: port_generation(name)
+            for name in current_ports
+        }
+
+        if launched_generation is not None:
+            still_present = launched_generation in attached_generations.values()
+            if not still_present:
+                log("HAPPY JARZ unplug detected; replug is armed")
+                launched_generation = None
+                retry_after.clear()
+
+        # Do not open the serial port while our controller already owns it.
+        # The controller itself auto-reconnects after an unplug/replug.
         if controller_proc is None:
             now = time.time()
             for port in sorted(current_ports):
-                if port in launched_ports:
+                generation = attached_generations.get(port)
+                if generation is None:
+                    continue
+                if generation == launched_generation:
                     continue
                 if now < retry_after.get(port, 0.0):
                     continue
 
-                if is_happy_jar(port):
-                    launched_ports.add(port)
+                identity = identify_happy_jar(port)
+                if identity:
+                    log(f"Detected HAPPY JARZ on {port}: {identity}")
+                    launched_generation = generation
                     retry_after.pop(port, None)
-                    # Give Linux/USB CDC a moment to release the serial handle.
                     time.sleep(PORT_RELEASE_SECONDS)
                     controller_proc = launch_controller()
+                    log(f"Launched controller PID {controller_proc.pid}; output -> {LAUNCH_LOG}")
                     break
 
                 retry_after[port] = time.time() + RETRY_SECONDS
@@ -133,4 +164,4 @@ if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        log("Watcher stopped by user")
+        log("HAPPY JARZ plug watcher stopped")
