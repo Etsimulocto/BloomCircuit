@@ -218,6 +218,13 @@ PY
 # recoverable while the screen layout is still being tuned.
 python3 "$OLED_PATCH" "$SKETCH"
 
+# Never let background telemetry monopolize the USB CDC path after the host
+# closes. Local touch handling must remain independent of the desktop app.
+sed -i \
+  -e 's/if (inputStream && millis()-lastInputStreamMs>=100)/if (inputStream \&\& Serial \&\& millis()-lastInputStreamMs>=100)/' \
+  -e 's/if(touchStreamCompat && millis()-lastTouchCompatMs>=100)/if(touchStreamCompat \&\& Serial \&\& millis()-lastTouchCompatMs>=100)/' \
+  "$SKETCH"
+
 # U8g2 is the only new dependency for the OLED dashboard. Install if missing.
 if ! arduino-cli lib list | grep -q '^U8g2[[:space:]]'; then
   echo "Installing U8g2 OLED library..."
