@@ -8,9 +8,10 @@ Serial protocol:
   CLEAR CUSTOM SAYINGS
   SET SAYING SOURCE BUILTIN|CUSTOM|MIXED
 
-Runs after the normal screensaver + expanded sayings patches.
+Runs after the normal screensaver + expanded sayings v2 patches.
 """
 from pathlib import Path
+import re
 import sys
 
 if len(sys.argv) != 2:
@@ -19,8 +20,13 @@ if len(sys.argv) != 2:
 p = Path(sys.argv[1])
 s = p.read_text(encoding="utf-8")
 
-needle = 'static constexpr uint8_t HJ_SAYING_COUNT = sizeof(HJ_SAYINGS)/sizeof(HJ_SAYINGS[0]);\n'
-if needle not in s:
+# sayings_v2 upgrades HJ_SAYING_COUNT to uint16_t because the built-in bank is
+# large. Match the declaration structurally instead of depending on the old type.
+count_re = re.compile(
+    r'(static constexpr uint(?:8|16)_t HJ_SAYING_COUNT = sizeof\(HJ_SAYINGS\)/sizeof\(HJ_SAYINGS\[0\]\);\n)'
+)
+m = count_re.search(s)
+if not m:
     raise SystemExit("custom sayings patch failed: saying count marker not found")
 
 block = r'''
@@ -32,6 +38,8 @@ static int8_t hjCustomActiveSlot = -1;
 static void hjLoadCustomSayings() {
   prefs.begin("happyjarz", true);
   hjSayingSource = prefs.getString("say_src", "BUILTIN");
+  if (hjSayingSource != "BUILTIN" && hjSayingSource != "CUSTOM" && hjSayingSource != "MIXED")
+    hjSayingSource = "BUILTIN";
   for (uint8_t i=0; i<HJ_CUSTOM_SAYING_SLOTS; ++i) {
     String key = "say" + String(i);
     hjCustomSayings[i] = prefs.getString(key.c_str(), "");
@@ -57,7 +65,8 @@ static void hjSetSayingSource(const String &source) {
 
 static uint8_t hjCustomCount() {
   uint8_t count=0;
-  for (uint8_t i=0; i<HJ_CUSTOM_SAYING_SLOTS; ++i) if (hjCustomSayings[i].length()) count++;
+  for (uint8_t i=0; i<HJ_CUSTOM_SAYING_SLOTS; ++i)
+    if (hjCustomSayings[i].length()) count++;
   return count;
 }
 
@@ -71,20 +80,6 @@ static int8_t hjPickCustomSlot() {
     target--;
   }
   return -1;
-}
-
-static void hjPickNextSaying() {
-  bool useCustom = false;
-  uint8_t customCount = hjCustomCount();
-  if (hjSayingSource == "CUSTOM") useCustom = customCount > 0;
-  else if (hjSayingSource == "MIXED") useCustom = customCount > 0 && random(2) == 0;
-
-  if (useCustom) {
-    hjCustomActiveSlot = hjPickCustomSlot();
-  } else {
-    hjCustomActiveSlot = -1;
-    hjSayingIndex = (uint8_t)random(HJ_SAYING_COUNT);
-  }
 }
 
 static const char *hjCurrentSaying() {
@@ -102,41 +97,58 @@ static void hjPrintCustomSayings() {
   Serial.print("HJ|CUSTOM_SAYINGS|END|source="); Serial.println(hjSayingSource);
 }
 '''
-s = s.replace(needle, needle + block, 1)
+s = s[:m.end()] + block + s[m.end():]
 
-# Pick source-aware saying when saver starts / changes mode.
-s = s.replace('  hjSayingIndex = (uint8_t)random(HJ_SAYING_COUNT);\n  hjArtStep = 0;\n  oledDirty = true;\n}',
-              '  hjPickNextSaying();\n  hjArtStep = 0;\n  oledDirty = true;\n}', 3)
+# sayings_v2 already owns hjPickNextSaying(). Replace it rather than defining a
+# second function. This preserves its random vertical lanes and X reset while
+# adding BUILTIN / CUSTOM / MIXED source selection.
+pick_re = re.compile(
+    r'static void hjPickNextSaying\(\) \{.*?\n\}',
+    re.DOTALL,
+)
+pick_new = r'''static void hjPickNextSaying() {
+  bool useCustom = false;
+  uint8_t customCount = hjCustomCount();
+  if (hjSayingSource == "CUSTOM") useCustom = customCount > 0;
+  else if (hjSayingSource == "MIXED") useCustom = customCount > 0 && random(2) == 0;
 
-old_render = '''static void oledRenderSaverSayings() {
-  oled->setFont(u8g2_font_7x14B_tr);
-  const char *msg = HJ_SAYINGS[hjSayingIndex];
-  int width = oled->getUTF8Width(msg);
-  oled->drawUTF8(hjMarqueeX, hjMarqueeY, msg);
-  if (hjMarqueeX < -width - 18) {
+  if (useCustom) {
+    hjCustomActiveSlot = hjPickCustomSlot();
+  } else {
+    hjCustomActiveSlot = -1;
     hjSayingIndex = (uint8_t)random(HJ_SAYING_COUNT);
-    hjMarqueeX = 128;
-    hjMarqueeY = hjPickMarqueeY();
   }
-}
-'''
-new_render = '''static void oledRenderSaverSayings() {
+
+  static const uint8_t lanes[] = {16, 24, 32, 40, 48, 58};
+  hjMarqueeY = lanes[random(sizeof(lanes)/sizeof(lanes[0]))];
+  hjMarqueeX = 128;
+}'''
+if not pick_re.search(s):
+    raise SystemExit("custom sayings patch failed: sayings v2 picker not found")
+s = pick_re.sub(pick_new, s, count=1)
+
+# Replace the v2 renderer so it displays whichever source the picker selected.
+render_re = re.compile(
+    r'static void oledRenderSaverSayings\(\) \{\n'
+    r'  oled->setFont\(u8g2_font_7x14B_tr\);\n'
+    r'  const char \*msg = HJ_SAYINGS\[hjSayingIndex\];\n'
+    r'  int width = oled->getUTF8Width\(msg\);\n'
+    r'  oled->drawUTF8\(hjMarqueeX, hjMarqueeY, msg\);\n'
+    r'  if \(hjMarqueeX < -width - 18\) hjPickNextSaying\(\);\n'
+    r'\}'
+)
+render_new = '''static void oledRenderSaverSayings() {
   oled->setFont(u8g2_font_7x14B_tr);
   const char *msg = hjCurrentSaying();
   int width = oled->getUTF8Width(msg);
   oled->drawUTF8(hjMarqueeX, hjMarqueeY, msg);
-  if (hjMarqueeX < -width - 18) {
-    hjPickNextSaying();
-    hjMarqueeX = 128;
-    hjMarqueeY = hjPickMarqueeY();
-  }
-}
-'''
-if old_render not in s:
-    raise SystemExit("custom sayings patch failed: expanded marquee renderer not found")
-s = s.replace(old_render, new_render, 1)
+  if (hjMarqueeX < -width - 18) hjPickNextSaying();
+}'''
+if not render_re.search(s):
+    raise SystemExit("custom sayings patch failed: sayings v2 renderer not found")
+s = render_re.sub(render_new, s, count=1)
 
-# Load custom sayings after preferences infrastructure exists and before OLED saver can run.
+# Load persisted custom sayings before OLED screensaver use.
 setup_needle = '  oledInit();\n  hjScreensaverTouch();\n'
 if setup_needle not in s:
     raise SystemExit("custom sayings patch failed: setup load point not found")
@@ -154,7 +166,7 @@ cmd_block = r'''  if(line=="GET CUSTOM SAYINGS"){hjPrintCustomSayings();return;}
   if(line.startsWith("SET SAYING SOURCE ")){
     String v=line.substring(18); v.trim(); v.toUpperCase();
     if(v=="BUILTIN"||v=="CUSTOM"||v=="MIXED"){
-      hjSetSayingSource(v); hjPickNextSaying(); hjMarqueeX=128; oledDirty=true; ack("SET SAYING SOURCE");
+      hjSetSayingSource(v); hjPickNextSaying(); oledDirty=true; ack("SET SAYING SOURCE");
     } else err("saying source must be BUILTIN CUSTOM or MIXED");
     return;
   }
