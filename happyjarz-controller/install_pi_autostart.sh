@@ -9,10 +9,10 @@ mkdir -p "$AUTOSTART_DIR"
 
 if command -v apt-get >/dev/null 2>&1; then
   sudo apt-get update
-  sudo apt-get install -y python3 python3-pip python3-tk
+  sudo apt-get install -y python3 python3-tk python3-serial
+else
+  python3 -m pip install --user -r "$HERE/requirements.txt"
 fi
-
-python3 -m pip install --user -r "$HERE/requirements.txt"
 
 cat > "$DESKTOP_FILE" <<EOF
 [Desktop Entry]
