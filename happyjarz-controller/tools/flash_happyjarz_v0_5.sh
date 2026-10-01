@@ -3,8 +3,8 @@ set -euo pipefail
 
 # HAPPY JARZ v0.5 safe Pi flash helper.
 # Stops the USB controller/watcher so /dev/ttyACM* is free, stages the v0.5
-# sketch, applies Arduino .ino compatibility + Wi-Fi state-machine/diagnostic
-# + scan/select protocol patches, compiles, uploads, then restarts the plug watcher.
+# sketch, applies Arduino .ino compatibility + Wi-Fi scan/diagnostics + USB
+# host-clock sync protocol patches, compiles, uploads, then restarts the watcher.
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONTROLLER_DIR="$(cd "$HERE/.." && pwd)"
@@ -65,6 +65,10 @@ import sys
 
 p = Path(sys.argv[1])
 s = p.read_text(encoding="utf-8")
+
+# settimeofday() support for offline host clock sync.
+if '#include <sys/time.h>' not in s:
+    s = s.replace('#include <time.h>\n', '#include <time.h>\n#include <sys/time.h>\n', 1)
 
 old = '''static void connectWifi() {
   if (!wifiSsid.length()) return;
@@ -169,6 +173,22 @@ if needle not in s:
     raise SystemExit("Wi-Fi scan command patch failed: protocol insertion point not found")
 s = s.replace(needle, replacement, 1)
 
+# Offline USB host-time sync. Unix epoch is timezone-independent; the existing
+# SET TIMEZONE setting controls local clock presentation and alarm interpretation.
+time_needle = '  if(line=="GET TIME STATUS"){printTimeStatus();return;}\n'
+time_replacement = time_needle + '''  if(line.startsWith("SET CLOCK UNIX ")){
+    String raw=line.substring(15); raw.trim();
+    unsigned long long epoch=strtoull(raw.c_str(), nullptr, 10);
+    if(epoch < 1700000000ULL || epoch > 4102444800ULL){err("invalid unix time");return;}
+    struct timeval tv; tv.tv_sec=(time_t)epoch; tv.tv_usec=0;
+    if(settimeofday(&tv, nullptr)==0){ack("SET CLOCK UNIX");printTimeStatus();}
+    else err("settimeofday failed");
+    return;
+  }\n'''
+if time_needle not in s:
+    raise SystemExit("Host-time patch failed: time protocol insertion point not found")
+s = s.replace(time_needle, time_replacement, 1)
+
 old_loop = '''  static bool timeStarted=false;
   if(!timeStarted && WiFi.status()==WL_CONNECTED){startTimeSync();timeStarted=true;Serial.println("HJ|EVENT|wifi=CONNECTED");}
   if(timeStarted && WiFi.status()!=WL_CONNECTED) timeStarted=false;
@@ -207,4 +227,4 @@ echo "Upload complete. Restarting HAPPY JARZ plug watcher..."
 nohup python3 "$CONTROLLER_DIR/happyjarz_plug_watch.py" \
   >> "$HOME/.happyjarz/plug_watch_manual_start.log" 2>&1 &
 
-echo "Done. Controller v0.3.1 should reopen with selectable Wi-Fi scanning."
+echo "Done. Controller v0.3.1 should reopen with Wi-Fi scan + USB host time sync."
