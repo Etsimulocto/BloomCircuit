@@ -17,14 +17,21 @@ import happyjarz_controller as base
 
 class HappyJarzApp(base.HappyJarzApp):
     def __init__(self):
+        # The base constructor creates the Tk root and then calls _build_ui().
+        # Plain Python attributes may exist beforehand, but Tk variables must
+        # be created only after Tk.__init__ has established the interpreter.
         self.wifi_scan_rows: dict[str, str] = {}
-        self.wifi_scan_state = tk.StringVar(value="Not scanned yet")
+        self.wifi_scan_state = None
         self.wifi_scan_list = None
         super().__init__()
         self.title(f"{base.APP_NAME} v0.3.1")
         self._log("Wi-Fi scan/select layer v0.3.1 active")
 
     def _build_setup_tab(self, root):
+        # By the time this override runs, the base Tk root is fully initialized.
+        if self.wifi_scan_state is None:
+            self.wifi_scan_state = tk.StringVar(master=self, value="Not scanned yet")
+
         # Keep every existing setup control exactly as-is.
         super()._build_setup_tab(root)
 
@@ -74,7 +81,8 @@ class HappyJarzApp(base.HappyJarzApp):
         if self.wifi_scan_list is not None:
             self.wifi_scan_list.delete(0, "end")
         self.wifi_scan_rows.clear()
-        self.wifi_scan_state.set("Scanning…")
+        if self.wifi_scan_state is not None:
+            self.wifi_scan_state.set("Scanning…")
         self.link.send("SCAN WIFI")
 
     def _select_scanned_network(self, _event=None):
@@ -87,14 +95,16 @@ class HappyJarzApp(base.HappyJarzApp):
         ssid = self.wifi_scan_rows.get(display)
         if ssid is not None:
             self.wifi_ssid.set(ssid)
-            self.wifi_scan_state.set(f"Selected: {ssid}")
+            if self.wifi_scan_state is not None:
+                self.wifi_scan_state.set(f"Selected: {ssid}")
 
     def _handle_line(self, line: str):
         if line.startswith("HJ|WIFI_SCAN|BEGIN"):
             if self.wifi_scan_list is not None:
                 self.wifi_scan_list.delete(0, "end")
             self.wifi_scan_rows.clear()
-            self.wifi_scan_state.set("Scanning…")
+            if self.wifi_scan_state is not None:
+                self.wifi_scan_state.set("Scanning…")
             self._log(f"RX  {line}")
             return
 
@@ -107,7 +117,6 @@ class HappyJarzApp(base.HappyJarzApp):
             channel = fields.get("channel", "?")
             security = fields.get("security", fields.get("enc", "?"))
             display = f"{ssid:<32.32}  {rssi:>4} dBm   CH {channel:>2}   {security}"
-            # Duplicate mesh APs can share one SSID; keep the strongest line.
             previous = next((row for row, name in self.wifi_scan_rows.items() if name == ssid), None)
             if previous and self.wifi_scan_list is not None:
                 try:
@@ -124,7 +133,8 @@ class HappyJarzApp(base.HappyJarzApp):
         if line.startswith("HJ|WIFI_SCAN|END|"):
             fields = self._parse_fields(line)
             count = fields.get("count", str(len(self.wifi_scan_rows)))
-            self.wifi_scan_state.set(f"{count} visible network(s)")
+            if self.wifi_scan_state is not None:
+                self.wifi_scan_state.set(f"{count} visible network(s)")
             self._log(f"RX  {line}")
             return
 
