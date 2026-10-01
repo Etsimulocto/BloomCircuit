@@ -3,13 +3,14 @@ set -euo pipefail
 
 # HAPPY JARZ v0.5 safe Pi flash helper.
 # Stops the USB controller/watcher so /dev/ttyACM* is free, stages the v0.5
-# sketch, applies Arduino .ino compatibility + Wi-Fi scan/diagnostics + USB
-# host-clock sync protocol patches, compiles, uploads, then restarts the watcher.
+# sketch, applies compatibility + Wi-Fi + USB clock + OLED dashboard patches,
+# compiles, uploads, then restarts the watcher.
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONTROLLER_DIR="$(cd "$HERE/.." && pwd)"
 REPO="$(cd "$CONTROLLER_DIR/.." && pwd)"
 SRC="$CONTROLLER_DIR/firmware/happyjarz_integrated_v0_5.ino"
+OLED_PATCH="$HERE/patch_happyjarz_oled.py"
 WORK="$HOME/hjflash/happyjarz_integrated_v0_5"
 SKETCH="$WORK/happyjarz_integrated_v0_5.ino"
 FQBN="esp32:esp32:esp32s3:CDCOnBoot=cdc"
@@ -21,6 +22,10 @@ fi
 
 if [[ ! -f "$SRC" ]]; then
   echo "ERROR: firmware source missing: $SRC"
+  exit 1
+fi
+if [[ ! -f "$OLED_PATCH" ]]; then
+  echo "ERROR: OLED patch missing: $OLED_PATCH"
   exit 1
 fi
 
@@ -38,7 +43,7 @@ if [[ -z "$PORT" ]]; then
   exit 1
 fi
 
-echo "HAPPY JARZ v0.5 flasher"
+echo "HAPPY JARZ v0.5 flasher + centered OLED dashboard"
 echo "Repo: $REPO"
 echo "Port: $PORT"
 echo
@@ -52,8 +57,7 @@ mkdir -p "$WORK"
 cp "$SRC" "$SKETCH"
 
 # Arduino's .ino preprocessor may synthesize function prototypes before the
-# InputIndex enum is visible. Use uint8_t at that one function boundary in the
-# staged copy; behavior is identical because InputIndex is uint8_t-backed.
+# InputIndex enum is visible. Keep the staged compatibility fix.
 sed -i \
   -e 's/static bool updateInputState(InputIndex idx)/static bool updateInputState(uint8_t idx)/' \
   -e 's/updateInputState((InputIndex)i)/updateInputState(i)/' \
@@ -66,7 +70,6 @@ import sys
 p = Path(sys.argv[1])
 s = p.read_text(encoding="utf-8")
 
-# settimeofday() support for offline host clock sync.
 if '#include <sys/time.h>' not in s:
     s = s.replace('#include <time.h>\n', '#include <time.h>\n#include <sys/time.h>\n', 1)
 
@@ -121,17 +124,14 @@ static void connectWifi() {
     Serial.println("HJ|ERR|message=wifi ssid is empty");
     return;
   }
-
   if (WiFi.status() == WL_CONNECTED) {
     Serial.println("HJ|EVENT|wifi=CONNECTED");
     return;
   }
-
   if (wifiConnecting && millis() - wifiConnectStartedMs < WIFI_CONNECT_TIMEOUT_MS) {
     Serial.println("HJ|EVENT|wifi=CONNECTING");
     return;
   }
-
   wifiConnecting = false;
   WiFi.mode(WIFI_STA);
   WiFi.disconnect(false, false);
@@ -173,8 +173,6 @@ if needle not in s:
     raise SystemExit("Wi-Fi scan command patch failed: protocol insertion point not found")
 s = s.replace(needle, replacement, 1)
 
-# Offline USB host-time sync. Unix epoch is timezone-independent; the existing
-# SET TIMEZONE setting controls local clock presentation and alarm interpretation.
 time_needle = '  if(line=="GET TIME STATUS"){printTimeStatus();return;}\n'
 time_replacement = time_needle + '''  if(line.startsWith("SET CLOCK UNIX ")){
     String raw=line.substring(15); raw.trim();
@@ -216,6 +214,16 @@ s = s.replace(old_loop, new_loop, 1)
 p.write_text(s, encoding="utf-8")
 PY
 
+# Add the OLED UI to the staged sketch only. This keeps the known-good source
+# recoverable while the screen layout is still being tuned.
+python3 "$OLED_PATCH" "$SKETCH"
+
+# U8g2 is the only new dependency for the OLED dashboard. Install if missing.
+if ! arduino-cli lib list | grep -q '^U8g2[[:space:]]'; then
+  echo "Installing U8g2 OLED library..."
+  arduino-cli lib install U8g2
+fi
+
 echo "Compiling..."
 arduino-cli compile --fqbn "$FQBN" "$WORK"
 
@@ -227,4 +235,4 @@ echo "Upload complete. Restarting HAPPY JARZ plug watcher..."
 nohup python3 "$CONTROLLER_DIR/happyjarz_plug_watch.py" \
   >> "$HOME/.happyjarz/plug_watch_manual_start.log" 2>&1 &
 
-echo "Done. Controller v0.3.1 should reopen with Wi-Fi scan + USB host time sync."
+echo "Done. OLED dashboard: four centered lines; LEFT/RIGHT changes pages."
