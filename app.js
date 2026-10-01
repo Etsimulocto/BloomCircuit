@@ -59,6 +59,9 @@
   const selectionKind = document.getElementById("selectionKind");
   const selectionName = document.getElementById("selectionName");
   const componentTools = document.getElementById("componentTools");
+  const componentTitle = document.getElementById("componentTitle");
+  const componentValue = document.getElementById("componentValue");
+  const componentPinLabels = document.getElementById("componentPinLabels");
   const wireTools = document.getElementById("wireTools");
   const componentColor = document.getElementById("componentColor");
   const componentTextColor = document.getElementById("componentTextColor");
@@ -211,7 +214,9 @@
       y: snap(y),
       rotation: Number(opts.rotation) || 0,
       scale: clamp(Number(opts.scale) || 1, .25, 4),
+      title: opts.title !== undefined ? String(opts.title) : "",
       value: opts.value !== undefined ? opts.value : (def.defaultValue || ""),
+      pinLabels: opts.pinLabels && typeof opts.pinLabels === "object" ? { ...opts.pinLabels } : {},
       fillColor: opts.fillColor || null,
       textColor: opts.textColor || null,
       fontSize: Number(opts.fontSize) || Math.max(6, Math.min(12, Math.round(Math.min(def.width,def.height) / 5)))
@@ -365,6 +370,10 @@
   }
 
   function connectionLabel(pinDef, comp) {
+    const override = comp && comp.pinLabels && typeof comp.pinLabels[pinDef.id] === "string"
+      ? comp.pinLabels[pinDef.id].trim()
+      : "";
+    if (override) return override;
     if (comp.type === "pi40") {
       if ([1,2,4,6,19].includes(pinDef.number)) return pinDef.number + " " + pinDef.name;
       return String(pinDef.number);
@@ -471,16 +480,18 @@
     let anchor = "middle";
 
     if (pinDef.side === "left") {
-      x += 9; anchor = "start";
-    } else if (pinDef.side === "right") {
       x -= 9; anchor = "end";
+    } else if (pinDef.side === "right") {
+      x += 9; anchor = "start";
     } else if (pinDef.side === "top") {
-      y += 14;
-    } else if (pinDef.side === "bottom") {
       y -= 9;
+    } else if (pinDef.side === "bottom") {
+      y += 14;
     }
 
-    addText(group, connectionLabel(pinDef, comp), x, y, "pin-label", anchor);
+    const label = addText(group, connectionLabel(pinDef, comp), x, y, "pin-label", anchor);
+    const angle = Number(comp.rotation) || 0;
+    if (angle) label.setAttribute("transform", "rotate(" + (-angle) + " " + x + " " + y + ")");
   }
 
   function renderComponent(comp) {
@@ -497,14 +508,18 @@
 
     renderBody(group, comp, def);
 
-    const titleY = Math.max(8, Math.min(def.kind === "pi40" ? 20 : 18, def.height * .28));
-    addText(group, def.title, def.width / 2, titleY, "component-title");
+    const angle = Number(comp.rotation) || 0;
+    const titleX = def.width / 2;
+    const titleY = -Math.max(8, (Number(comp.fontSize) || 12) * .45);
+    const titleText = comp.title && comp.title.trim() ? comp.title.trim() : def.title;
+    const titleEl = addText(group, titleText, titleX, titleY, "component-title");
+    if (angle) titleEl.setAttribute("transform", "rotate(" + (-angle) + " " + titleX + " " + titleY + ")");
 
-    const detailY = titleY + Math.max(8, subtitleSize + 2);
-    if (comp.value && detailY < def.height - 3) {
-      addText(group, comp.value, def.width / 2, detailY, "component-subtitle");
-    } else if (def.subtitle && comp.type !== "pi40" && detailY < def.height - 3) {
-      addText(group, def.subtitle, def.width / 2, detailY, "component-subtitle");
+    const detailText = comp.value || (def.subtitle && comp.type !== "pi40" ? def.subtitle : "");
+    if (detailText) {
+      const detailY = def.height + Math.max(11, subtitleSize + 5);
+      const detailEl = addText(group, detailText, titleX, detailY, "component-subtitle");
+      if (angle) detailEl.setAttribute("transform", "rotate(" + (-angle) + " " + titleX + " " + detailY + ")");
     }
 
     def.pins.forEach(pinDef => renderPin(group, comp, pinDef));
@@ -974,7 +989,12 @@
     } else if (comp) {
       const def = components[comp.type];
       selectionKind.textContent = "Component";
-      selectionName.textContent = (def ? def.title : comp.type) + (comp.value ? " — " + comp.value : "");
+      const displayTitle = comp.title && comp.title.trim() ? comp.title.trim() : (def ? def.title : comp.type);
+      selectionName.textContent = displayTitle + (comp.value ? " — " + comp.value : "");
+      componentTitle.value = comp.title || "";
+      componentTitle.placeholder = def ? def.title : comp.type;
+      componentValue.value = comp.value || "";
+      componentPinLabels.value = Object.entries(comp.pinLabels || {}).map(([id,label]) => id + " = " + label).join("\n");
       componentColor.value = comp.fillColor || defaultComponentFill(def && def.kind);
       componentTextColor.value = comp.textColor || "#191d20";
       componentScale.value = String(Math.round(clamp(Number(comp.scale) || 1,.1,10)*100));
@@ -1240,7 +1260,7 @@
   function saveProject() {
     const data = {
       format:"BloomCircuit",
-      version:5,
+      version:6,
       projectName:projectName.value.trim() || "BloomCircuit",
       gridPx:GRID,
       mmPerPx:MM_PER_PX,
@@ -1289,7 +1309,11 @@
       y:snap(Number(c.y)),
       rotation:Number(c.rotation) || 0,
       scale:clamp(Number(c.scale) || 1,.1,10),
+      title:typeof c.title === "string" ? c.title : "",
       value:typeof c.value === "string" ? c.value : "",
+      pinLabels:c.pinLabels && typeof c.pinLabels === "object" && !Array.isArray(c.pinLabels)
+        ? Object.fromEntries(Object.entries(c.pinLabels).filter(([id,label]) => typeof id === "string" && typeof label === "string"))
+        : {},
       fillColor:typeof c.fillColor === "string" ? c.fillColor : null,
       textColor:typeof c.textColor === "string" ? c.textColor : null,
       fontSize:clamp(Number(c.fontSize) || 12,7,28)
@@ -1897,6 +1921,32 @@
   document.getElementById("rotateLeftBtn").addEventListener("click",() => rotateSelected(-90));
   document.getElementById("rotateRightBtn").addEventListener("click",() => rotateSelected(90));
 
+  componentTitle.addEventListener("input",() => {
+    const comp = selectedComponent();
+    if (!comp) return;
+    comp.title = componentTitle.value.slice(0,120);
+    render();
+  });
+
+  componentValue.addEventListener("input",() => {
+    const comp = selectedComponent();
+    if (!comp) return;
+    comp.value = componentValue.value.slice(0,160);
+    render();
+  });
+
+  componentPinLabels.addEventListener("input",() => {
+    const comp = selectedComponent();
+    if (!comp) return;
+    const labels = {};
+    componentPinLabels.value.split(/\r?\n/).forEach(line => {
+      const match = line.match(/^\s*([^=:\s]+)\s*(?:=|:)\s*(.*?)\s*$/);
+      if (match && match[2]) labels[match[1]] = match[2];
+    });
+    comp.pinLabels = labels;
+    render();
+  });
+
   componentColor.addEventListener("input",() => {
     const comp = selectedComponent();
     if (!comp) return;
@@ -1934,6 +1984,9 @@
   document.getElementById("resetComponentStyleBtn").addEventListener("click",() => {
     const comp = selectedComponent();
     if (!comp) return;
+    comp.title = "";
+    comp.value = components[comp.type] && components[comp.type].defaultValue || "";
+    comp.pinLabels = {};
     comp.fillColor = null;
     comp.textColor = null;
     comp.fontSize = 12;
