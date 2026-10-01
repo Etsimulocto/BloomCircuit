@@ -38,22 +38,8 @@ class HappyJarzApp(previous.HappyJarzApp):
         ttk.Label(head, text="OLED + PROCEDURAL SCREENSAVERS", style="Section.TLabel").pack(side="left")
         ttk.Label(head, textvariable=self.saver_state, style="PanelMuted.TLabel").pack(side="right")
 
-        bri = ttk.Frame(display, style="Panel.TFrame")
-        bri.pack(fill="x", pady=(8, 5))
-        ttk.Label(bri, text="OLED brightness", style="PanelMuted.TLabel").pack(side="left")
-        scale = ttk.Scale(bri, from_=0, to=100, orient="horizontal", command=self._display_brightness_changed)
-        scale.set(self.display_brightness.get())
-        scale.pack(side="left", fill="x", expand=True, padx=8)
-        self.display_brightness_label = ttk.Label(bri, text=f"{self.display_brightness.get()}%", style="Value.TLabel", width=5)
-        self.display_brightness_label.pack(side="left")
-        ttk.Button(
-            bri,
-            text="Apply",
-            command=lambda: self.link.send(f"SET DISPLAY BRIGHTNESS {self.display_brightness.get()}"),
-        ).pack(side="left", padx=(6, 0))
-
         info = ttk.Frame(display, style="Panel.TFrame")
-        info.pack(fill="x", pady=(3, 7))
+        info.pack(fill="x", pady=(8, 7))
         ttk.Label(info, text="Idle delay", style="PanelMuted.TLabel").grid(row=0, column=0, sticky="w")
         ttk.Label(info, text="10 seconds", style="Value.TLabel").grid(row=0, column=1, sticky="w", padx=(10, 24))
         ttk.Label(info, text="Modes", style="PanelMuted.TLabel").grid(row=0, column=2, sticky="w")
