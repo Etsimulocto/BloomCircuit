@@ -3,11 +3,11 @@
 
 HOME screen:
   A     -> enter OLED main menu
-  B     -> next Light 2 palette color
+  B     -> no HOME action
   UP    -> next light pattern
   DOWN  -> previous light pattern
-  LEFT  -> previous Light 1 palette color
-  RIGHT -> next Light 1 palette color
+  LEFT  -> next Light 1 palette color
+  RIGHT -> next Light 2 palette color
 
 OLED menu/detail screens = menu controls only:
   UP/DOWN -> move menu cursor (main menu)
@@ -38,16 +38,11 @@ s = p.read_text(encoding="utf-8")
 
 new_block = '''  if (inputMode == "JAR") {
     if (uiScreen == UI_HOME) {
-      // HOME MODE: A opens the menu; LEFT/RIGHT own Light 1 color.
+      // HOME MODE: A opens menu, LEFT/RIGHT are the two light color buttons.
       if (q[IN_A] && !latched[IN_A]) {
         uiOpenMainMenu();
       }
-      if (q[IN_B] && !latched[IN_B]) {
-        paletteIndex2=(paletteIndex2+1)%9;
-        Rgb c=palette[paletteIndex2];
-        hjSetLed(2,c.r,c.g,c.b);
-        oledDirty=true;
-      }
+      // B intentionally has no HOME action.
       if (q[IN_UP] && !latched[IN_UP]) {
         localPatternIndex=(localPatternIndex+1)%PATTERN_COUNT;
         hjSetPattern(PATTERN_NAMES[localPatternIndex]);
@@ -59,15 +54,15 @@ new_block = '''  if (inputMode == "JAR") {
         oledDirty=true;
       }
       if (q[IN_LEFT] && !latched[IN_LEFT]) {
-        paletteIndex1=(paletteIndex1+8)%9;
+        paletteIndex1=(paletteIndex1+1)%9;
         Rgb c=palette[paletteIndex1];
         hjSetLed(1,c.r,c.g,c.b);
         oledDirty=true;
       }
       if (q[IN_RIGHT] && !latched[IN_RIGHT]) {
-        paletteIndex1=(paletteIndex1+1)%9;
-        Rgb c=palette[paletteIndex1];
-        hjSetLed(1,c.r,c.g,c.b);
+        paletteIndex2=(paletteIndex2+1)%9;
+        Rgb c=palette[paletteIndex2];
+        hjSetLed(2,c.r,c.g,c.b);
         oledDirty=true;
       }
     } else if (uiScreen == UI_MAIN_MENU) {
