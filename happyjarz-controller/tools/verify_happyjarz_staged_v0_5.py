@@ -39,6 +39,8 @@ required = {
     "30 second OLED screensaver": "HJ_SCREENSAVER_IDLE_MS = 30000UL",
     "expanded pattern library": "PATTERN_COUNT",
     "particle screensaver": "hjParticleCount",
+    "USB touch stream fix": "USB_TOUCH_STREAM_FIX_V1",
+    "5 Hz touch telemetry": "millis()-lastInputStreamMs>=200",
 }
 
 missing = [name for name, marker in required.items() if marker not in s]
@@ -55,9 +57,15 @@ if old_home in s:
     print(f"Staged file left for inspection: {p}", file=sys.stderr)
     raise SystemExit(3)
 
+if 'touchStreamCompat && millis()-lastTouchCompatMs' in s:
+    print("ERROR: duplicate USB touch telemetry emitter survived staging; refusing to flash.", file=sys.stderr)
+    print(f"Staged file left for inspection: {p}", file=sys.stderr)
+    raise SystemExit(6)
+
 print("HAPPY JARZ staged firmware verification: PASS")
 print(f"  firmware version {expected_version}")
 print("  Fuel Gauge + HOME battery/power cycle present")
 print("  GET POWER protocol present")
 print("  30-second OLED screensaver present")
 print("  expanded patterns + particle saver present")
+print("  USB touch telemetry single-stream fix present (5 Hz)")
