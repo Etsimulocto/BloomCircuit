@@ -3,8 +3,8 @@
 
 Runs after patch_happyjarz_saver_controls.py. Before adding protocol commands it
 applies smooth SPIRAL/TRIPPY drift, then the particle-universe layer. After the
-saver protocol is staged it applies the Fuel Gauge layer, so the standard
-flasher needs no new manual step.
+saver protocol is staged it applies the Fuel Gauge layer, then the final HOME
+power-cycle/idle-time polish, so the standard flasher needs no new manual step.
 
 Protocol:
   GET SAVER STATUS
@@ -163,9 +163,15 @@ s = s.replace(cmd_needle, cmds + cmd_needle, 1)
 
 p.write_text(s, encoding="utf-8")
 
-# Fuel Gauge is deliberately chained last. It extends the already-staged OLED
-# menu/protocol and therefore cannot overwrite the proven LED/touch/saver layers.
+# Fuel Gauge extends the already-staged OLED menu/protocol.
 fuel_patch = Path(__file__).with_name("patch_happyjarz_fuel_gauge.py")
 if not fuel_patch.exists():
     raise SystemExit(f"saver protocol patch failed: missing {fuel_patch.name}")
 subprocess.run([sys.executable, str(fuel_patch), str(p)], check=True)
+
+# Final standalone HOME polish runs after Fuel Gauge so it can safely replace
+# the HOME power helper and extend the saver idle timeout.
+home_power_patch = Path(__file__).with_name("patch_happyjarz_home_power_cycle.py")
+if not home_power_patch.exists():
+    raise SystemExit(f"saver protocol patch failed: missing {home_power_patch.name}")
+subprocess.run([sys.executable, str(home_power_patch), str(p)], check=True)
