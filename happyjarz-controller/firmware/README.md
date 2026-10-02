@@ -1,18 +1,16 @@
 # HAPPY JARZ ESP32 Firmware
 
-**Current firmware release:** **v0.6.0**
+**Current firmware release:** **v0.9.3**
 
 **Compatibility staging base:** `happyjarz_integrated_v0_5.ino` + standard patch pipeline
 
-The filename of the integrated base sketch is now intentionally separated from the firmware release number. The authoritative firmware version is:
+The integrated base filename is retained for compatibility. The authoritative firmware release is:
 
 ```text
 happyjarz-controller/firmware/VERSION
 ```
 
-The flash pipeline injects that value into `HJ_FW_VERSION` after the current patch stack is applied and refuses to upload if the staged firmware does not report the same version.
-
-See [`../VERSIONING.md`](../VERSIONING.md) for the mandatory version-bump rules.
+The flash pipeline injects that value into `HJ_FW_VERSION` after staging and verifies the final sketch before upload.
 
 ## Preserve the known-good hardware layer
 
@@ -29,18 +27,25 @@ Known-good timing:
 - two APA106 lamps daisy chained
 - proven byte order: **RGB**
 
-Generic NeoPixel/FastLED attempts were not the proven path for this hardware.
-
 ## Current wiring
 
 ### APA106 lamps
 
 - GPIO7 -> 220 ohm -> APA106 #1 DIN
 - APA106 #1 DOUT -> APA106 #2 DIN
-- both lamp VCC pins -> 5V
 - common GND
+- ESP32 data remains 3.3V logic
 
-The tested lamps accept the ESP32-S3's 3.3V GPIO data while powered from 5V. Never feed 5V into an ESP32 GPIO.
+Bench testing on October 2, 2026 showed the current two-lamp prototype working through the full firmware **0-100% brightness range** with lamp VCC at both **3.3V** and **5V**. No blue-collapse / blue-shift was observed in this test.
+
+Practical visual result:
+
+- **24% at 3.3V** is already plenty for normal sensory-jar use
+- **5V at 100% is extremely bright** and can throw substantial light onto nearby walls/ceiling
+- the earlier 50% hard cap is no longer used
+- full 0-100% remains available for tuning and intentional high-output use
+
+Never feed 5V into an ESP32 GPIO. The 5V test applies to the lamp supply only.
 
 ### Capacitive touch
 
@@ -53,16 +58,16 @@ Current six-control map:
 - GPIO1 = A
 - GPIO2 = B
 
-HOME behavior:
+Current HOME behavior:
 
-- A advances Light 1 through the palette
-- B advances Light 2 through the palette
-- UP advances the pattern
-- DOWN moves to the previous pattern
-- RIGHT enters the OLED menu
-- LEFT currently has no HOME action
+- UP = next pattern
+- DOWN = previous pattern
+- LEFT = next Light 1 palette color
+- RIGHT = next Light 2 palette color
+- A = open OLED menu
+- B = no HOME action
 
-The proven touch path uses direct `touchRead()`, roughly +20% thresholding, ~60 ms qualification, baseline drift and one action per touch/release cycle. Do not reintroduce the abandoned hysteresis/cooldown/release experiment that caused same-button repeat failures.
+The proven touch path uses direct `touchRead()`, roughly +20% thresholding, ~60 ms qualification, baseline drift and one action per touch/release cycle.
 
 ### OLED
 
@@ -76,7 +81,46 @@ Current 4-wire I2C OLED:
 - U8g2 renderer
 - 128x64 layout
 
-The current HOME path uses the battery/power footer whether the clock is synced or not. The early-build `ALARM OFF` footer is no longer a valid current HOME screen.
+## Board-local UI
+
+Main menu:
+
+- CLOCK
+- LIGHTS
+- GAMES
+- SETTINGS
+- SYSTEM
+
+### CLOCK
+
+The clock/date can be set entirely on the board with no PC or Wi-Fi:
+
+- LEFT / RIGHT = select MONTH / DAY / YEAR / HOUR / MINUTE
+- UP / DOWN = change value
+- A = save
+- B = cancel
+
+The ESP32 system clock runs while powered. Without a battery-backed RTC, it cannot know elapsed time while fully powered off.
+
+### LIGHTS / SOLID brightness
+
+Brightness is now a real board-local 0-100% setting:
+
+- UP / DOWN = +/-5%
+- LEFT / RIGHT = +/-1%
+- A = save
+- B = save/back
+
+Normal prototype preference is around **24% at 3.3V**. Higher values are intentionally available for brighter room-glow effects.
+
+### SETTINGS
+
+Current entries:
+
+- ALARM
+- TIMER
+
+The DISPLAY brightness editor was removed because it was not useful on this OLED module/build.
 
 ## Fuel Gauge / power status
 
@@ -87,7 +131,7 @@ Current sensing path:
 - provisional `BATTERY_CAL_FACTOR = 1.370`
 - percentage is voltage-estimated, not coulomb counted
 
-October 2, 2026 bench reference:
+Bench reference:
 
 ```text
 V 4.16
@@ -95,37 +139,15 @@ BAT 98%
 PWR BAT
 ```
 
-HOME cycles power information about every **2.5 seconds**.
+`CHG ?` is intentional when USB is present because the charger IC charging/full signal is not wired to an ESP32 GPIO.
 
-Battery-only:
+## Brightness behavior
 
-```text
-A MENU  BAT xx%
-A MENU  V x.xx
-A MENU  PWR BAT
-```
+The firmware range is now **0-100%**.
 
-USB present:
+The old 50% clamp came from an earlier bench result where high-output white appeared to collapse toward blue. The later direct test on this prototype did not reproduce that behavior at either 3.3V or 5V lamp supply, so the cap was removed and the board-local tuner was added.
 
-```text
-A MENU  BAT --%
-A MENU  PWR USB
-A MENU  CHG ?
-```
-
-`CHG ?` is intentional. The onboard charger IC's charging/full signal is not currently wired to an ESP32 GPIO. USB CDC presence must not be interpreted as proof of charging or full state.
-
-Serial diagnostic:
-
-```text
-GET POWER
-```
-
-## Brightness ceiling
-
-The current product build uses a **50% hard maximum LED brightness**.
-
-Bench testing showed that abrupt higher-brightness white loads could collapse toward blue while 50% was already bright enough for the sensory use case. The firmware and desktop controller therefore agree on 50% as the normal ceiling.
+For product use, a lower default remains sensible because the lamps become visually excessive well before 100%.
 
 ## Pattern library
 
@@ -133,18 +155,16 @@ Current patterns:
 
 `SOLID`, `FADE`, `PULSE`, `RAINBOW`, `RANDOM`, `HUE_FADE`, `DUAL_HUE`, `BREATH`, `DRIFT`, `AURORA`, `OCEAN`, `LAVENDER`, `SUNSET`, `CHRISTMAS`, `HALLOWEEN`, `VALENTINE`, `EASTER`, `FOURTH`, `THANKSGIVING`, `CANDY`, `GALAXY`, `FIRE`, `ICE`, `FOREST`, `NEON`, `TWINKLE`, `SPARKLE`, `COLOR_SWAP`, `COMET`, `FIREFLY`, `BUBBLEGUM`, `OFF`.
 
-Many generated modes use continuous/intermediate RGB values rather than only the small physical-button color palette.
-
 ## OLED screensavers
 
 Screensaver mode starts after **30 seconds of inactivity**.
 
-Current modes:
+Modes:
 
-- **SAYINGS** — scrolling built-in/custom marquee
-- **SPIRAL** — procedural spiral generator
-- **TRIPPY** — procedural geometry engine
-- **PARTICLES** — procedural particle-universe saver
+- SAYINGS
+- SPIRAL
+- TRIPPY
+- PARTICLES
 
 Controls:
 
@@ -153,128 +173,54 @@ Controls:
 - SPIRAL/TRIPPY/PARTICLES: UP/DOWN = speed
 - SPIRAL/TRIPPY/PARTICLES: A = reseed / new universe
 
-Custom sayings:
+## HAPPY ARCADE
 
-- 8 persistent slots
-- up to 96 characters each
-- `BUILTIN`, `CUSTOM`, or `MIXED`
-- stored in ESP32 Preferences
+The native OLED arcade is staged into the firmware and currently contains seven mini-games:
 
-Useful saver commands:
+1. Catch the Glitter
+2. Glitter Dodge
+3. Bloom Snake
+4. Memory Spark
+5. Jar Pong
+6. Meteor Tap
+7. Bloom Runner
 
-```text
-GET SAVER STATUS
-SAVER ENTER
-SAVER EXIT
-SAVER NEXT
-SAVER PREV
-SAVER RESEED
-SAVER SPEED UP
-SAVER SPEED DOWN
-SET SAVER MODE SAYINGS|SPIRAL|TRIPPY|PARTICLES
-```
+A long B press acts as HOME/escape from the arcade.
 
-Custom-sayings commands:
+## Desktop input-mode fail-safe
 
-```text
-GET CUSTOM SAYINGS
-SET CUSTOM SAYING <1-8> <text>
-CLEAR CUSTOM SAYINGS
-SET SAYING SOURCE BUILTIN|CUSTOM|MIXED
-```
+`MENU` and `GAME` input modes are temporary desktop/service modes. They are not persisted as product state. If the USB CDC session disappears, firmware falls back to `JAR` mode and local physical controls regain ownership.
 
 ## USB identity and release version
 
-At 115200 baud the firmware responds to `HELLO` with an `HJ|IDENTITY|...` line used by the Pi/PC watcher.
-
-For the current release, identity must report:
+At 115200 baud the firmware responds to `HELLO` with an `HJ|IDENTITY|...` line. For this branch/release it should report:
 
 ```text
-fw=0.6.0
+fw=0.9.3
 ```
-
-The base sketch may still contain an older implementation version before staging. That is expected. The standard flasher injects the authoritative value from `firmware/VERSION` as the final release-version step before verification.
-
-If `HJ|IDENTITY` does not match `firmware/VERSION`, treat the device as a stale/wrong build.
 
 ## Current Pi compile/upload path
 
-First refresh the split controller snapshot:
-
 ```bash
 cd ~/BloomCircuit
-git checkout main
 git pull
-bash ./tools/split_pi_apps.sh
+bash happyjarz-controller/tools/flash_happyjarz_v0_5.sh
 ```
 
-Then flash from that refreshed copy:
+The legacy helper filename remains for compatibility; it does **not** mean the release is v0.5.
 
-```bash
-bash ~/HappyJarzController/tools/flash_happyjarz_v0_5.sh
-```
+The staging chain includes compatibility/Wi-Fi/host-time support, touch, OLED/menu, patterns, screensavers, sayings, particle saver, Fuel Gauge, HOME power cycle, standalone clock, standalone settings, board-native arcade, 0-100 SOLID brightness editing, release-version injection, final verification, compile and upload.
 
-The legacy helper filename remains for compatibility; it does **not** mean the release is still v0.5.
-
-The helper stages the compatibility base and applies the current layers, including:
-
-- compatibility / Wi-Fi / USB host-time integration
-- proven touch behavior
-- OLED pages/menu
-- HOME/menu control isolation
-- expanded sensory pattern library
-- screensavers
-- expanded marquee sayings
-- persistent custom sayings
-- procedural SPIRAL/TRIPPY controls
-- particle-universe saver
-- saver serial protocol/status
-- Fuel Gauge POWER menu + GPIO3 ADC + `GET POWER`
-- final HOME power cycle + 30-second idle timeout
-- release-version injection from `firmware/VERSION`
-
-Before compiling or uploading, the verifier confirms the final staged sketch contains the required current features and the expected firmware release number.
-
-Expected output for this release:
-
-```text
-HAPPY JARZ staged firmware verification: PASS
-  firmware version 0.6.0
-```
-
-If that PASS does not appear, **do not flash**.
-
-Tested Arduino CLI FQBN:
+Arduino CLI FQBN:
 
 ```text
 esp32:esp32:esp32s3:CDCOnBoot=cdc
 ```
 
-The helper auto-detects `/dev/ttyACM*` or `/dev/ttyUSB*`, stops the desktop controller/watcher before compile/upload, and restarts the watcher after a successful upload.
-
 ## Version bump rule
 
-Firmware behavior changes require a firmware version bump before merge. This includes changes to:
-
-- touch behavior
-- OLED/menu behavior
-- battery/power handling
-- LED patterns/brightness
-- screensavers
-- serial protocol
-- startup/shutdown behavior
-- hardware pins/calibration
-
-Do not keep rebuilding different firmware under the same release number.
+Firmware behavior changes require a firmware version bump before merge, including touch behavior, OLED/menu behavior, battery/power handling, LED patterns/brightness, screensavers, serial protocol, startup/shutdown behavior, and hardware pins/calibration.
 
 ## Diagnostics / failure boundary
 
-Preserve known-good layers.
-
-If USB/controller behavior is wrong but local touch, LEDs and OLED still work, debug watcher/controller/protocol deployment first.
-
-If local LEDs/touch/OLED fail, debug firmware/hardware before changing the desktop application.
-
-Useful diagnostics include RGB tests, touch/input tests, status requests, `GET POWER`, saver status, Wi-Fi status/scan and service logs.
-
-**Every feature should carry its own diagnostic path.**
+Preserve known-good layers. If USB/controller behavior is wrong but local touch, LEDs and OLED still work, debug watcher/controller/protocol deployment first. If local LEDs/touch/OLED fail, debug firmware/hardware before changing the desktop application.
