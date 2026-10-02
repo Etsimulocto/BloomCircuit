@@ -2,6 +2,38 @@
 
 **Current stable release:** v1.0.0
 
+## HAPPY JARZ companion apps
+
+This repository also carries standalone HAPPY JARZ development apps alongside the BloomCircuit wiring editor.
+
+Current split-app layout on Raspberry Pi:
+
+```text
+~/BloomCircuit          # wiring / fabrication editor
+~/HappyJarzController   # desktop HAPPY JARZ controller snapshot
+~/BloomTunes            # sound / meditation laboratory snapshot
+~/BloomSaver            # generative Glitter screensaver laboratory
+```
+
+Refresh those standalone snapshots after pulling repository changes with:
+
+```bash
+cd ~/BloomCircuit
+git checkout main
+git pull
+./tools/split_pi_apps.sh
+```
+
+### BloomSaver — Glitter
+
+`BloomSaver/` is now a Glitter-first generative visual laboratory rather than a playlist of canned background modes. It combines moving emitters, attractors, repulsors, bursts, drift, trails, glow, twinkle and a large ASCII/symbol glyph pool. Glitter size can range up to **24**.
+
+The background is intentionally simple: slow randomized dark color fades with direct saturation, brightness and fade-speed controls.
+
+BloomSaver also includes **MATCH JAR COLORS ON START**. When enabled, a HAPPY JARZ light-pattern palette can seed the Glitter hue, hue spread and initial background colors at launch. User controls remain free afterward; the Jar palette is a startup handoff, not a permanent lock.
+
+See [`BloomSaver/README.md`](BloomSaver/README.md) for the current Glitter controls and controller integration hook.
+
 ## v0.6 electrical boards
 
 Board underlays are now real electrical objects instead of passive background graphics.
