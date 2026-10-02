@@ -59,8 +59,8 @@ class HappyJarzApp(previous.HappyJarzApp):
         for col, (label, var) in enumerate(items):
             box = ttk.Frame(row, style="Panel2.TFrame", padding=7)
             box.grid(row=0, column=col, sticky="nsew", padx=(0, 5) if col < len(items) - 1 else 0)
-            ttk.Label(box, text=label, background=previous.previous.PANEL_2,
-                      foreground=previous.previous.MUTED,
+            ttk.Label(box, text=label, background=previous.previous.base.PANEL_2,
+                      foreground=previous.previous.base.MUTED,
                       font=("TkDefaultFont", 8, "bold")).pack()
             ttk.Label(box, textvariable=var, style="TouchValue.TLabel").pack()
             row.columnconfigure(col, weight=1)
