@@ -2,8 +2,9 @@
 """Add desktop serial controls/status for the current HAPPY JARZ screensaver engine.
 
 Runs after patch_happyjarz_saver_controls.py. Before adding protocol commands it
-applies smooth SPIRAL/TRIPPY drift, then the particle-universe layer, so the
-standard flasher needs no new manual step.
+applies smooth SPIRAL/TRIPPY drift, then the particle-universe layer. After the
+saver protocol is staged it applies the Fuel Gauge layer, so the standard
+flasher needs no new manual step.
 
 Protocol:
   GET SAVER STATUS
@@ -161,3 +162,10 @@ cmds = r'''  if(line=="GET SAVER STATUS"){hjPrintSaverStatus();return;}
 s = s.replace(cmd_needle, cmds + cmd_needle, 1)
 
 p.write_text(s, encoding="utf-8")
+
+# Fuel Gauge is deliberately chained last. It extends the already-staged OLED
+# menu/protocol and therefore cannot overwrite the proven LED/touch/saver layers.
+fuel_patch = Path(__file__).with_name("patch_happyjarz_fuel_gauge.py")
+if not fuel_patch.exists():
+    raise SystemExit(f"saver protocol patch failed: missing {fuel_patch.name}")
+subprocess.run([sys.executable, str(fuel_patch), str(p)], check=True)
