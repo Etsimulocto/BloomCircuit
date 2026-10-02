@@ -16,6 +16,9 @@ Existing firmware state remains authoritative:
 - alarmEnabled / alarmHour / alarmMinute
 - timerEnabled / timerMinutes / timerStartedMs
 - persistSettings()
+
+Control routing is intercepted at the stable top of serviceInputs(), independent
+of downstream detail/menu branch formatting.
 """
 from pathlib import Path
 import sys
@@ -152,27 +155,36 @@ if old_settings not in s:
     raise SystemExit("settings patch failed: SETTINGS renderer not found")
 s = s.replace(old_settings, new_settings, 1)
 
-generic_branch = '''    } else {\n      // DETAIL/STATUS MODE: still no light commands. B/LEFT return to menu.\n'''
-if generic_branch not in s:
-    raise SystemExit("settings patch failed: generic detail branch not found")
-
-settings_controls = r'''    } else if (uiScreen == UI_SETTINGS) {
-      if (settingsEditor == 0) {
-        if (q[IN_UP] && !latched[IN_UP]) { settingsCursor=(settingsCursor+1)%2; oledDirty=true; }
-        if (q[IN_DOWN] && !latched[IN_DOWN]) { settingsCursor=(settingsCursor+1)%2; oledDirty=true; }
-        if (q[IN_A] && !latched[IN_A]) settingsOpenEditor(settingsCursor+1);
-        if ((q[IN_B] && !latched[IN_B]) || (q[IN_LEFT] && !latched[IN_LEFT])) uiOpenMainMenu();
-      } else {
-        uint8_t fieldCount = settingsEditor==1 ? 3 : 2;
-        if (q[IN_LEFT] && !latched[IN_LEFT]) { settingsField=(settingsField+fieldCount-1)%fieldCount; oledDirty=true; }
-        if (q[IN_RIGHT] && !latched[IN_RIGHT]) { settingsField=(settingsField+1)%fieldCount; oledDirty=true; }
-        if (q[IN_UP] && !latched[IN_UP]) settingsAdjust(+1);
-        if (q[IN_DOWN] && !latched[IN_DOWN]) settingsAdjust(-1);
-        if (q[IN_A] && !latched[IN_A]) settingsSaveEditor();
-        if (q[IN_B] && !latched[IN_B]) settingsCancelEditor();
-      }
+service_marker = '''static void serviceInputs() {
+  bool q[INPUT_COUNT];
+  for (uint8_t i=0;i<INPUT_COUNT;++i) q[i]=updateInputState(i);
 '''
-s = s.replace(generic_branch, settings_controls + generic_branch, 1)
+if service_marker not in s:
+    raise SystemExit("settings patch failed: serviceInputs scan marker not found")
+
+settings_controls = r'''
+
+  // SETTINGS owns touch input before downstream menu/detail routing.
+  if (inputMode == "JAR" && !hjScreensaverActive && uiScreen == UI_SETTINGS) {
+    if (settingsEditor == 0) {
+      if (q[IN_UP] && !latched[IN_UP]) { settingsCursor=(settingsCursor+1)%2; oledDirty=true; }
+      if (q[IN_DOWN] && !latched[IN_DOWN]) { settingsCursor=(settingsCursor+1)%2; oledDirty=true; }
+      if (q[IN_A] && !latched[IN_A]) settingsOpenEditor(settingsCursor+1);
+      if ((q[IN_B] && !latched[IN_B]) || (q[IN_LEFT] && !latched[IN_LEFT])) uiOpenMainMenu();
+    } else {
+      uint8_t fieldCount = settingsEditor==1 ? 3 : 2;
+      if (q[IN_LEFT] && !latched[IN_LEFT]) { settingsField=(settingsField+fieldCount-1)%fieldCount; oledDirty=true; }
+      if (q[IN_RIGHT] && !latched[IN_RIGHT]) { settingsField=(settingsField+1)%fieldCount; oledDirty=true; }
+      if (q[IN_UP] && !latched[IN_UP]) settingsAdjust(+1);
+      if (q[IN_DOWN] && !latched[IN_DOWN]) settingsAdjust(-1);
+      if (q[IN_A] && !latched[IN_A]) settingsSaveEditor();
+      if (q[IN_B] && !latched[IN_B]) settingsCancelEditor();
+    }
+    for (uint8_t i=0;i<INPUT_COUNT;++i) latched[i]=q[i];
+    return;
+  }
+'''
+s = s.replace(service_marker, service_marker + settings_controls, 1)
 
 p.write_text(s, encoding="utf-8")
 print("Applied standalone SETTINGS: alarm + timer.")
