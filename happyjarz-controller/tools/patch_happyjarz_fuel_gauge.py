@@ -151,12 +151,15 @@ if up_old not in s or down_old not in s:
 s = s.replace(up_old, 'uiCursor=(uiCursor+5)%6;', 1)
 s = s.replace(down_old, 'uiCursor=(uiCursor+1)%6;', 1)
 
-# Add the renderer to the existing OLED switch before the default SYSTEM case.
-switch_old = '''    case UI_SETTINGS: oledRenderSettings(); break;\n    default: oledRenderSystem(); break;'''
-switch_new = '''    case UI_SETTINGS: oledRenderSettings(); break;\n    case UI_POWER: oledRenderPower(); break;\n    default: oledRenderSystem(); break;'''
-if switch_old not in s:
-    raise SystemExit("Fuel Gauge patch failed: OLED render switch not found")
-s = s.replace(switch_old, switch_new, 1)
+# Add the renderer immediately before the final SYSTEM fallback. Later saver
+# patches can add guards/branches around the switch, so do not depend on the
+# exact preceding case layout here.
+switch_fallback = '    default: oledRenderSystem(); break;'
+if switch_fallback not in s:
+    raise SystemExit("Fuel Gauge patch failed: OLED SYSTEM fallback not found")
+s = s.replace(switch_fallback,
+              '    case UI_POWER: oledRenderPower(); break;\n' + switch_fallback,
+              1)
 
 # Initialize ADC before the OLED comes up.
 setup_old = '''  loadSettings();\n  oledInit();'''
