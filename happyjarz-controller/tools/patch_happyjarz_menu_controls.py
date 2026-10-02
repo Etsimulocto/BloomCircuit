@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Give HAPPY JARZ two mutually exclusive local control modes.
 
-HOME screen = original proven jar controls only:
-  A     -> next Light 1 palette color
+HOME screen:
+  A     -> enter OLED main menu
   B     -> next Light 2 palette color
   UP    -> next light pattern
   DOWN  -> previous light pattern
-  RIGHT -> enter OLED main menu
+  LEFT  -> previous Light 1 palette color
+  RIGHT -> next Light 1 palette color
 
 OLED menu/detail screens = menu controls only:
   UP/DOWN -> move menu cursor (main menu)
@@ -37,12 +38,9 @@ s = p.read_text(encoding="utf-8")
 
 new_block = '''  if (inputMode == "JAR") {
     if (uiScreen == UI_HOME) {
-      // HOME MODE: original jar controls only.
+      // HOME MODE: A opens the menu; LEFT/RIGHT own Light 1 color.
       if (q[IN_A] && !latched[IN_A]) {
-        paletteIndex1=(paletteIndex1+1)%9;
-        Rgb c=palette[paletteIndex1];
-        hjSetLed(1,c.r,c.g,c.b);
-        oledDirty=true;
+        uiOpenMainMenu();
       }
       if (q[IN_B] && !latched[IN_B]) {
         paletteIndex2=(paletteIndex2+1)%9;
@@ -60,8 +58,17 @@ new_block = '''  if (inputMode == "JAR") {
         hjSetPattern(PATTERN_NAMES[localPatternIndex]);
         oledDirty=true;
       }
+      if (q[IN_LEFT] && !latched[IN_LEFT]) {
+        paletteIndex1=(paletteIndex1+8)%9;
+        Rgb c=palette[paletteIndex1];
+        hjSetLed(1,c.r,c.g,c.b);
+        oledDirty=true;
+      }
       if (q[IN_RIGHT] && !latched[IN_RIGHT]) {
-        uiOpenMainMenu();
+        paletteIndex1=(paletteIndex1+1)%9;
+        Rgb c=palette[paletteIndex1];
+        hjSetLed(1,c.r,c.g,c.b);
+        oledDirty=true;
       }
     } else if (uiScreen == UI_MAIN_MENU) {
       // MENU MODE: no light commands are allowed here.
