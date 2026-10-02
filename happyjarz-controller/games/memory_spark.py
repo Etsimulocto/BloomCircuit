@@ -6,7 +6,7 @@ BLOOMCORE MODULE
 identity:
   name: HAPPY JARZ — Memory Spark
   module: memory_spark
-  version: 0.1
+  version: 0.1.1
   format: bloomcore/v1.3
 
 purpose:
@@ -231,7 +231,7 @@ class MemorySpark:
                                 font=("TkFixedFont", max(4, size*s)))
 
     def draw_arrow(self, direction, active=False):
-        centers = {"UP": (64,22), "RIGHT": (88,36), "DOWN": (64,50), "LEFT": (40,36)}
+        centers = {"UP": (64,24), "RIGHT": (88,38), "DOWN": (64,52), "LEFT": (40,38)}
         cx, cy = centers[direction]
         if active:
             self.px_rect(cx-9, cy-8, cx+9, cy+8)
@@ -242,7 +242,7 @@ class MemorySpark:
         if direction == "UP":
             pts = [(cx,cy-5),(cx-5,cy+1),(cx-2,cy+1),(cx-2,cy+5),(cx+2,cy+5),(cx+2,cy+1),(cx+5,cy+1)]
         elif direction == "DOWN":
-            pts = [(cx,cy+5),(cx-5,cy-1),(cx-2,cy-1),(cx-2,cy-5),(cx+2,cy-5),(cx+2,cy-1),(cx+5,cy-1)]
+            pts = [(cx,cy+5),(cx-5,cy-1),(cx-2,cy-1),(cx-2,cy-5),(cx+2,cy-5),(cx+2,cy-1),(cx+5,cy-1),(cx+5,cy+1)]
         elif direction == "LEFT":
             pts = [(cx-5,cy),(cx+1,cy-5),(cx+1,cy-2),(cx+5,cy-2),(cx+5,cy+2),(cx+1,cy+2),(cx+1,cy+5)]
         else:
@@ -259,17 +259,16 @@ class MemorySpark:
 
     def render_game(self):
         self.text(1, 0, f"R{self.completed_rounds+1:02d}", size=5)
+        header_label = "WATCH" if self.state == "show" else "REPEAT" if self.state == "input" else ""
+        if header_label:
+            self.text(64, 0, header_label, anchor="n", size=4)
         self.text(127, 0, f"{self.input_index}/{len(self.sequence)}", anchor="ne", size=5)
         self.line(0, 8, 127, 8)
         for d in DIRS:
             self.draw_arrow(d, active=(self.active_dir == d))
-        if self.state == "show":
-            self.text(64, 10, "WATCH", anchor="n", size=4)
-        elif self.state == "input":
-            self.text(64, 10, "REPEAT", anchor="n", size=4)
         if self.message_timer > 0 and self.message:
-            self.px_rect(38, 27, 90, 43, fill="black")
-            self.text(64, 31, self.message, anchor="n", size=5)
+            self.px_rect(38, 29, 90, 45, fill="black")
+            self.text(64, 33, self.message, anchor="n", size=5)
         if self.flash_bad > 0:
             self.px_rect(0, 9, 2, 63)
             self.px_rect(125, 9, 127, 63)
