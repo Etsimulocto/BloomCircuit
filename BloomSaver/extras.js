@@ -1,243 +1,41 @@
 (() => {
   "use strict";
-
-  const mode = document.getElementById("mode");
-  const panel = document.getElementById("panel");
-  const showPanel = document.getElementById("showPanel");
-  const primary = document.querySelector(".primary-actions");
-
-  // Glitter is now an independent fullscreen overlay layer.
-  // It does NOT replace or hide the selected BloomSaver base mode.
-  const glitterButton = document.getElementById("glitterPreset") || document.createElement("button");
-  glitterButton.id = "glitterPreset";
-  glitterButton.textContent = "GLITTER OVERLAY";
-  glitterButton.title = "Toggle fullscreen glitter over the current BloomSaver mode";
-  if (!glitterButton.parentElement && primary) primary.appendChild(glitterButton);
-
-  // Remove the old first-class Glitter Jar mode if it was injected by an earlier build.
-  if (mode) {
-    const oldGlitterOption = mode.querySelector('option[value="glitter"]');
-    if (oldGlitterOption) oldGlitterOption.remove();
-  }
-
-  const canvas = document.createElement("canvas");
-  canvas.id = "glitterStage";
-  canvas.setAttribute("aria-hidden", "true");
-  document.body.insertBefore(canvas, document.querySelector(".topbar"));
-  const ctx = canvas.getContext("2d", { alpha: true });
-
-  let width = innerWidth;
-  let height = innerHeight;
-  let dpr = Math.min(devicePixelRatio || 1, 2);
-  let flakes = [];
-  let last = performance.now();
-  let active = true;
-  let idleTimer = 0;
-
-  function num(key, fallback) {
-    const el = document.querySelector(`[data-key="${key}"]`);
-    const value = el ? Number(el.value) : fallback;
-    return Number.isFinite(value) ? value : fallback;
-  }
-
-  function setControl(key, value) {
-    const el = document.querySelector(`[data-key="${key}"]`);
-    if (!el) return;
-    el.value = value;
-    el.dispatchEvent(new Event("input", { bubbles: true }));
-  }
-
-  function resize() {
-    width = innerWidth;
-    height = innerHeight;
-    dpr = Math.min(devicePixelRatio || 1, 2);
-    canvas.width = Math.floor(width * dpr);
-    canvas.height = Math.floor(height * dpr);
-    canvas.style.width = `${width}px`;
-    canvas.style.height = `${height}px`;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    buildFlakes(true);
-  }
-
-  function desiredCount() {
-    return Math.max(40, Math.min(950, Math.floor(num("count", 420) * 1.25)));
-  }
-
-  function makeFlake(i) {
-    return {
-      x: Math.random(),
-      y: Math.random(),
-      vx: (Math.random() - .5) * .018,
-      vy: .008 + Math.random() * .042,
-      size: .7 + Math.random() * 3.2,
-      phase: Math.random() * Math.PI * 2,
-      spin: (Math.random() - .5) * .09,
-      angle: Math.random() * Math.PI,
-      hueOffset: (Math.random() - .5) * 2,
-      twinkle: .45 + Math.random() * 1.8,
-      depth: .45 + Math.random() * .9,
-      lane: i
-    };
-  }
-
-  function buildFlakes(force = false) {
-    const count = desiredCount();
-    if (!force && flakes.length === count) return;
-    if (flakes.length < count) {
-      for (let i = flakes.length; i < count; i += 1) flakes.push(makeFlake(i));
-    } else {
-      flakes.length = count;
-    }
-  }
-
-  function colorFor(flake, alpha) {
-    const hue = num("hue", 42);
-    const spread = num("hueSpread", 145);
-    const h = (hue + flake.hueOffset * spread + 360) % 360;
-    return `hsla(${h},96%,72%,${alpha})`;
-  }
-
-  function drawGlitter(t, dt) {
-    buildFlakes();
-    ctx.clearRect(0, 0, width, height);
-
-    const speed = num("speed", .42);
-    const noise = num("noise", .62);
-    const swirl = num("swirl", .18);
-    const scale = num("scale", 1.25);
-    const glow = num("glow", 20);
-
-    for (const f of flakes) {
-      const wave = Math.sin(t * .00048 + f.phase + f.y * 7) * noise;
-      const eddy = Math.cos(t * .00019 + f.phase * 1.7 + f.x * 9) * swirl;
-
-      f.vx += (wave * .000075 + eddy * .00005) * dt;
-      f.vx *= .985;
-      f.x += f.vx * speed * dt * .06 * f.depth;
-      f.y += f.vy * speed * dt * .06 * f.depth;
-      f.angle += f.spin * speed * dt * .04;
-
-      // Fullscreen recirculation: flakes drift off one edge and quietly return.
-      if (f.y > 1.03) {
-        f.y = -.03;
-        f.x = Math.random();
-        f.vx = (Math.random() - .5) * .02;
-      }
-      if (f.x < -.03) f.x = 1.03;
-      if (f.x > 1.03) f.x = -.03;
-
-      const x = f.x * width;
-      const y = f.y * height;
-      const shimmer = .28 + .72 * Math.abs(Math.sin(t * .0012 * f.twinkle + f.phase));
-      const s = f.size * scale * (.82 + shimmer * .42) * f.depth;
-      const c = colorFor(f, .28 + shimmer * .65);
-
-      ctx.save();
-      ctx.translate(x, y);
-      ctx.rotate(f.angle);
-      ctx.shadowBlur = glow * (.28 + shimmer * .7);
-      ctx.shadowColor = c;
-      ctx.fillStyle = c;
-      ctx.strokeStyle = c;
-
-      if (f.lane % 3 === 0) {
-        ctx.beginPath();
-        ctx.moveTo(0, -s * 1.5);
-        ctx.lineTo(s * .72, 0);
-        ctx.lineTo(0, s * 1.5);
-        ctx.lineTo(-s * .72, 0);
-        ctx.closePath();
-        ctx.fill();
-      } else if (f.lane % 3 === 1) {
-        ctx.lineWidth = Math.max(.55, s * .22);
-        ctx.beginPath();
-        ctx.moveTo(-s, 0);
-        ctx.lineTo(s, 0);
-        ctx.moveTo(0, -s);
-        ctx.lineTo(0, s);
-        ctx.stroke();
-      } else {
-        ctx.beginPath();
-        ctx.arc(0, 0, Math.max(.45, s * .5), 0, Math.PI * 2);
-        ctx.fill();
-      }
-      ctx.restore();
-    }
-  }
-
-  function setActive(next) {
-    active = !!next;
-    canvas.classList.toggle("active", active);
-    glitterButton.classList.toggle("active", active);
-    glitterButton.textContent = active ? "GLITTER ON" : "GLITTER OFF";
-    if (active) buildFlakes(true);
-    else ctx.clearRect(0, 0, width, height);
-  }
-
-  function applyGlitterPreset() {
-    const values = {
-      count: 420,
-      speed: .42,
-      trails: .86,
-      links: 0,
-      attraction: 0,
-      repel: .08,
-      noise: .62,
-      swirl: .18,
-      glow: 20,
-      symmetry: 1,
-      hue: 42,
-      hueSpread: 145,
-      pulse: .35,
-      scale: 1.25
-    };
-    Object.entries(values).forEach(([key, value]) => setControl(key, value));
-    setActive(true);
-    revealUI();
-  }
-
-  // Click toggles the overlay. Shift-click reloads the built-in glitter preset.
-  glitterButton.addEventListener("click", event => {
-    if (event.shiftKey) applyGlitterPreset();
-    else setActive(!active);
-    revealUI();
-  });
-
-  // G toggles glitter; Shift+G reapplies the glitter preset.
-  addEventListener("keydown", event => {
-    if (["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement.tagName)) return;
-    if (event.key.toLowerCase() === "g") {
-      if (event.shiftKey) applyGlitterPreset();
-      else setActive(!active);
-    }
-  });
-
-  function hideUI() {
-    document.body.classList.add("idle-clean");
-  }
-
-  function revealUI() {
-    document.body.classList.remove("idle-clean");
-    clearTimeout(idleTimer);
-    idleTimer = setTimeout(hideUI, 5000);
-  }
-
-  ["pointermove", "pointerdown", "touchstart", "wheel", "keydown"].forEach(name => {
-    addEventListener(name, revealUI, { passive: true });
-  });
-  if (panel) panel.addEventListener("input", revealUI);
-  if (showPanel) showPanel.addEventListener("click", revealUI);
-
-  function frame(t) {
-    const dt = Math.min(40, Math.max(1, t - last));
-    last = t;
-    if (active) drawGlitter(t, dt);
-    requestAnimationFrame(frame);
-  }
-
-  addEventListener("resize", resize);
-  resize();
-  revealUI();
-  setActive(true);
-  requestAnimationFrame(frame);
+  const panel=document.getElementById("panel"), showPanel=document.getElementById("showPanel"), primary=document.querySelector(".primary-actions"), mode=document.getElementById("mode");
+  const button=document.getElementById("glitterPreset")||document.createElement("button");
+  button.id="glitterPreset"; button.textContent="GENERATOR ON"; button.title="Toggle living generator. Shift-click reseeds its DNA."; if(!button.parentElement&&primary)primary.appendChild(button);
+  const canvas=document.createElement("canvas"); canvas.id="glitterStage"; canvas.setAttribute("aria-hidden","true"); document.body.insertBefore(canvas,document.querySelector(".topbar"));
+  const ctx=canvas.getContext("2d",{alpha:true});
+  const DNA={
+    universe:{flow:.58,swirl:.48,gravity:.42,burst:.36,sparkle:.34,symmetry:.12,edge:.34,trail:.84,speed:.82,hue:205,spread:100},
+    silk:{flow:.92,swirl:.72,gravity:.18,burst:.12,sparkle:.30,symmetry:.36,edge:.24,trail:.94,speed:.52,hue:185,spread:80},
+    crystal:{flow:.34,swirl:.26,gravity:.28,burst:.24,sparkle:.68,symmetry:.90,edge:.20,trail:.82,speed:.40,hue:285,spread:62},
+    orbit:{flow:.24,swirl:.88,gravity:.84,burst:.18,sparkle:.42,symmetry:.16,edge:.12,trail:.90,speed:.58,hue:225,spread:74},
+    rain:{flow:.28,swirl:.08,gravity:.72,burst:.28,sparkle:.46,symmetry:.06,edge:.78,trail:.68,speed:1.08,hue:150,spread:52},
+    glitter:{flow:.48,swirl:.38,gravity:.22,burst:.52,sparkle:.96,symmetry:.10,edge:.64,trail:.76,speed:.66,hue:42,spread:150}
+  };
+  let width=innerWidth,height=innerHeight,dpr=Math.min(devicePixelRatio||1,2),active=true,particles=[],emitters=[],wells=[],last=performance.now(),lastEvolution=last,lastEvent=last,nextEvolution=6000,nextEvent=2200,idleTimer=0,scene=null;
+  const clamp=(v,a,b)=>Math.max(a,Math.min(b,v)), lerp=(a,b,t)=>a+(b-a)*t, rnd=(a=0,b=1)=>a+Math.random()*(b-a), chance=p=>Math.random()<p, pick=a=>a[Math.floor(Math.random()*a.length)];
+  function num(k,f){const e=document.querySelector(`[data-key="${k}"]`),v=e?Number(e.value):f;return Number.isFinite(v)?v:f;}
+  function weightedDNA(){const n=Object.keys(DNA),a=pick(n),b=pick(n),c=pick(n);let wa=rnd(.32,.72),wb=rnd(.12,.5),wc=rnd(.05,.34),s=wa+wb+wc;wa/=s;wb/=s;wc/=s;const o={parents:[a,b,c],weights:[wa,wb,wc]};for(const k of Object.keys(DNA[a]))o[k]=DNA[a][k]*wa+DNA[b][k]*wb+DNA[c][k]*wc;o.hue=(o.hue+rnd(-35,35)+360)%360;o.spread=clamp(o.spread*rnd(.72,1.35),18,180);o.density=Math.round(rnd(170,620));o.emitterCount=Math.round(rnd(2,7));o.wellCount=Math.round(rnd(1,6));o.repulsorChance=rnd(.18,.55);o.life=rnd(2800,9000);o.fade=clamp(1-o.trail,.018,.18);o.maxSpeed=rnd(1.2,4.2);return o;}
+  function resize(){width=innerWidth;height=innerHeight;dpr=Math.min(devicePixelRatio||1,2);canvas.width=Math.floor(width*dpr);canvas.height=Math.floor(height*dpr);canvas.style.width=`${width}px`;canvas.style.height=`${height}px`;ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,width,height);}
+  function makeEmitter(){const type=pick(["left","right","top","bottom","corner","random","ring","center"]);let x=rnd(0,width),y=rnd(0,height),angle=rnd(0,Math.PI*2);if(type==="left"){x=-10;angle=rnd(-.7,.7);}if(type==="right"){x=width+10;angle=Math.PI+rnd(-.7,.7);}if(type==="top"){y=-10;angle=Math.PI/2+rnd(-.7,.7);}if(type==="bottom"){y=height+10;angle=-Math.PI/2+rnd(-.7,.7);}if(type==="corner"){const q=pick([[0,0],[width,0],[0,height],[width,height]]);x=q[0];y=q[1];angle=Math.atan2(height/2-y,width/2-x)+rnd(-.8,.8);}if(type==="ring"){const a=rnd(0,Math.PI*2),r=rnd(Math.min(width,height)*.18,Math.min(width,height)*.48);x=width/2+Math.cos(a)*r;y=height/2+Math.sin(a)*r;angle=a+Math.PI+rnd(-.5,.5);}if(type==="center"){x=width/2+rnd(-80,80);y=height/2+rnd(-80,80);}return{x,y,angle,style:pick(["wander","orbit","bounce","figure8","spiral","edge"]),phase:rnd(0,Math.PI*2),speed:rnd(.12,.85),radius:rnd(35,260),spread:rnd(.16,1.45),force:rnd(.5,2.5),rate:rnd(.25,1.25),life:rnd(7000,26000),age:0,vx:rnd(-.2,.2),vy:rnd(-.2,.2)};}
+  function makeWell(rep=false){return{x:rnd(0,width),y:rnd(0,height),vx:rnd(-.22,.22),vy:rnd(-.22,.22),strength:(rep?-1:1)*rnd(.18,1.6),radius:rnd(65,300),motion:pick(["wander","orbit","bounce","spiral","figure8","edge"]),phase:rnd(0,Math.PI*2),orbit:rnd(40,260),speed:rnd(.15,.8),life:rnd(8000,30000),age:0};}
+  function reconcile(){while(emitters.length<scene.emitterCount)emitters.push(makeEmitter());while(emitters.length>scene.emitterCount)emitters.splice(Math.floor(Math.random()*emitters.length),1);while(wells.length<scene.wellCount)wells.push(makeWell(chance(scene.repulsorChance)));while(wells.length>scene.wellCount)wells.splice(Math.floor(Math.random()*wells.length),1);}
+  function reseedScene(){scene=weightedDNA();emitters=[];wells=[];particles=[];reconcile();}
+  function mutate(str=.18){const f=weightedDNA(),keys=["flow","swirl","gravity","burst","sparkle","symmetry","edge","trail","speed","spread","repulsorChance","life","maxSpeed"];for(const k of keys)scene[k]=lerp(scene[k],f[k],str*rnd(.45,1.25));scene.hue=(scene.hue+rnd(-70,70)*str+360)%360;scene.density=Math.round(lerp(scene.density,f.density,str));scene.emitterCount=clamp(Math.round(lerp(scene.emitterCount,f.emitterCount,str*1.3)),1,10);scene.wellCount=clamp(Math.round(lerp(scene.wellCount,f.wellCount,str*1.3)),0,8);scene.fade=clamp(1-scene.trail,.018,.20);if(chance(.28)){scene.parents=f.parents;scene.weights=f.weights;}reconcile();}
+  function moveActor(a,t,dt,em=false){a.age+=dt;const s=a.speed||.4,kind=a.style||a.motion;if(kind==="wander"){a.vx+=Math.sin(t*.00031+a.phase)*.008*s;a.vy+=Math.cos(t*.00027+a.phase*1.3)*.008*s;a.vx=clamp(a.vx,-.8,.8);a.vy=clamp(a.vy,-.8,.8);a.x+=a.vx*dt*.06;a.y+=a.vy*dt*.06;}else if(kind==="orbit"){const r=a.radius||a.orbit||120,q=t*.00012*s+a.phase;a.x=width/2+Math.cos(q)*r;a.y=height/2+Math.sin(q)*r*.68;}else if(kind==="figure8"){const r=a.radius||a.orbit||150,q=t*.00016*s+a.phase;a.x=width/2+Math.sin(q)*r;a.y=height/2+Math.sin(q*2)*r*.42;}else if(kind==="spiral"){const q=t*.00017*s+a.phase,r=(a.radius||a.orbit||120)*(.45+.5*(Math.sin(t*.00007+a.phase)+1));a.x=width/2+Math.cos(q)*r;a.y=height/2+Math.sin(q)*r;}else if(kind==="edge"){const p=((t*.00002*s+a.phase/(Math.PI*2))%1+1)%1,per=2*(width+height),d=p*per;if(d<width){a.x=d;a.y=0;}else if(d<width+height){a.x=width;a.y=d-width;}else if(d<2*width+height){a.x=width-(d-width-height);a.y=height;}else{a.x=0;a.y=height-(d-2*width-height);}}else{a.x+=a.vx*dt*.06;a.y+=a.vy*dt*.06;}if(a.x<-80)a.x=width+80;if(a.x>width+80)a.x=-80;if(a.y<-80)a.y=height+80;if(a.y>height+80)a.y=-80;if(a.age>a.life)Object.assign(a,em?makeEmitter():makeWell(chance(scene.repulsorChance)));}
+  function spawn(e,burst=false){if(particles.length>scene.density*1.55)return;const a=e.angle+rnd(-e.spread,e.spread),v=e.force*rnd(.35,1.7)*(burst?rnd(1.3,2.8):1);particles.push({x:e.x,y:e.y,px:e.x,py:e.y,vx:Math.cos(a)*v,vy:Math.sin(a)*v,size:rnd(.6,3.8)*(chance(.08)?rnd(1.8,3.8):1),age:0,life:scene.life*rnd(.45,1.6),shape:pick(["dot","diamond","cross","dash","shard"]),hue:(scene.hue+rnd(-scene.spread,scene.spread)+360)%360,alpha:rnd(.45,1),twinkle:rnd(.4,2.4),spin:rnd(-.08,.08),angle:rnd(0,Math.PI*2)});}
+  function eventBurst(){const e=makeEmitter();e.x=rnd(0,width);e.y=rnd(0,height);e.angle=rnd(0,Math.PI*2);e.spread=rnd(.8,Math.PI);e.force=rnd(1.8,4.2);for(let i=0,n=Math.round(rnd(18,90)*(.55+scene.burst));i<n;i++)spawn(e,true);if(chance(.55))wells.push(makeWell(chance(.5)));if(wells.length>10)wells.shift();}
+  function randomEvent(){const k=pick(["burst","edgeStorm","gravityFlip","newWell","newEmitter","paletteKick"]);if(k==="burst")eventBurst();if(k==="edgeStorm"){for(let i=0,n=Math.round(rnd(2,5));i<n;i++)emitters.push(makeEmitter());while(emitters.length>10)emitters.shift();}if(k==="gravityFlip")wells.forEach(w=>w.strength*=-1);if(k==="newWell"){wells.push(makeWell(chance(scene.repulsorChance)));if(wells.length>10)wells.shift();}if(k==="newEmitter"){emitters.push(makeEmitter());if(emitters.length>10)emitters.shift();}if(k==="paletteKick")scene.hue=(scene.hue+rnd(35,160))%360;}
+  function fade(){ctx.save();ctx.globalCompositeOperation="destination-out";ctx.fillStyle=`rgba(0,0,0,${clamp(scene.fade,.018,.20)})`;ctx.fillRect(0,0,width,height);ctx.restore();}
+  function draw(p,t){const sh=.38+.62*Math.abs(Math.sin(t*.0013*p.twinkle+p.age*.0008)),alpha=clamp(p.alpha*(1-p.age/p.life)*(.55+.65*sh),0,1),c=`hsla(${p.hue},${88+scene.sparkle*10}%,${58+scene.sparkle*22}%,${alpha})`,s=p.size*(.78+.48*sh);ctx.save();ctx.translate(p.x,p.y);ctx.rotate(p.angle);ctx.fillStyle=c;ctx.strokeStyle=c;ctx.shadowColor=c;ctx.shadowBlur=(8+num("glow",18)*.65)*scene.sparkle*sh;if(p.shape==="diamond"){ctx.beginPath();ctx.moveTo(0,-s*1.5);ctx.lineTo(s*.75,0);ctx.lineTo(0,s*1.5);ctx.lineTo(-s*.75,0);ctx.closePath();ctx.fill();}else if(p.shape==="cross"){ctx.lineWidth=Math.max(.5,s*.2);ctx.beginPath();ctx.moveTo(-s,0);ctx.lineTo(s,0);ctx.moveTo(0,-s);ctx.lineTo(0,s);ctx.stroke();}else if(p.shape==="dash")ctx.fillRect(-s*1.3,-s*.18,s*2.6,s*.36);else if(p.shape==="shard"){ctx.beginPath();ctx.moveTo(-s*.35,-s);ctx.lineTo(s*.6,-s*.15);ctx.lineTo(s*.12,s);ctx.closePath();ctx.fill();}else{ctx.beginPath();ctx.arc(0,0,Math.max(.45,s*.52),0,Math.PI*2);ctx.fill();}ctx.restore();}
+  function step(t,dt){fade();emitters.forEach(e=>moveActor(e,t,dt,true));wells.forEach(w=>moveActor(w,t,dt,false));for(let i=0,n=Math.max(1,Math.round(scene.emitterCount*scene.speed*rnd(.55,1.35)));i<n;i++){const e=pick(emitters);if(e&&chance(.58*e.rate))spawn(e);}const flow=num("noise",.7)*scene.flow,sw=num("swirl",.8)*scene.swirl,maxV=scene.maxSpeed*(.6+num("speed",.8)*.7);for(let i=particles.length-1;i>=0;i--){const p=particles[i];p.age+=dt;p.px=p.x;p.py=p.y;let ax=0,ay=0,f=Math.sin(p.y*.009+t*.00031+p.hue*.01)+Math.cos(p.x*.007-t*.00021);ax+=Math.cos(f*Math.PI)*flow*.012;ay+=Math.sin(f*Math.PI)*flow*.012;const dx0=width/2-p.x,dy0=height/2-p.y,d0=Math.hypot(dx0,dy0)+1;ax+=(-dy0/d0)*sw*.006;ay+=(dx0/d0)*sw*.006;for(const w of wells){const dx=w.x-p.x,dy=w.y-p.y,d=Math.hypot(dx,dy)+1;if(d<w.radius){const q=(1-d/w.radius)*w.strength*.028;ax+=(dx/d)*q;ay+=(dy/d)*q;}}p.vx=(p.vx+ax)*.992;p.vy=(p.vy+ay)*.992;const v=Math.hypot(p.vx,p.vy);if(v>maxV){p.vx=p.vx/v*maxV;p.vy=p.vy/v*maxV;}p.x+=p.vx*dt*.06;p.y+=p.vy*dt*.06;p.angle+=p.spin*dt*.04;if(p.x<-90||p.x>width+90||p.y<-90||p.y>height+90||p.age>p.life){particles.splice(i,1);continue;}if(scene.trail>.45){ctx.strokeStyle=`hsla(${p.hue},90%,65%,${.05+.18*scene.trail})`;ctx.lineWidth=.45;ctx.beginPath();ctx.moveTo(p.px,p.py);ctx.lineTo(p.x,p.y);ctx.stroke();}draw(p,t);}if(t-lastEvolution>nextEvolution){mutate(rnd(.10,.28));lastEvolution=t;nextEvolution=rnd(3500,10500);if(chance(.22)&&mode){mode.value=pick(["universe","silk","crystal","orbit","rain"]);mode.dispatchEvent(new Event("change",{bubbles:true}));}}if(t-lastEvent>nextEvent){randomEvent();lastEvent=t;nextEvent=rnd(1200,5200);}}
+  function setActive(v){active=!!v;canvas.classList.toggle("active",active);button.classList.toggle("active",active);button.textContent=active?"GENERATOR ON":"GENERATOR OFF";if(active&&(!scene||!particles.length))reseedScene();if(!active)ctx.clearRect(0,0,width,height);}
+  function reseed(){reseedScene();ctx.clearRect(0,0,width,height);lastEvolution=performance.now();lastEvent=lastEvolution;revealUI();}
+  button.addEventListener("click",e=>{if(e.shiftKey)reseed();else setActive(!active);revealUI();});
+  addEventListener("keydown",e=>{if(["INPUT","SELECT","TEXTAREA"].includes(document.activeElement.tagName))return;if(e.key.toLowerCase()==="g"){if(e.shiftKey)reseed();else setActive(!active);}if(e.key.toLowerCase()==="x")reseed();});
+  function hideUI(){document.body.classList.add("idle-clean");}function revealUI(){document.body.classList.remove("idle-clean");clearTimeout(idleTimer);idleTimer=setTimeout(hideUI,5000);}
+  ["pointermove","pointerdown","touchstart","wheel","keydown"].forEach(n=>addEventListener(n,revealUI,{passive:true}));if(panel)panel.addEventListener("input",revealUI);if(showPanel)showPanel.addEventListener("click",revealUI);
+  function frame(t){const dt=Math.min(40,Math.max(1,t-last));last=t;if(active)step(t,dt);requestAnimationFrame(frame);}
+  addEventListener("resize",()=>{resize();reseed();});resize();reseed();setActive(true);revealUI();requestAnimationFrame(frame);
 })();
