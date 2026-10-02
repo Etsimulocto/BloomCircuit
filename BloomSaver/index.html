@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>BloomSaver</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <canvas id="stage"></canvas>
+
+  <header class="topbar">
+    <div>
+      <div class="eyebrow">HAPPY JARZ / BLOOMCORE</div>
+      <h1>BloomSaver</h1>
+    </div>
+    <div class="status"><span id="fps">60 FPS</span><span id="seedLabel">SEED 0</span></div>
+  </header>
+
+  <aside id="panel" class="panel">
+    <div class="panel-title">
+      <strong>UNIVERSE CONTROL</strong>
+      <button id="hidePanel" class="icon">×</button>
+    </div>
+
+    <div class="button-grid primary-actions">
+      <button id="randomize">RANDOMIZE</button>
+      <button id="mutate">MUTATE</button>
+      <button id="pause">PAUSE</button>
+      <button id="fullscreen">FULLSCREEN</button>
+    </div>
+
+    <label>Mode
+      <select id="mode">
+        <option value="universe">Particle Universe</option>
+        <option value="silk">Silk Flow</option>
+        <option value="crystal">Crystal Bloom</option>
+        <option value="orbit">Orbital Garden</option>
+        <option value="rain">Signal Rain</option>
+      </select>
+    </label>
+
+    <label>Seed
+      <div class="inline"><input id="seed" type="number" step="1" /><button id="applySeed">GO</button></div>
+    </label>
+
+    <div id="controls" class="controls"></div>
+
+    <div class="section-title">EVOLUTION</div>
+    <label class="check"><input id="autoEvolve" type="checkbox" checked /> Auto evolve</label>
+    <label>Evolution seconds <input id="evolveSeconds" type="range" min="4" max="60" value="18" /></label>
+    <label>Mutation strength <input id="mutation" type="range" min="1" max="100" value="24" /></label>
+
+    <div class="section-title">PRESETS</div>
+    <div class="inline">
+      <input id="presetName" type="text" placeholder="Preset name" maxlength="32" />
+      <button id="savePreset">SAVE</button>
+    </div>
+    <select id="presetList"><option value="">Saved presets…</option></select>
+    <div class="button-grid two"><button id="loadPreset">LOAD</button><button id="deletePreset">DELETE</button></div>
+
+    <div class="section-title">SHORTCUTS</div>
+    <p class="tiny">R randomize · M mutate · Space pause · F fullscreen · H hide controls</p>
+  </aside>
+
+  <button id="showPanel" class="show-panel hidden">CONTROLS</button>
+
+  <script src="app.js"></script>
+</body>
+</html>
