@@ -1,12 +1,8 @@
 #!/usr/bin/env python3
-"""Refuse to flash an incomplete HAPPY JARZ staged firmware build.
-
-This guard runs after all staging patches and before compile/upload.
-It checks for features that distinguish the current bench-proven build from the
-older OLED-only v0.5 stage that still showed ALARM OFF on HOME.
-"""
+"""Refuse to flash an incomplete or wrongly-versioned HAPPY JARZ staged firmware build."""
 
 from pathlib import Path
+import re
 import sys
 
 if len(sys.argv) != 2:
@@ -14,6 +10,22 @@ if len(sys.argv) != 2:
 
 p = Path(sys.argv[1])
 s = p.read_text(encoding="utf-8")
+controller_dir = Path(__file__).resolve().parent.parent
+version_file = controller_dir / "firmware" / "VERSION"
+expected_version = version_file.read_text(encoding="utf-8").strip()
+
+if not re.fullmatch(r"\d+\.\d+\.\d+", expected_version):
+    print(f"ERROR: invalid firmware VERSION file: {expected_version!r}", file=sys.stderr)
+    raise SystemExit(4)
+
+version_marker = f'static const char *HJ_FW_VERSION = "{expected_version}";'
+if version_marker not in s:
+    print(
+        f"ERROR: staged firmware version does not match firmware/VERSION ({expected_version}); refusing to flash.",
+        file=sys.stderr,
+    )
+    print(f"Staged file left for inspection: {p}", file=sys.stderr)
+    raise SystemExit(5)
 
 required = {
     "Fuel Gauge layer": "FUEL_GAUGE_PATCH_V1",
@@ -37,9 +49,6 @@ if missing:
     print(f"Staged file left for inspection: {p}", file=sys.stderr)
     raise SystemExit(2)
 
-# The early OLED HOME implementation ends with ALARM OFF/TIMER text. That text
-# may still legitimately exist on the SETTINGS page, so only reject the exact
-# old HOME-bottom assignment if it survived staging.
 old_home = 'String bottom = timerEnabled ? timerText() : String(alarmBuf);\n  oledCentered(61, bottom);'
 if old_home in s:
     print("ERROR: old ALARM OFF HOME footer survived staging; refusing to flash.", file=sys.stderr)
@@ -47,6 +56,7 @@ if old_home in s:
     raise SystemExit(3)
 
 print("HAPPY JARZ staged firmware verification: PASS")
+print(f"  firmware version {expected_version}")
 print("  Fuel Gauge + HOME battery/power cycle present")
 print("  GET POWER protocol present")
 print("  30-second OLED screensaver present")
