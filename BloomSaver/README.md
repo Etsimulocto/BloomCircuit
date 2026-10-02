@@ -1,6 +1,6 @@
 # BloomSaver — Glitter
 
-BloomSaver is now a standalone HAPPY JARZ / BLOOMCORE **Glitter laboratory**. The old background visual modes and timed preset switching are gone. All complexity lives in one continuously generative glitter field, backed by a simple slow randomized color fade.
+BloomSaver is a standalone HAPPY JARZ / BLOOMCORE **Glitter laboratory**. All complexity lives in one continuously generative glitter field, backed by a simple slow randomized color fade.
 
 ## Run on Raspberry Pi
 
@@ -31,12 +31,18 @@ The control panel exposes:
 - trails
 - glow
 - twinkle
-- minimum and maximum glitter size
+- minimum glitter size
+- maximum glitter size up to **24**
+- **symbol chance**
 - glitter hue
 - hue spread
 - background fade speed
 - background saturation
 - background brightness
+
+## Symbol glitter
+
+Glitter particles can now spawn as glowing text symbols in addition to dots, diamonds, crosses, dashes and shards. The built-in pool includes ASCII punctuation, letters, numbers, arrows, card suits, music marks, stars, geometric shapes, math symbols, block characters and box-drawing glyphs. Symbol particles use the same motion, attraction, repulsion, twinkle, glow, rotation and size controls as every other glitter particle.
 
 ## Background
 
