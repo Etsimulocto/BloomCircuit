@@ -2,12 +2,12 @@
 
 Pi-first procedural audio lab for HAPPY JARZ and future BloomCircuit builds.
 
-## Current app: BloomTunes Studio v0.4
+## Current app: BloomTunes Studio v0.5
 
 Launch:
 
 ```bash
-python3 BloomTunes/bloomtunes_studio.py
+python3 BloomTunes/bloomtunes_studio_v0_5.py
 ```
 
 BloomTunes Studio is a dark-mode, sample-free mono synth/sequencer intended for tuning sounds on the Raspberry Pi before porting compact recipes to the ESP32-S3.
@@ -34,6 +34,32 @@ BloomTunes Studio is a dark-mode, sample-free mono synth/sequencer intended for 
 - per-track mute
 
 The Pi preview renders the visible four-bar page rather than allocating a giant whole-song Python float buffer during every edit. The song data itself can still span 256 bars.
+
+## Meditation Mode
+
+v0.5 adds a compact long-form tone builder layered on top of the stable v0.4 sequencer.
+
+Controls:
+
+- START Hz
+- END Hz
+- duration in minutes
+- volume
+- waveform: sine, triangle, saw, square
+- sweep curve: linear or logarithmic
+- PLAY / STOP
+- built-in meditation preset bank
+
+Built-in starting presets include:
+
+- 100 -> 528 Hz / 5 minutes
+- 174 -> 528 Hz / 10 minutes
+- 396 -> 963 Hz / 8 minutes
+- 528 Hz hold / 10 minutes
+- 80 -> 174 Hz / 5 minutes
+- 55 -> 285 Hz / 10 minutes
+
+Meditation output is forced mono. Long sessions are streamed to a mono WAV in chunks rather than storing the entire session in a giant Python float list. Master volume plus lightweight drive, tremolo and PWM-style modulation from the master FX rack are applied during meditation rendering.
 
 ### Instrument patch bank
 
@@ -118,7 +144,7 @@ SAVE SONG and LOAD SONG use JSON. Songs store BPM, bar count, all eight tracks, 
 
 `bloomtunes_app.py` — first GUI synth workbench for tuning individual procedural patches.
 
-These remain in the repository as development references.
+`bloomtunes_studio.py` — stable v0.4 sequencer/workstation base used by v0.5.
 
 ## HAPPY JARZ target
 
