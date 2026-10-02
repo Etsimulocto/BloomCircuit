@@ -15,6 +15,9 @@ Editor:
 
 The ESP32 system clock continues running while powered. Without a battery-backed
 RTC, elapsed time while the board is fully powered off cannot be recovered.
+
+Control routing is intercepted at the stable top of serviceInputs(), so this
+patch does not depend on the shape/order of downstream menu/detail branches.
 """
 from pathlib import Path
 import sys
@@ -191,38 +194,35 @@ if old_clock not in s:
     raise SystemExit("manual clock patch failed: CLOCK renderer not found")
 s = s.replace(old_clock, new_clock, 1)
 
-# Insert CLOCK-specific controls before the generic detail/status branch.
-old_detail = '''    } else {
-      // DETAIL/STATUS MODE: still no light commands. B/LEFT return to menu.
-      if ((q[IN_B] && !latched[IN_B]) || (q[IN_LEFT] && !latched[IN_LEFT])) {
-        uiOpenMainMenu();
-      }
-    }
+service_marker = '''static void serviceInputs() {
+  bool q[INPUT_COUNT];
+  for (uint8_t i=0;i<INPUT_COUNT;++i) q[i]=updateInputState(i);
 '''
-new_detail = r'''    } else if (uiScreen == UI_CLOCK) {
-      if (manualClockEditing) {
-        if (q[IN_LEFT] && !latched[IN_LEFT]) { manualClockField=(manualClockField+4)%5; oledDirty=true; }
-        if (q[IN_RIGHT] && !latched[IN_RIGHT]) { manualClockField=(manualClockField+1)%5; oledDirty=true; }
-        if (q[IN_UP] && !latched[IN_UP]) manualClockAdjust(+1);
-        if (q[IN_DOWN] && !latched[IN_DOWN]) manualClockAdjust(-1);
-        if (q[IN_A] && !latched[IN_A]) {
-          if (!manualClockSave()) Serial.println("HJ|ERR|message=manual clock save failed");
-        }
-        if (q[IN_B] && !latched[IN_B]) { manualClockEditing=false; oledDirty=true; }
-      } else {
-        if (q[IN_A] && !latched[IN_A]) manualClockBeginEdit();
-        if ((q[IN_B] && !latched[IN_B]) || (q[IN_LEFT] && !latched[IN_LEFT])) uiOpenMainMenu();
+if service_marker not in s:
+    raise SystemExit("manual clock patch failed: serviceInputs scan marker not found")
+
+clock_controls = r'''
+
+  // CLOCK owns touch input before downstream menu/detail routing.
+  if (inputMode == "JAR" && !hjScreensaverActive && uiScreen == UI_CLOCK) {
+    if (manualClockEditing) {
+      if (q[IN_LEFT] && !latched[IN_LEFT]) { manualClockField=(manualClockField+4)%5; oledDirty=true; }
+      if (q[IN_RIGHT] && !latched[IN_RIGHT]) { manualClockField=(manualClockField+1)%5; oledDirty=true; }
+      if (q[IN_UP] && !latched[IN_UP]) manualClockAdjust(+1);
+      if (q[IN_DOWN] && !latched[IN_DOWN]) manualClockAdjust(-1);
+      if (q[IN_A] && !latched[IN_A]) {
+        if (!manualClockSave()) Serial.println("HJ|ERR|message=manual clock save failed");
       }
+      if (q[IN_B] && !latched[IN_B]) { manualClockEditing=false; oledDirty=true; }
     } else {
-      // DETAIL/STATUS MODE: still no light commands. B/LEFT return to menu.
-      if ((q[IN_B] && !latched[IN_B]) || (q[IN_LEFT] && !latched[IN_LEFT])) {
-        uiOpenMainMenu();
-      }
+      if (q[IN_A] && !latched[IN_A]) manualClockBeginEdit();
+      if ((q[IN_B] && !latched[IN_B]) || (q[IN_LEFT] && !latched[IN_LEFT])) uiOpenMainMenu();
     }
+    for (uint8_t i=0;i<INPUT_COUNT;++i) latched[i]=q[i];
+    return;
+  }
 '''
-if old_detail not in s:
-    raise SystemExit("manual clock patch failed: detail control branch not found")
-s = s.replace(old_detail, new_detail, 1)
+s = s.replace(service_marker, service_marker + clock_controls, 1)
 
 p.write_text(s, encoding="utf-8")
 print("Applied standalone OLED time/date editor.")
