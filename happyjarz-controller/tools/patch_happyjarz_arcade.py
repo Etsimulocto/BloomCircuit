@@ -10,10 +10,12 @@ Uses the proven OLED layer:
 - I2C address 0x3C
 
 Uses the proven six-touch edge layer rather than reading touch pins itself.
+This patch deliberately avoids replacing the existing HOME/menu control block;
+it gates that block while the arcade is active and inserts a separate arcade
+input branch immediately before it.
 """
 
 from pathlib import Path
-import re
 import sys
 
 if len(sys.argv) != 2:
@@ -47,7 +49,11 @@ static void arcadeClear() {
 static void arcadePixel(int16_t x, int16_t y, bool on) {
   if (!oled) return;
   if (on) oled->drawPixel(x, y);
-  else oled->setDrawColor(0), oled->drawPixel(x, y), oled->setDrawColor(1);
+  else {
+    oled->setDrawColor(0);
+    oled->drawPixel(x, y);
+    oled->setDrawColor(1);
+  }
 }
 
 static void arcadeLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1, bool on) {
@@ -105,73 +111,53 @@ if old_games not in s:
     raise SystemExit("arcade patch failed: GAMES placeholder screen not found")
 s = s.replace(old_games, new_games, 1)
 
-# Replace the MENU/DISPLAY control block with arcade-aware routing while preserving HOME behavior.
-pattern = re.compile(
-    r'  if \(inputMode == "JAR"\) \{.*?\n  \}\n\n  // Send edge events for menu/game layers and desktop diagnostics\.',
-    re.DOTALL,
-)
-match = pattern.search(s)
-if not match:
-    raise SystemExit("arcade patch failed: current JAR input block not found")
+# Final staging adds screensaver ownership around the existing JAR controls.
+# Do NOT replace that whole structure. Gate the normal JAR block only while the
+# arcade owns controls, then insert an independent edge-event bridge before it.
+jar_marker = '  if (inputMode == "JAR") {\n'
+if jar_marker not in s:
+    raise SystemExit("arcade patch failed: JAR input entry not found")
 
-new_block = r'''  if (inputMode == "JAR") {
-    if (hjArcadeActive()) {
-      // ARCADE MODE: consume only edge-triggered controls already qualified by
-      // the proven capacitive-touch layer. No light/menu action leaks through.
-      if (q[IN_UP] && !latched[IN_UP]) hjArcadeButton(HJ_BTN_UP);
-      if (q[IN_DOWN] && !latched[IN_DOWN]) hjArcadeButton(HJ_BTN_DOWN);
-      if (q[IN_LEFT] && !latched[IN_LEFT]) hjArcadeButton(HJ_BTN_LEFT);
-      if (q[IN_RIGHT] && !latched[IN_RIGHT]) hjArcadeButton(HJ_BTN_RIGHT);
-      if (q[IN_A] && !latched[IN_A]) hjArcadeButton(HJ_BTN_A);
-      if (q[IN_B] && !latched[IN_B]) hjArcadeButton(HJ_BTN_B);
-      if (q[IN_B] && !bHomeSent && inputs[IN_B].qualifiedMs && millis()-inputs[IN_B].qualifiedMs>=1000) {
-        bHomeSent=true;
-        hjArcadeButton(HJ_BTN_HOME);
-        hjArcadeExit();
-        uiOpenMainMenu();
-      }
-    } else if (uiScreen == UI_HOME) {
-      // HOME MODE: original jar controls only.
-      if (q[IN_A] && !latched[IN_A]) {
-        paletteIndex1=(paletteIndex1+1)%9;
-        Rgb c=palette[paletteIndex1];
-        hjSetLed(1,c.r,c.g,c.b);
-        oledDirty=true;
-      }
-      if (q[IN_B] && !latched[IN_B]) {
-        paletteIndex2=(paletteIndex2+1)%9;
-        Rgb c=palette[paletteIndex2];
-        hjSetLed(2,c.r,c.g,c.b);
-        oledDirty=true;
-      }
-      if (q[IN_UP] && !latched[IN_UP]) {
-        localPatternIndex=(localPatternIndex+1)%PATTERN_COUNT;
-        hjSetPattern(PATTERN_NAMES[localPatternIndex]);
-        oledDirty=true;
-      }
-      if (q[IN_DOWN] && !latched[IN_DOWN]) {
-        localPatternIndex=(localPatternIndex+PATTERN_COUNT-1)%PATTERN_COUNT;
-        hjSetPattern(PATTERN_NAMES[localPatternIndex]);
-        oledDirty=true;
-      }
-      if (q[IN_RIGHT] && !latched[IN_RIGHT]) uiOpenMainMenu();
-    } else if (uiScreen == UI_MAIN_MENU) {
-      if (q[IN_UP] && !latched[IN_UP]) { uiCursor=(uiCursor+4)%5; oledDirty=true; }
-      if (q[IN_DOWN] && !latched[IN_DOWN]) { uiCursor=(uiCursor+1)%5; oledDirty=true; }
-      if (q[IN_A] && !latched[IN_A]) uiSelectMain();
-      if ((q[IN_B] && !latched[IN_B]) || (q[IN_LEFT] && !latched[IN_LEFT])) uiGoHome();
-    } else if (uiScreen == UI_GAMES) {
-      if (q[IN_A] && !latched[IN_A]) {
-        hjArcadeEnter();
-      }
-      if ((q[IN_B] && !latched[IN_B]) || (q[IN_LEFT] && !latched[IN_LEFT])) uiOpenMainMenu();
-    } else {
-      if ((q[IN_B] && !latched[IN_B]) || (q[IN_LEFT] && !latched[IN_LEFT])) uiOpenMainMenu();
+arcade_input = r'''  if (inputMode == "JAR" && hjArcadeActive()) {
+    // ARCADE MODE: only consume edges already qualified by the proven touch
+    // layer. Normal HOME/menu/light actions are gated below while active.
+    if (q[IN_UP] && !latched[IN_UP]) hjArcadeButton(HJ_BTN_UP);
+    if (q[IN_DOWN] && !latched[IN_DOWN]) hjArcadeButton(HJ_BTN_DOWN);
+    if (q[IN_LEFT] && !latched[IN_LEFT]) hjArcadeButton(HJ_BTN_LEFT);
+    if (q[IN_RIGHT] && !latched[IN_RIGHT]) hjArcadeButton(HJ_BTN_RIGHT);
+    if (q[IN_A] && !latched[IN_A]) hjArcadeButton(HJ_BTN_A);
+    if (q[IN_B] && !latched[IN_B]) hjArcadeButton(HJ_BTN_B);
+
+    // Long B always escapes the arcade back to the GAMES page.
+    if (q[IN_B] && !bHomeSent && inputs[IN_B].qualifiedMs &&
+        millis() - inputs[IN_B].qualifiedMs >= 1000) {
+      bHomeSent = true;
+      hjArcadeButton(HJ_BTN_HOME);
+      hjArcadeExit();
+      uiScreen = UI_GAMES;
+      uiCursor = 0;
+      uiScroll = 0;
+      oledDirty = true;
     }
   }
+
 '''
-replacement = new_block + '\n  // Send edge events for menu/game layers and desktop diagnostics.'
-s = s[:match.start()] + replacement + s[match.end():]
+s = s.replace(jar_marker, arcade_input + '  if (inputMode == "JAR" && !hjArcadeActive()) {\n', 1)
+
+# On the existing GAMES detail page A starts the arcade. This hook goes before
+# the normal detail-page back handling and leaves every other detail page alone.
+detail_marker = '''    } else {
+      // DETAIL/STATUS MODE: still no light commands. B/LEFT return to menu.
+'''
+if detail_marker not in s:
+    raise SystemExit("arcade patch failed: detail/status menu marker not found")
+detail_repl = '''    } else {
+      if (uiScreen == UI_GAMES && q[IN_A] && !latched[IN_A]) {
+        hjArcadeEnter();
+      }
+      // DETAIL/STATUS MODE: still no light commands. B/LEFT return to menu.
+'''
+s = s.replace(detail_marker, detail_repl, 1)
 
 # Initialize the arcade after the known-good OLED is initialized.
 setup_marker = '''  oledInit();
