@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Add standalone ALARM, TIMER and DISPLAY controls to OLED SETTINGS.
+"""Add standalone ALARM and TIMER controls to OLED SETTINGS.
 
 SETTINGS page:
-  UP/DOWN = choose ALARM / TIMER / DISPLAY
+  UP/DOWN = choose ALARM / TIMER
   A = open selected editor
   B/LEFT = back to main menu
 
@@ -15,7 +15,6 @@ Editors:
 Existing firmware state remains authoritative:
 - alarmEnabled / alarmHour / alarmMinute
 - timerEnabled / timerMinutes / timerStartedMs
-- displayBrightness / oledApplyBrightness()
 - persistSettings()
 """
 from pathlib import Path
@@ -36,8 +35,8 @@ state_block = r'''
 // -----------------------------
 // Standalone SETTINGS editors
 // -----------------------------
-static uint8_t settingsCursor = 0;      // 0 alarm, 1 timer, 2 display
-static uint8_t settingsEditor = 0;      // 0 menu, 1 alarm, 2 timer, 3 display
+static uint8_t settingsCursor = 0;      // 0 alarm, 1 timer
+static uint8_t settingsEditor = 0;      // 0 menu, 1 alarm, 2 timer
 static uint8_t settingsField = 0;
 
 static bool editAlarmEnabled = false;
@@ -45,7 +44,6 @@ static uint8_t editAlarmHour = 7;
 static uint8_t editAlarmMinute = 0;
 static bool editTimerEnabled = false;
 static uint16_t editTimerMinutes = 10;
-static uint8_t editDisplayBrightness = 100;
 
 static void settingsOpenEditor(uint8_t which) {
   settingsEditor = which;
@@ -58,8 +56,6 @@ static void settingsOpenEditor(uint8_t which) {
     editTimerEnabled = timerEnabled;
     editTimerMinutes = timerMinutes;
     if (editTimerMinutes < 1) editTimerMinutes = 1;
-  } else if (which == 3) {
-    editDisplayBrightness = displayBrightness;
   }
   oledDirty = true;
 }
@@ -94,11 +90,6 @@ static void settingsAdjust(int delta) {
       if (v > 240) v = 1;
       editTimerMinutes = (uint16_t)v;
     }
-  } else if (settingsEditor == 3) {
-    int v = (int)editDisplayBrightness + delta * 5;
-    if (v < 5) v = 100;
-    if (v > 100) v = 5;
-    editDisplayBrightness = (uint8_t)v;
   }
   oledDirty = true;
 }
@@ -112,9 +103,6 @@ static void settingsSaveEditor() {
     timerEnabled = editTimerEnabled;
     timerMinutes = editTimerMinutes;
     if (timerEnabled) timerStartedMs = millis();
-  } else if (settingsEditor == 3) {
-    displayBrightness = editDisplayBrightness;
-    oledApplyBrightness();
   }
   persistSettings();
   settingsEditor = 0;
@@ -133,12 +121,13 @@ old_settings = '''static void oledRenderSettings() {
 '''
 new_settings = r'''static void oledRenderSettings() {
   if (settingsEditor == 0) {
-    static const char *items[] = {"ALARM", "TIMER", "DISPLAY"};
+    static const char *items[] = {"ALARM", "TIMER"};
     oledCentered(13, "SETTINGS");
-    for (uint8_t row=0; row<3; ++row) {
+    for (uint8_t row=0; row<2; ++row) {
       String text = String(row == settingsCursor ? "> " : "  ") + items[row];
-      oledCentered(29 + row*16, text);
+      oledCentered(33 + row*20, text);
     }
+    oledCentered(61, "B BACK");
     return;
   }
 
@@ -153,38 +142,28 @@ new_settings = r'''static void oledRenderSettings() {
     return;
   }
 
-  if (settingsEditor == 2) {
-    oledCentered(13, "TIMER");
-    oledCentered(29, editTimerEnabled ? "RUN ON SAVE" : "OFF");
-    oledCentered(45, String(editTimerMinutes) + " MINUTES");
-    oledCentered(61, settingsField==0 ? "< ON/OFF >" : "< MINUTES >");
-    return;
-  }
-
-  oledCentered(13, "DISPLAY");
-  oledCentered(29, "BRIGHTNESS");
-  oledCentered(45, String(editDisplayBrightness) + "%");
-  oledCentered(61, "UP/DN  A SAVE");
+  oledCentered(13, "TIMER");
+  oledCentered(29, editTimerEnabled ? "RUN ON SAVE" : "OFF");
+  oledCentered(45, String(editTimerMinutes) + " MINUTES");
+  oledCentered(61, settingsField==0 ? "< ON/OFF >" : "< MINUTES >");
 }
 '''
 if old_settings not in s:
     raise SystemExit("settings patch failed: SETTINGS renderer not found")
 s = s.replace(old_settings, new_settings, 1)
 
-# manual-clock patch has already created a CLOCK-specific branch followed by
-# this generic detail branch. Insert SETTINGS immediately before the generic branch.
 generic_branch = '''    } else {\n      // DETAIL/STATUS MODE: still no light commands. B/LEFT return to menu.\n'''
 if generic_branch not in s:
     raise SystemExit("settings patch failed: generic detail branch not found")
 
 settings_controls = r'''    } else if (uiScreen == UI_SETTINGS) {
       if (settingsEditor == 0) {
-        if (q[IN_UP] && !latched[IN_UP]) { settingsCursor=(settingsCursor+2)%3; oledDirty=true; }
-        if (q[IN_DOWN] && !latched[IN_DOWN]) { settingsCursor=(settingsCursor+1)%3; oledDirty=true; }
+        if (q[IN_UP] && !latched[IN_UP]) { settingsCursor=(settingsCursor+1)%2; oledDirty=true; }
+        if (q[IN_DOWN] && !latched[IN_DOWN]) { settingsCursor=(settingsCursor+1)%2; oledDirty=true; }
         if (q[IN_A] && !latched[IN_A]) settingsOpenEditor(settingsCursor+1);
         if ((q[IN_B] && !latched[IN_B]) || (q[IN_LEFT] && !latched[IN_LEFT])) uiOpenMainMenu();
       } else {
-        uint8_t fieldCount = settingsEditor==1 ? 3 : (settingsEditor==2 ? 2 : 1);
+        uint8_t fieldCount = settingsEditor==1 ? 3 : 2;
         if (q[IN_LEFT] && !latched[IN_LEFT]) { settingsField=(settingsField+fieldCount-1)%fieldCount; oledDirty=true; }
         if (q[IN_RIGHT] && !latched[IN_RIGHT]) { settingsField=(settingsField+1)%fieldCount; oledDirty=true; }
         if (q[IN_UP] && !latched[IN_UP]) settingsAdjust(+1);
@@ -196,4 +175,4 @@ settings_controls = r'''    } else if (uiScreen == UI_SETTINGS) {
 s = s.replace(generic_branch, settings_controls + generic_branch, 1)
 
 p.write_text(s, encoding="utf-8")
-print("Applied standalone SETTINGS: alarm + timer + display.")
+print("Applied standalone SETTINGS: alarm + timer.")
