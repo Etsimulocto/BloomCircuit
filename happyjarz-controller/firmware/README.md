@@ -14,7 +14,7 @@ Known-good timing:
 - GPIO7 for APA106 data
 - 10 MHz RMT clock
 - bit 0 ~= 4 ticks high / 14 ticks low
-- bit 1 ~= 14 ticks high / 4 ticks low
+- bit 1 ~= 14 high / 4 low
 - ~100 us reset/latch
 - two APA106 lamps daisy chained
 - proven byte order: **RGB**
@@ -72,37 +72,69 @@ The OLED provides centered HOME/menu/detail/status pages and the current idle sc
 
 ## Fuel Gauge / power status
 
-The standard staging pipeline now applies `patch_happyjarz_fuel_gauge.py` after the current saver/protocol layers.
+The standard staging pipeline applies `patch_happyjarz_fuel_gauge.py` after the current saver/protocol layers, then applies `patch_happyjarz_home_power_cycle.py` as the final standalone HOME polish layer.
 
-The Fuel Gauge is intentionally isolated from the proven LED, touch, OLED and screensaver code. It adds:
+The Fuel Gauge adds:
 
 - `POWER` item in the OLED main menu
 - battery voltage display
 - estimated battery percentage
 - raw ADC diagnostics
-- USB **data-link** IN/OUT state
+- USB data-link diagnostics
 - `GET POWER` serial diagnostic
+- standalone HOME power-state cycle
+
+### Bench-proven prototype calibration
 
 Current sensing path:
 
-- GPIO3 = battery/supply ADC sense path on the current ESP32-S3 SuperMini hardware assumption
-- default divider ratio = `2.0`
-- default calibration factor = `1.000`
+- GPIO3 = onboard battery/supply ADC sense path on the current ESP32-S3 SuperMini prototype
+- divider ratio = `2.0`
+- current provisional `BATTERY_CAL_FACTOR` = **`1.370`**
 - percentage is a LiPo voltage estimate, not a coulomb counter
 
-Example serial response:
+October 2, 2026 bench test:
+
+- battery physically connected to the board's B+/B- pads
+- battery-only operation initially read about `3.06 V` with calibration factor `1.000`
+- applying calibration factor `1.370` produced about **`4.16 V` and `98%`** on the charged battery
+- HOME correctly reported **`PWR BAT`**
+
+That 4.16 V / 98% battery-only result is the current bench-proven reference for this prototype board. Do not assume the same factor for a different ESP32-S3 SuperMini revision without checking it.
+
+### USB behavior
+
+With USB connected, the ADC path rises outside the plausible LiPo range. The firmware therefore refuses to present that value as a battery percentage and reports an unverified battery sensor state instead of inventing a number.
+
+Example USB-connected response observed during bench testing:
 
 ```text
-HJ|POWER|sensor=OK|adc_mv=1960|voltage=3.920|percent=70|usb_data=1|charge=HW_ONLY
+HJ|POWER|sensor=UNVERIFIED|adc_mv=2384|voltage=4.768|percent=-1|usb_data=1|charge=HW_ONLY
 ```
 
-Important limits:
+`usb_data=1` means the native USB CDC data link is present. It is not a universal USB-power detector; a wall charger may provide power without enumerating as a data device.
 
-- `usb_data=1` means the native USB CDC data link is present; a power-only charger may not enumerate and therefore may still show `usb_data=0`.
-- The onboard charger IC's CHARGING/FULL signal is **not currently exposed to firmware**. The OLED therefore says `CHARGE: HW LED`, and the protocol reports `charge=HW_ONLY` rather than inventing a software charge state.
-- If a future hardware revision wires the charger-status output to a free GPIO, the Fuel Gauge layer can be extended to report true `CHARGING` / `FULL` state.
-- Before treating the percentage as calibrated, compare `GET POWER` voltage against a multimeter and adjust `BATTERY_CAL_FACTOR` only if needed.
-- If the sensed voltage is outside the plausible LiPo range, the Fuel Gauge reports `sensor=UNVERIFIED` / `BAT SENSOR CHECK` rather than presenting a fake percentage.
+### HOME footer cycle
+
+The HOME footer keeps the menu affordance visible and rotates power information about every **2.5 seconds**.
+
+Battery-only operation cycles:
+
+```text
+A MENU  BAT 98%
+A MENU  V 4.16
+A MENU  PWR BAT
+```
+
+With USB present it reports `PWR USB`; battery percentage is shown as unavailable while the sensed voltage is outside the valid LiPo range. The USB cycle also exposes:
+
+```text
+A MENU  CHG ?
+```
+
+`CHG ?` is intentional. The onboard charger IC's CHARGING/FULL signal is **not currently exposed to an ESP32 GPIO**, so firmware cannot honestly distinguish `CHARGING` from `FULL` yet. Do not infer charger state from USB CDC presence.
+
+The detailed POWER page and serial protocol retain the same hardware-only limitation for charge state.
 
 ## Brightness ceiling
 
@@ -153,7 +185,9 @@ Many generated modes use continuous/intermediate RGB values rather than only the
 
 ## OLED screensaver system
 
-Screensaver mode starts automatically after **10 seconds of inactivity**.
+Screensaver mode starts automatically after **30 seconds of inactivity**.
+
+The original first-pass timeout was 10 seconds. Bench use showed that 10 seconds interrupted normal menu/power-status reading, so the final HOME power-cycle patch extends the idle timeout to 30 seconds.
 
 Current saver modes:
 
@@ -176,13 +210,13 @@ Custom business/user messages:
 
 Procedural spiral generator. A stable seed creates a recipe that animates smoothly until reseeded.
 
-Seed-derived parameters include direction, angle scale, radius growth, squash, wobble, phase, point count, center position, thickness, satellite spacing, core style and slow drift.
-
 ### TRIPPY
 
 Procedural geometry engine built from simple drawing primitives, including waves, dots, rings, line fields, graphic-EQ bars, Lissajous-like point clouds and lattice patterns.
 
-Seed-derived parameters include family, spacing, frequency, amplitude, phase, dot density, ring spacing, mirroring, slope and related geometry variables.
+### PARTICLES
+
+Procedural particle-universe saver layered into the current saver stack.
 
 ### Art-saver controls
 
@@ -190,26 +224,27 @@ While a screensaver is active:
 
 - LEFT / RIGHT = previous / next saver
 - B = exit screensaver
-- SPIRAL/TRIPPY: UP = faster
-- SPIRAL/TRIPPY: DOWN = slower
-- SPIRAL/TRIPPY: A = reseed / generate a new universe
+- SPIRAL/TRIPPY/PARTICLES: UP = faster
+- SPIRAL/TRIPPY/PARTICLES: DOWN = slower
+- SPIRAL/TRIPPY/PARTICLES: A = reseed / generate a new universe
 
-The procedural seed mixes live board state such as:
-
-- `millis()` uptime
-- `micros()` timing jitter
-- ESP32 temperature
-- Wi-Fi RSSI when connected
-- all six raw touch readings
-- brightness
-- current LED RGB state
-- Arduino PRNG state
-
-This produces effectively unbounded combinations without storing a giant bitmap/animation library.
+The procedural seed mixes live board state such as `millis()`, `micros()`, ESP32 temperature, Wi-Fi RSSI, all six touch readings, brightness, current LED RGB state and PRNG state.
 
 ## Saver serial controls
 
-The current firmware patch pipeline adds saver control/status commands used by the v0.3.2 desktop controller, including preview/mode selection, reseed, speed up/down, exit and status reporting.
+The current firmware patch pipeline adds saver control/status commands used by the v0.3.3 desktop controller:
+
+```text
+GET SAVER STATUS
+SAVER ENTER
+SAVER EXIT
+SAVER NEXT
+SAVER PREV
+SAVER RESEED
+SAVER SPEED UP
+SAVER SPEED DOWN
+SET SAVER MODE SAYINGS|SPIRAL|TRIPPY|PARTICLES
+```
 
 Custom-sayings protocol includes:
 
@@ -229,6 +264,8 @@ GET POWER
 ## USB identity
 
 At 115200 baud the firmware responds to `HELLO` with an `HJ|IDENTITY|...` line. The Pi/PC watcher uses this identity to distinguish a HAPPY JARZ from unrelated serial devices.
+
+The base identity string currently still reports `fw=0.5`; the later patch stack adds current OLED/saver/power behavior on top of that known-good v0.5 base.
 
 ## Current Pi compile/upload path
 
@@ -255,12 +292,14 @@ Current patch stages include:
 - OLED pages/menu
 - HOME/menu control isolation
 - expanded sensory pattern library
-- 10-second screensavers
+- screensavers
 - expanded marquee sayings
 - persistent custom sayings
 - procedural SPIRAL/TRIPPY controls
+- particle-universe saver
 - saver serial protocol/status
 - Fuel Gauge POWER menu + GPIO3 ADC + `GET POWER`
+- final HOME power-cycle + **30-second** idle timeout
 
 The tested Arduino CLI FQBN is:
 
