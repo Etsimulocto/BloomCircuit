@@ -1,12 +1,25 @@
 #!/usr/bin/env python3
-"""HAPPY JARZ Controller v0.3.3 — v0.3.2 plus Fuel Gauge power telemetry."""
+"""HAPPY JARZ Controller release UI — current Fuel Gauge power telemetry layer."""
 
 from __future__ import annotations
 
+from pathlib import Path
 import tkinter as tk
 from tkinter import ttk
 
 import happyjarz_controller_v0_3_2 as previous
+
+
+def _read_app_version() -> str:
+    version_file = Path(__file__).resolve().with_name("VERSION")
+    try:
+        value = version_file.read_text(encoding="utf-8").strip()
+        return value or "UNKNOWN"
+    except OSError:
+        return "UNKNOWN"
+
+
+APP_VERSION = _read_app_version()
 
 
 class HappyJarzApp(previous.HappyJarzApp):
@@ -19,8 +32,8 @@ class HappyJarzApp(previous.HappyJarzApp):
         self.power_adc = None
         self._power_poll_started = False
         super().__init__()
-        self.title("HAPPY JARZ Controller v0.3.3")
-        self._log("Fuel Gauge UI + GET POWER telemetry active")
+        self.title(f"HAPPY JARZ Controller v{APP_VERSION}")
+        self._log(f"HAPPY JARZ app v{APP_VERSION} • Fuel Gauge UI + GET POWER telemetry active")
 
     def _build_service_tab(self, root):
         super()._build_service_tab(root)
