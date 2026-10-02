@@ -1,6 +1,6 @@
 # HAPPY JARZ Controller
 
-**Current release pair:** desktop app **v1.1.0** + firmware **v0.9.3**
+**Current release pair:** desktop app **v1.1.0** + firmware **v0.10.0**
 
 This subsystem is the PC/Raspberry Pi field-service and control layer for the HAPPY JARZ powered stand. It sits above the known-good ESP32-S3 light/touch/OLED hardware layer and is designed so desktop-side changes do not casually rewrite the proven APA106 timing.
 
@@ -17,7 +17,7 @@ Current values:
 
 ```text
 App      1.1.0
-Firmware 0.9.3
+Firmware 0.10.0
 ```
 
 Legacy filenames such as `happyjarz_controller_v0_3_3.py`, `happyjarz_integrated_v0_5.ino`, and `flash_happyjarz_v0_5.sh` are compatibility names only. The flasher reads `firmware/VERSION`, injects it into `HJ_FW_VERSION`, and verifies the final staged build before upload.
@@ -34,6 +34,7 @@ Legacy filenames such as `happyjarz_controller_v0_3_3.py`, `happyjarz_integrated
 - standalone CLOCK date/time editor with no PC or Wi-Fi required while powered
 - SETTINGS editors for ALARM and TIMER
 - board-native HAPPY ARCADE with seven mini-games
+- board-local **INFO / MANUAL** with 12 help pages
 - Fuel Gauge / `GET POWER` telemetry
 - 30-second screensaver timeout with SAYINGS / SPIRAL / TRIPPY / PARTICLES
 - persistent custom marquee sayings
@@ -113,6 +114,7 @@ Main menu includes:
 - GAMES
 - SETTINGS
 - SYSTEM
+- INFO
 
 ### CLOCK
 
@@ -144,6 +146,16 @@ Current SETTINGS entries:
 - TIMER
 
 The earlier DISPLAY brightness editor was removed because it did not provide a useful product control for this OLED module/build.
+
+### INFO / MANUAL
+
+INFO is a 12-page built-in manual that works with no PC or Wi-Fi. It covers HOME controls, colors, brightness, clock/date, alarm/timer, arcade, screensavers, power/battery, USB/Wi-Fi behavior, and firmware/system information.
+
+Controls:
+
+- RIGHT / DOWN / A = next page
+- LEFT / UP = previous page
+- B = back to main menu
 
 ## Battery / power telemetry
 
@@ -223,4 +235,4 @@ See [`PROTOCOL.md`](PROTOCOL.md), [`APP_PROTOCOL_V0_3.md`](APP_PROTOCOL_V0_3.md)
 
 ## Failure boundary
 
-Preserve known-good layers. If local LED/touch/OLED behavior works but the desktop UI does not, debug watcher/controller/protocol deployment first. If local LED/touch/OLED behavior fails, debug firmware/hardware before changing the desktop app.
+Preserve known-good layers. If local LED/touch/OLED behavior works but the desktop UI does not, debug watcher/controller/protocol deployment first. If local LEDs/touch/OLED fail, debug firmware/hardware before changing the desktop app.
