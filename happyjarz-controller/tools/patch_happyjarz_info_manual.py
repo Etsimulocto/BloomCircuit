@@ -127,9 +127,12 @@ static void oledRenderInfo() {
       oledCentered(53, "ESP32-S3 SUPERMINI");
       break;
     default:
-      oledCentered(25, "BUILD SPEC");
-      oledCentered(39, "OLED + 2 APA106 + TOUCH");
-      oledCentered(53, "LIGHTS CLOCK GAMES");
+      oled->setFont(u8g2_font_5x8_tf);
+      oledCentered(20, "BUILD SPEC");
+      oledCentered(31, "ESP32-S3 + OLED + 2 APA106");
+      oledCentered(42, "TOUCH LIGHTS CLOCK GAMES");
+      oledCentered(53, "MADE BY: quarterbitgames");
+      oled->setFont(u8g2_font_6x12_tr);
       break;
   }
   char pageBuf[16];
@@ -197,4 +200,4 @@ info_controls = r'''
 s = s[:m.end()] + info_controls + s[m.end():]
 
 p.write_text(s, encoding="utf-8")
-print("Applied on-board INFO / manual pages after POWER menu (13 pages).")
+print("Applied on-board INFO / manual pages after POWER menu (13 pages, quarterbitgames build credit).")
