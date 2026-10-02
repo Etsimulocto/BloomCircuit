@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Give HAPPY JARZ two mutually exclusive local control modes.
+"""Give HAPPY JARZ reliable local controls with transient desktop input modes.
 
 HOME screen:
   A     -> enter OLED main menu
@@ -16,13 +16,10 @@ OLED menu/detail screens = menu controls only:
   LEFT    -> back; from main menu returns HOME
   RIGHT   -> no light action
 
-The same physical touch is never allowed to execute both a light action and a
-menu action. This replaces the whole JAR-control block structurally so staged
-OLED edits cannot stack a second control set on top of the original controls.
-
-The sensory-pattern patch runs later in staging and provides PATTERN_NAMES and
-PATTERN_COUNT. HOME UP/DOWN intentionally reference those final library symbols
-so the physical controls cycle the same pattern set as the desktop controller.
+MENU/GAME input modes are temporary desktop/service modes. They are never
+restored from Preferences, are never persisted, and automatically fall back to
+JAR mode when USB CDC is no longer open. This prevents closing or crashing the
+desktop controller from stranding the physical buttons in a non-local mode.
 """
 
 from pathlib import Path
@@ -36,7 +33,25 @@ if len(sys.argv) != 2:
 p = Path(sys.argv[1])
 s = p.read_text(encoding="utf-8")
 
-new_block = '''  if (inputMode == "JAR") {
+# inputMode is session state, not a saved product setting.
+load_old = '  inputMode = prefs.getString("inputmode", "JAR");\n'
+if load_old not in s:
+    raise SystemExit("menu mode patch failed: persisted inputMode load not found")
+s = s.replace(load_old, '  inputMode = "JAR";\n', 1)
+
+save_old = '  prefs.putString("inputmode", inputMode);\n'
+if save_old not in s:
+    raise SystemExit("menu mode patch failed: persisted inputMode save not found")
+s = s.replace(save_old, '', 1)
+
+new_block = '''  // MENU/GAME are temporary desktop/service modes. If the USB CDC session
+  // disappears, immediately hand control back to the standalone jar.
+  if (inputMode != "JAR" && !Serial) {
+    inputMode = "JAR";
+    uiGoHome();
+  }
+
+  if (inputMode == "JAR") {
     if (uiScreen == UI_HOME) {
       // HOME MODE: A opens menu, LEFT/RIGHT are the two light color buttons.
       if (q[IN_A] && !latched[IN_A]) {
