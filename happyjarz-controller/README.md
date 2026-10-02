@@ -1,6 +1,6 @@
 # HAPPY JARZ Controller
 
-**Status:** bench-proven controller + field-service layer, current firmware staging path v0.5, desktop controller v0.3.2
+**Status:** bench-proven controller + field-service layer, current firmware staging path v0.5, desktop controller v0.3.3
 
 This subsystem is the PC/Raspberry Pi side of the HAPPY JARZ powered stand. It sits above the known-good ESP32-S3 light/touch/OLED layer and is intentionally designed so desktop-side changes do not rewrite the proven APA106 timing.
 
@@ -17,7 +17,8 @@ This subsystem is the PC/Raspberry Pi side of the HAPPY JARZ powered stand. It s
 - set/sync the clock over Wi-Fi or directly from the host computer over USB
 - save persistent Jar settings
 - keep session/service logs
-- launch `happyjarz_controller_v0_3_2.py` automatically when a Jar is plugged in
+- launch `happyjarz_controller_v0_3_3.py` automatically when a Jar is plugged in
+- show Fuel Gauge / `GET POWER` telemetry in the desktop SERVICE tab
 - check the tracked GitHub branch on startup and every 6 hours
 - apply only safe fast-forward updates; never overwrite local edits
 - restart the watcher after a safe update when the controller is not open
@@ -75,6 +76,24 @@ Current 4-wire I2C OLED:
 
 The UI uses centered text and HOME/menu/detail/status pages.
 
+### Battery / power telemetry
+
+The current prototype uses GPIO3 as the onboard battery/supply ADC sense path.
+
+Bench calibration on October 2, 2026 established a provisional `BATTERY_CAL_FACTOR` of **1.370** for this board. With the charged battery powering the Jar by itself, the OLED reported approximately:
+
+```text
+V 4.16
+BAT 98%
+PWR BAT
+```
+
+That is the current bench-proven prototype calibration. Battery percentage is still a voltage-derived LiPo estimate, not a coulomb counter, so future board revisions should be calibrated independently.
+
+The HOME footer keeps `A MENU` visible and cycles standalone power information about every 2.5 seconds. Battery-only operation cycles battery %, voltage, and `PWR BAT`. With USB present it reports `PWR USB`; charging state remains `CHG ?` because the charger IC's CHARGING/FULL signal is not currently wired to an ESP32 GPIO.
+
+Do not infer `CHARGING` or `FULL` from USB CDC presence. A wall charger may provide power without a PC/data link.
+
 ## Lighting + pattern library
 
 Current maximum LED brightness is **50%**. This is an intentional bench decision: higher abrupt white loads could drive the lamps blue, while 50% is already bright enough for the sensory/fidget use case.
@@ -87,25 +106,26 @@ Many modes calculate continuous RGB values instead of stepping only through the 
 
 ## OLED screensavers
 
-The current firmware automatically enters screensaver mode after **10 seconds of inactivity**.
+The current firmware automatically enters screensaver mode after **30 seconds of inactivity**. The original 10-second bench value was increased because it interrupted normal menu/status reading.
 
 Modes:
 
 - **SAYINGS** — horizontally scrolling marquee with a large built-in positive/funny/maker/glitter saying bank
 - **SPIRAL** — procedural spiral generator
 - **TRIPPY** — procedural waves, rings, graphic-EQ bars, point fields, line lattices, dots and related geometry
+- **PARTICLES** — procedural particle-universe saver
 
 Physical controls while a saver is active:
 
 - LEFT / RIGHT = previous / next saver
 - B = exit saver
-- SPIRAL/TRIPPY: UP = faster
-- SPIRAL/TRIPPY: DOWN = slower
-- SPIRAL/TRIPPY: A = reseed / generate a new universe
+- SPIRAL/TRIPPY/PARTICLES: UP = faster
+- SPIRAL/TRIPPY/PARTICLES: DOWN = slower
+- SPIRAL/TRIPPY/PARTICLES: A = reseed / generate a new universe
 
 The art modes do not randomize every frame. A seed creates a coherent recipe; that recipe animates smoothly until it is reseeded.
 
-Procedural entropy currently mixes live board state including uptime, microsecond timing jitter, ESP32 temperature, Wi-Fi RSSI when available, all six touch readings, brightness, current LED RGB state and PRNG state. Seed-derived parameters control angle, radius growth, squash, wobble, point counts, phase, centers, line spacing, dot density, ring spacing, wave frequencies, amplitudes, slopes, mirroring and related variables.
+Procedural entropy currently mixes live board state including uptime, microsecond timing jitter, ESP32 temperature, Wi-Fi RSSI when available, all six touch readings, brightness, current LED RGB state and PRNG state.
 
 ## Custom/business marquee sayings
 
@@ -122,19 +142,21 @@ The desktop UI can load the current messages from the Jar, edit them, send/save 
 
 ## Current desktop controller
 
-`happyjarz_controller_v0_3_2.py` is the current launcher target used by `happyjarz_plug_watch.py`.
+`happyjarz_controller_v0_3_3.py` is the current launcher target used by `happyjarz_plug_watch.py`.
 
-The OLED/Screensaver panel reflects the actual current firmware:
+The OLED/Screensaver panel reflects the current firmware and includes saver mode selection, reseed/new-universe controls, speed controls, exit, live saver status, the 30-second idle behavior and the custom marquee editor.
 
-- SAYINGS / SPIRAL / TRIPPY preview buttons
-- NEW UNIVERSE / reseed
-- speed up/down
-- exit saver
-- live saver status
-- fixed 10-second idle behavior
-- custom marquee editor
+The SERVICE tab adds the current Fuel Gauge card:
 
-The obsolete `OFF/CLOCK/PLASMA/STARS/BOUNCE` placeholder list, fake idle-delay setting, and non-working OLED brightness slider have been removed from the current UI.
+- Battery %
+- Voltage
+- USB DATA IN/OUT
+- Charge status
+- Raw ADC mV
+- Refresh Power
+- automatic `GET POWER` polling
+
+The firmware deliberately reports charger state as hardware-only/unknown until a real charger-status signal is available.
 
 ## Known-good APA106 timing
 
@@ -162,7 +184,7 @@ The helper:
 
 1. stops the controller and plug watcher so the serial port is free
 2. stages `firmware/happyjarz_integrated_v0_5.ino`
-3. applies the current compatibility, touch, OLED/menu, sensory-pattern, screensaver, expanded-sayings, custom-sayings, procedural-art and saver-protocol patches
+3. applies the current compatibility, touch, OLED/menu, sensory-pattern, screensaver, expanded-sayings, custom-sayings, procedural-art, saver-protocol, Fuel Gauge and HOME power-cycle patches
 4. compiles with Arduino CLI
 5. uploads to the detected `/dev/ttyACM*` or `/dev/ttyUSB*` port
 6. restarts the plug watcher
@@ -186,7 +208,7 @@ bash install_pi_autostart.sh
 
 The installer uses Debian packages (`python3`, `python3-tk`, `python3-serial`) so it does not fight Bookworm's PEP 668 protected Python environment.
 
-The autostart entry runs `happyjarz_plug_watch.py`, not the full GUI. The watcher stays quiet until a HAPPY JARZ is detected, then opens the current v0.3.2 controller.
+The autostart entry runs `happyjarz_plug_watch.py`, not the full GUI. The watcher stays quiet until a HAPPY JARZ is detected, then opens the current v0.3.3 controller.
 
 Manual watcher test:
 
@@ -216,8 +238,6 @@ The watcher also acts as the field updater.
 - logs update decisions
 - restarts itself after its own code changes when safe
 
-This is intended for deployed units so fixes, compatibility patches, regional content, sayings and controller changes can be delivered through the repository without requiring a manual Git workflow from the end user.
-
 ## Logs
 
 Service logs are stored under:
@@ -225,6 +245,7 @@ Service logs are stored under:
 ```text
 ~/.happyjarz/plug_watch.log
 ~/.happyjarz/controller_launch.log
+~/.happyjarz/controller.log
 ```
 
 These are the first files to request when diagnosing a remote unit.
