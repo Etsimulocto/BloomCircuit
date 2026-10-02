@@ -61,7 +61,7 @@ s = s.replace(old_count, "static constexpr uint8_t count = 7;", 1)
 system_marker = "static void oledRenderSystem() {\n"
 if system_marker not in s:
     raise SystemExit("info patch failed: SYSTEM renderer marker not found")
-manual = r'''static constexpr uint8_t INFO_PAGE_COUNT = 12;
+manual = r'''static constexpr uint8_t INFO_PAGE_COUNT = 13;
 
 static void oledRenderInfo() {
   oledCentered(10, "INFO / MANUAL");
@@ -121,10 +121,15 @@ static void oledRenderInfo() {
       oledCentered(39, "PC OPTIONAL");
       oledCentered(53, "LOCAL MODE FALLBACK");
       break;
-    default:
+    case 11:
       oledCentered(25, "SYSTEM");
       oledCentered(39, String("FW ") + HJ_FW_VERSION);
-      oledCentered(53, "B = MAIN MENU");
+      oledCentered(53, "ESP32-S3 SUPERMINI");
+      break;
+    default:
+      oledCentered(25, "BUILD SPEC");
+      oledCentered(39, "OLED + 2 APA106 + TOUCH");
+      oledCentered(53, "LIGHTS CLOCK GAMES");
       break;
   }
   char pageBuf[16];
@@ -192,4 +197,4 @@ info_controls = r'''
 s = s[:m.end()] + info_controls + s[m.end():]
 
 p.write_text(s, encoding="utf-8")
-print("Applied on-board INFO / manual pages after POWER menu.")
+print("Applied on-board INFO / manual pages after POWER menu (13 pages).")
