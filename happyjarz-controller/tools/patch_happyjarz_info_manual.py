@@ -11,6 +11,7 @@ INFO controls:
 The manual is intentionally board-local and requires no PC or Wi-Fi.
 """
 from pathlib import Path
+import re
 import sys
 
 if len(sys.argv) != 2:
@@ -19,27 +20,34 @@ if len(sys.argv) != 2:
 p = Path(sys.argv[1])
 s = p.read_text(encoding="utf-8")
 
-# Add UI_INFO to the existing screen enum.
-old_enum = '''  UI_GAMES,\n  UI_SETTINGS,\n  UI_SYSTEM\n};\n'''
-new_enum = '''  UI_GAMES,\n  UI_SETTINGS,\n  UI_SYSTEM,\n  UI_INFO\n};\n'''
+# Add UI_INFO to the existing screen enum. Anchor only to UI_SYSTEM so earlier
+# patches can extend nearby code without breaking this patch.
+old_enum = "  UI_SYSTEM\n};\n"
+new_enum = "  UI_SYSTEM,\n  UI_INFO\n};\n"
 if old_enum not in s:
-    raise SystemExit("info patch failed: UiScreen enum marker not found")
+    raise SystemExit("info patch failed: UI_SYSTEM enum tail not found")
 s = s.replace(old_enum, new_enum, 1)
 
 # INFO page state lives beside the normal menu cursor state.
-state_marker = '''static uint8_t uiScroll = 0;\n'''
+state_marker = "static uint8_t uiScroll = 0;\n"
 if state_marker not in s:
     raise SystemExit("info patch failed: uiScroll marker not found")
-s = s.replace(state_marker, state_marker + 'static uint8_t infoPage = 0;\n', 1)
+s = s.replace(state_marker, state_marker + "static uint8_t infoPage = 0;\n", 1)
 
-old_main = '''static void oledRenderMainMenu() {\n  static const char *items[] = {"CLOCK", "LIGHTS", "GAMES", "SETTINGS", "SYSTEM"};\n  static constexpr uint8_t count = 5;\n'''
-new_main = '''static void oledRenderMainMenu() {\n  static const char *items[] = {"CLOCK", "LIGHTS", "GAMES", "SETTINGS", "SYSTEM", "INFO"};\n  static constexpr uint8_t count = 6;\n'''
-if old_main not in s:
-    raise SystemExit("info patch failed: main-menu renderer marker not found")
-s = s.replace(old_main, new_main, 1)
+# Extend the main menu without depending on surrounding renderer details.
+old_items = 'static const char *items[] = {"CLOCK", "LIGHTS", "GAMES", "SETTINGS", "SYSTEM"};'
+new_items = 'static const char *items[] = {"CLOCK", "LIGHTS", "GAMES", "SETTINGS", "SYSTEM", "INFO"};'
+if old_items not in s:
+    raise SystemExit("info patch failed: main-menu item list not found")
+s = s.replace(old_items, new_items, 1)
 
-# Add the manual renderer before SYSTEM so all OLED render functions remain together.
-system_marker = '''static void oledRenderSystem() {\n'''
+old_count = "static constexpr uint8_t count = 5;"
+if old_count not in s:
+    raise SystemExit("info patch failed: main-menu count not found")
+s = s.replace(old_count, "static constexpr uint8_t count = 6;", 1)
+
+# Add the manual renderer before SYSTEM so all OLED render functions stay together.
+system_marker = "static void oledRenderSystem() {\n"
 if system_marker not in s:
     raise SystemExit("info patch failed: SYSTEM renderer marker not found")
 manual = r'''static constexpr uint8_t INFO_PAGE_COUNT = 12;
@@ -118,27 +126,36 @@ static void oledRenderInfo() {
 '''
 s = s.replace(system_marker, manual + system_marker, 1)
 
-old_select = '''    case 2: uiScreen = UI_GAMES; break;\n    case 3: uiScreen = UI_SETTINGS; break;\n    default: uiScreen = UI_SYSTEM; break;\n'''
-new_select = '''    case 2: uiScreen = UI_GAMES; break;\n    case 3: uiScreen = UI_SETTINGS; break;\n    case 4: uiScreen = UI_SYSTEM; break;\n    default: infoPage = 0; uiScreen = UI_INFO; break;\n'''
+# Route main-menu item 6 to INFO. Match only this compact switch tail.
+old_select = "    case 2: uiScreen = UI_GAMES; break;\n    case 3: uiScreen = UI_SETTINGS; break;\n    default: uiScreen = UI_SYSTEM; break;\n"
+new_select = "    case 2: uiScreen = UI_GAMES; break;\n    case 3: uiScreen = UI_SETTINGS; break;\n    case 4: uiScreen = UI_SYSTEM; break;\n    default: infoPage = 0; uiScreen = UI_INFO; break;\n"
 if old_select not in s:
-    raise SystemExit("info patch failed: uiSelectMain marker not found")
+    raise SystemExit("info patch failed: uiSelectMain tail not found")
 s = s.replace(old_select, new_select, 1)
 
 # Make INFO an explicit render target instead of falling into SYSTEM default.
-old_switch = '''    case UI_GAMES: oledRenderGames(); break;\n    case UI_SETTINGS: oledRenderSettings(); break;\n    default: oledRenderSystem(); break;\n'''
-new_switch = '''    case UI_GAMES: oledRenderGames(); break;\n    case UI_SETTINGS: oledRenderSettings(); break;\n    case UI_SYSTEM: oledRenderSystem(); break;\n    default: oledRenderInfo(); break;\n'''
+old_switch = "    case UI_GAMES: oledRenderGames(); break;\n    case UI_SETTINGS: oledRenderSettings(); break;\n    default: oledRenderSystem(); break;\n"
+new_switch = "    case UI_GAMES: oledRenderGames(); break;\n    case UI_SETTINGS: oledRenderSettings(); break;\n    case UI_SYSTEM: oledRenderSystem(); break;\n    default: oledRenderInfo(); break;\n"
 if old_switch not in s:
-    raise SystemExit("info patch failed: OLED service switch marker not found")
+    raise SystemExit("info patch failed: OLED service switch tail not found")
 s = s.replace(old_switch, new_switch, 1)
 
 # Main-menu navigation now wraps across six items.
+if 'uiCursor=(uiCursor+4)%5;' not in s or 'uiCursor=(uiCursor+1)%5;' not in s:
+    raise SystemExit("info patch failed: five-item menu navigation not found")
 s = s.replace('uiCursor=(uiCursor+4)%5;', 'uiCursor=(uiCursor+5)%6;', 1)
 s = s.replace('uiCursor=(uiCursor+1)%5;', 'uiCursor=(uiCursor+1)%6;', 1)
 
-# INFO owns its buttons before the downstream generic detail router.
-service_marker = '''static void serviceInputs() {\n  bool q[INPUT_COUNT];\n  for (uint8_t i=0;i<INPUT_COUNT;++i) q[i]=updateInputState(i);\n'''
-if service_marker not in s:
-    raise SystemExit("info patch failed: serviceInputs marker not found")
+# INFO owns its buttons immediately after the six qualified touch reads. This is
+# the same stable integration point used by the other late-stage board features.
+service_re = re.compile(
+    r'(static void serviceInputs\(\) \{\n'
+    r'  bool q\[INPUT_COUNT\];\n'
+    r'  for \(uint8_t i=0;i<INPUT_COUNT;\+\+i\) q\[i\]=updateInputState\(i\);\n)'
+)
+m = service_re.search(s)
+if not m:
+    raise SystemExit("info patch failed: serviceInputs touch-read entry not found")
 info_controls = r'''
 
   if (inputMode == "JAR" && uiScreen == UI_INFO) {
@@ -160,7 +177,7 @@ info_controls = r'''
     return;
   }
 '''
-s = s.replace(service_marker, service_marker + info_controls, 1)
+s = s[:m.end()] + info_controls + s[m.end():]
 
 p.write_text(s, encoding="utf-8")
 print("Applied on-board INFO / manual pages.")
