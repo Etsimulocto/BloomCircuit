@@ -9,12 +9,12 @@ HOME screen:
   LEFT  -> next Light 1 palette color
   RIGHT -> next Light 2 palette color
 
-OLED menu/detail screens = menu controls only:
-  UP/DOWN -> move menu cursor (main menu)
-  A       -> select highlighted item (main menu)
-  B       -> back; from main menu returns HOME
-  LEFT    -> back; from main menu returns HOME
-  RIGHT   -> no light action
+LIGHTS / SOLID editor:
+  UP/DOWN    -> brightness +/- 5
+  LEFT/RIGHT -> brightness +/- 1
+  A          -> save brightness
+  B          -> back to main menu
+  Range      -> 0..100, live preview
 
 MENU/GAME input modes are temporary desktop/service modes. They are never
 restored from Preferences, are never persisted, and automatically fall back to
@@ -53,11 +53,9 @@ new_block = '''  // MENU/GAME are temporary desktop/service modes. If the USB CD
 
   if (inputMode == "JAR") {
     if (uiScreen == UI_HOME) {
-      // HOME MODE: A opens menu, LEFT/RIGHT are the two light color buttons.
       if (q[IN_A] && !latched[IN_A]) {
         uiOpenMainMenu();
       }
-      // B intentionally has no HOME action.
       if (q[IN_UP] && !latched[IN_UP]) {
         localPatternIndex=(localPatternIndex+1)%PATTERN_COUNT;
         hjSetPattern(PATTERN_NAMES[localPatternIndex]);
@@ -81,7 +79,6 @@ new_block = '''  // MENU/GAME are temporary desktop/service modes. If the USB CD
         oledDirty=true;
       }
     } else if (uiScreen == UI_MAIN_MENU) {
-      // MENU MODE: no light commands are allowed here.
       if (q[IN_UP] && !latched[IN_UP]) {
         uiCursor=(uiCursor+4)%5;
         oledDirty=true;
@@ -96,8 +93,31 @@ new_block = '''  // MENU/GAME are temporary desktop/service modes. If the USB CD
       if ((q[IN_B] && !latched[IN_B]) || (q[IN_LEFT] && !latched[IN_LEFT])) {
         uiGoHome();
       }
+    } else if (uiScreen == UI_LIGHTS) {
+      // SOLID brightness editor. All changes preview immediately on the LEDs.
+      int nextBrightness = (int)brightnessPercent;
+      bool changed = false;
+      if (q[IN_UP] && !latched[IN_UP]) { nextBrightness += 5; changed = true; }
+      if (q[IN_DOWN] && !latched[IN_DOWN]) { nextBrightness -= 5; changed = true; }
+      if (q[IN_RIGHT] && !latched[IN_RIGHT]) { nextBrightness += 1; changed = true; }
+      if (q[IN_LEFT] && !latched[IN_LEFT]) { nextBrightness -= 1; changed = true; }
+      if (changed) {
+        if (nextBrightness < 0) nextBrightness = 0;
+        if (nextBrightness > 100) nextBrightness = 100;
+        hjSetPattern("SOLID");
+        hjSetBrightness((uint8_t)nextBrightness);
+        oledDirty = true;
+      }
+      if (q[IN_A] && !latched[IN_A]) {
+        persistSettings();
+        oledDirty = true;
+      }
+      if (q[IN_B] && !latched[IN_B]) {
+        persistSettings();
+        uiOpenMainMenu();
+      }
     } else {
-      // DETAIL/STATUS MODE: still no light commands. B/LEFT return to menu.
+      // DETAIL/STATUS MODE: B/LEFT return to menu.
       if ((q[IN_B] && !latched[IN_B]) || (q[IN_LEFT] && !latched[IN_LEFT])) {
         uiOpenMainMenu();
       }
