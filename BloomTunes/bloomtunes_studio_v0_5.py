@@ -33,6 +33,7 @@ class MeditationEngine:
         self.process = None
         self.path = None
         self.lock = threading.Lock()
+        self.cancel = threading.Event()
 
     @staticmethod
     def osc(kind: str, phase: float) -> float:
@@ -48,9 +49,14 @@ class MeditationEngine:
         return math.sin(2.0 * math.pi * p)
 
     def stop(self):
+        self.cancel.set()
         with self.lock:
             if self.process and self.process.poll() is None:
                 self.process.terminate()
+                try:
+                    self.process.wait(timeout=1.0)
+                except subprocess.TimeoutExpired:
+                    self.process.kill()
             self.process = None
             if self.path:
                 try:
@@ -80,6 +86,8 @@ class MeditationEngine:
             wf.setframerate(SR)
             frames = bytearray()
             for i in range(total):
+                if self.cancel.is_set():
+                    return False
                 t = i / SR
                 u = i / max(1, total - 1)
                 if curve == "LOG" and start_hz > 0 and end_hz > 0:
@@ -103,6 +111,7 @@ class MeditationEngine:
                     frames.clear()
             if frames:
                 wf.writeframesraw(frames)
+        return not self.cancel.is_set()
 
     @staticmethod
     def player(path):
@@ -115,15 +124,40 @@ class MeditationEngine:
 
     def play(self, *args):
         self.stop()
+        self.cancel.clear()
         fd, path = tempfile.mkstemp(prefix="bloom_meditation_", suffix=".wav")
         os.close(fd)
-        self.render_wav(*args, path)
-        cmd = self.player(path)
-        if not cmd:
-            os.unlink(path)
-            raise RuntimeError("No audio player found (aplay, paplay, ffplay)")
         with self.lock:
             self.path = path
+
+        completed = self.render_wav(*args, path)
+        if not completed or self.cancel.is_set():
+            with self.lock:
+                if self.path == path:
+                    try:
+                        os.unlink(path)
+                    except OSError:
+                        pass
+                    self.path = None
+            return
+
+        cmd = self.player(path)
+        if not cmd:
+            with self.lock:
+                if self.path == path:
+                    self.path = None
+            os.unlink(path)
+            raise RuntimeError("No audio player found (aplay, paplay, ffplay)")
+
+        with self.lock:
+            if self.cancel.is_set():
+                try:
+                    os.unlink(path)
+                except OSError:
+                    pass
+                if self.path == path:
+                    self.path = None
+                return
             self.process = subprocess.Popen(cmd)
 
 
@@ -133,6 +167,9 @@ class Studio(base.Studio):
         self.title("BloomTunes Studio v0.5 — Sequencer + Meditation Mode")
         self.med_engine = MeditationEngine()
         self._build_meditation_panel()
+        # Rebind explicitly after med_engine exists so window-close always stops
+        # both the base sequencer player and Meditation Mode.
+        self.protocol("WM_DELETE_WINDOW", self.close)
 
     def _build_meditation_panel(self):
         panel = ttk.Frame(self, style="Panel.TFrame", padding=6)
@@ -163,13 +200,17 @@ class Studio(base.Studio):
         ttk.Combobox(panel, width=19, state="readonly", values=list(MEDITATION_PRESETS), textvariable=self.med_preset).grid(row=2, column=4, columnspan=2, padx=2, pady=(4,0))
         ttk.Button(panel, text="LOAD", command=self.load_med_preset).grid(row=2, column=6, padx=2, pady=(4,0))
         ttk.Button(panel, text="PLAY", command=self.play_meditation).grid(row=2, column=7, padx=2, pady=(4,0))
-        ttk.Button(panel, text="STOP MEDITATION", command=self.med_engine.stop).grid(row=3, column=4, columnspan=4, sticky="ew", pady=(4,0))
+        ttk.Button(panel, text="STOP MEDITATION", command=self.stop_meditation).grid(row=3, column=4, columnspan=4, sticky="ew", pady=(4,0))
 
     def load_med_preset(self):
         s, e, m, w, v, c = MEDITATION_PRESETS[self.med_preset.get()]
         self.med_start.set(s); self.med_end.set(e); self.med_minutes.set(m)
         self.med_wave.set(w); self.med_volume.set(v); self.med_curve.set(c)
         self.status.set(f"Meditation preset: {self.med_preset.get()}")
+
+    def stop_meditation(self):
+        self.med_engine.stop()
+        self.status.set("Meditation stopped")
 
     def play_meditation(self):
         try:
@@ -192,10 +233,15 @@ class Studio(base.Studio):
             try:
                 self.med_engine.play(start, end, minutes, self.med_wave.get(), volume,
                                      self.med_curve.get(), fx)
-                self.after(0, lambda: self.status.set(
-                    f"Meditation playing — {start:g} → {end:g} Hz / {minutes:g} min / MONO"))
+                if not self.med_engine.cancel.is_set() and self.winfo_exists():
+                    self.after(0, lambda: self.status.set(
+                        f"Meditation playing — {start:g} → {end:g} Hz / {minutes:g} min / MONO"))
             except Exception as ex:
-                self.after(0, lambda: messagebox.showerror("BloomTunes Meditation", str(ex)))
+                try:
+                    if self.winfo_exists():
+                        self.after(0, lambda: messagebox.showerror("BloomTunes Meditation", str(ex)))
+                except tk.TclError:
+                    pass
         threading.Thread(target=worker, daemon=True).start()
 
     def close(self):
