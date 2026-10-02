@@ -5,14 +5,21 @@ Runs after the Fuel Gauge patch so it can safely adjust only the already-staged
 HOME power helper and screensaver timeout without disturbing LED/touch/menu
 architecture.
 
-HOME footer cycles every 2.5 seconds:
-  BAT <percent>   (or --% when the voltage model is not yet calibrated)
+HOME footer cycles every 2.5 seconds.
+Battery-only:
+  BAT <percent>
   V <voltage>
-  PWR USB/BAT
-  CHG HW          (charger IC state is not yet observable by firmware)
+  PWR BAT
+USB present:
+  BAT --%
+  PWR USB
+  CHG ?
+
+Charging/full state is not wired to an ESP32 GPIO yet, so USB mode explicitly
+shows unknown rather than inventing a charger state.
 
 Also extends the idle screensaver timeout from 10 seconds to 30 seconds so the
-OLED menus/status pages are actually readable during standalone use.
+OLED menus/status pages are readable during standalone use.
 """
 from pathlib import Path
 import sys
@@ -47,26 +54,29 @@ new_helper = r'''static String oledHomePowerText() {
   uint16_t adcMv = batteryAdcMillivolts();
   float volts = ((float)adcMv / 1000.0f) * BATTERY_DIVIDER_RATIO * BATTERY_CAL_FACTOR;
   bool usbPower = volts > 4.45f;
-  uint8_t page = (uint8_t)((millis() / 2500UL) % 4UL);
 
   String text = "A MENU  ";
-  if (page == 0) {
-    text += "BAT ";
-    if (batteryReadingPlausible(volts)) {
-      text += String(batteryPercentFromVoltage(volts));
-      text += "%";
-    } else {
-      text += "--%";
-    }
-  } else if (page == 1) {
-    text += "V ";
-    text += String(volts, 2);
-  } else if (page == 2) {
-    text += usbPower ? "PWR USB" : "PWR BAT";
+  if (usbPower) {
+    uint8_t page = (uint8_t)((millis() / 2500UL) % 3UL);
+    if (page == 0) text += "BAT --%";
+    else if (page == 1) text += "PWR USB";
+    else text += "CHG ?";
   } else {
-    // Charging/full is a charger-IC hardware state that is not wired to an
-    // ESP32 GPIO yet. Keep this explicit rather than inventing a status.
-    text += "CHG HW";
+    uint8_t page = (uint8_t)((millis() / 2500UL) % 3UL);
+    if (page == 0) {
+      text += "BAT ";
+      if (batteryReadingPlausible(volts)) {
+        text += String(batteryPercentFromVoltage(volts));
+        text += "%";
+      } else {
+        text += "--%";
+      }
+    } else if (page == 1) {
+      text += "V ";
+      text += String(volts, 2);
+    } else {
+      text += "PWR BAT";
+    }
   }
   return text;
 }
