@@ -6,6 +6,17 @@
 
 This repository also carries standalone HAPPY JARZ development apps alongside the BloomCircuit wiring editor.
 
+### Current HAPPY JARZ release pair
+
+```text
+Desktop app  1.1.0
+Firmware     0.6.0
+```
+
+The controller and firmware now use explicit release-version sources so behavior-changing builds do not silently reuse old version numbers. See the controller branch documentation and `happyjarz-controller/VERSIONING.md` for the required version-bump rules.
+
+Legacy implementation filenames such as `happyjarz_controller_v0_3_3.py`, `happyjarz_integrated_v0_5.ino`, and `flash_happyjarz_v0_5.sh` may still appear for compatibility; they are not authoritative release versions.
+
 Current split-app layout on Raspberry Pi:
 
 ```text
@@ -21,7 +32,39 @@ Refresh those standalone snapshots after pulling repository changes with:
 cd ~/BloomCircuit
 git checkout main
 git pull
-./tools/split_pi_apps.sh
+bash ./tools/split_pi_apps.sh
+```
+
+Using `bash` explicitly also works if a local checkout temporarily loses the executable bit on the split helper.
+
+The split helper refreshes `~/HappyJarzController` from the controller branch, rewrites the Pi login watcher to use that stable path, and restarts the watcher.
+
+Manual HAPPY JARZ controller launch:
+
+```bash
+cd ~/HappyJarzController
+python3 happyjarz_controller_v0_3_3.py
+```
+
+Expected app title:
+
+```text
+HAPPY JARZ Controller v1.1.0
+```
+
+Current firmware flash after refresh:
+
+```bash
+bash ~/HappyJarzController/tools/flash_happyjarz_v0_5.sh
+```
+
+The flasher now reads `firmware/VERSION`, injects the release number into the staged firmware, verifies the final build, and refuses to upload if required current features or the expected firmware version are missing.
+
+Expected current verification includes:
+
+```text
+HAPPY JARZ staged firmware verification: PASS
+  firmware version 0.6.0
 ```
 
 ### BloomSaver — Glitter
