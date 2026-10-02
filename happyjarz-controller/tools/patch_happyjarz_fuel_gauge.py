@@ -7,6 +7,7 @@ BloomCore intent:
 - use the ESP32-S3 SuperMini GPIO3 ADC battery-divider path
 - expose raw ADC millivolts, estimated battery voltage and estimated percent
 - expose USB DATA link state only; do not falsely claim charger IC state
+- show standalone power state on the OLED HOME screen
 - charger CHARGING/FULL remains hardware-only unless a charger-status signal is
   explicitly wired to a GPIO in a future hardware revision
 
@@ -100,6 +101,19 @@ static bool usbDataLinked() {
   return (bool)Serial;
 }
 
+static String oledHomePowerText() {
+  float volts = batteryVoltage();
+  String text = "A MENU  ";
+  if (batteryReadingPlausible(volts)) {
+    text += String(batteryPercentFromVoltage(volts));
+    text += "%";
+  } else {
+    text += "--%";
+  }
+  if (usbDataLinked()) text += " USB";
+  return text;
+}
+
 static void printPowerStatus() {
   uint16_t adcMv = batteryAdcMillivolts();
   float volts = ((float)adcMv / 1000.0f) * BATTERY_DIVIDER_RATIO * BATTERY_CAL_FACTOR;
@@ -124,11 +138,19 @@ static void oledRenderPower() {
     oledCentered(29, String(buf));
     oledCentered(45, usbDataLinked() ? "USB DATA IN" : "USB DATA OUT");
   }
-  oledCentered(61, "CHARGE: HW LED");
+  oledCentered(61, "CHARGE: HW ONLY");
 }
 
 '''
 s = s.replace(render_marker, fuel_block + render_marker, 1)
+
+# Put standalone power status on the HOME footer. The existing no-clock HOME
+# footer is the stable A MENU line. Keep menu affordance, append battery/USB.
+home_footer_old = '    oledCentered(61, "A MENU");'
+home_footer_new = '    oledCentered(61, oledHomePowerText());'
+if home_footer_old not in s:
+    raise SystemExit("Fuel Gauge patch failed: HOME A MENU footer not found")
+s = s.replace(home_footer_old, home_footer_new, 1)
 
 # Put POWER in the main menu. Six items still fit via the existing four-row scroll.
 menu_old = '''static const char *items[] = {"CLOCK", "LIGHTS", "GAMES", "SETTINGS", "SYSTEM"};\n  static constexpr uint8_t count = 5;'''
@@ -176,4 +198,4 @@ if proto_old not in s:
 s = s.replace(proto_old, proto_new, 1)
 
 p.write_text(s, encoding="utf-8")
-print("Applied HAPPY JARZ Fuel Gauge patch: POWER menu + GPIO3 ADC + GET POWER.")
+print("Applied HAPPY JARZ Fuel Gauge patch: POWER menu + HOME battery/USB + GPIO3 ADC + GET POWER.")
