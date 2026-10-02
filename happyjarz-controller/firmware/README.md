@@ -1,10 +1,20 @@
-# HAPPY JARZ ESP32 firmware
+# HAPPY JARZ ESP32 Firmware
 
-**Current staging path:** `happyjarz_integrated_v0_5.ino` + standard patch pipeline
+**Current firmware release:** **v0.6.0**
 
-This folder contains the integrated ESP32-S3 firmware used by the HAPPY JARZ desktop/Pi controller. The current product build is intentionally assembled through the Pi flash helper so the known-good hardware layer can stay stable while newer OLED, menu, pattern, sayings, screensaver, power-status and protocol behavior is applied in controlled stages.
+**Compatibility staging base:** `happyjarz_integrated_v0_5.ino` + standard patch pipeline
 
-## Preserve the known-good light layer
+The filename of the integrated base sketch is now intentionally separated from the firmware release number. The authoritative firmware version is:
+
+```text
+happyjarz-controller/firmware/VERSION
+```
+
+The flash pipeline injects that value into `HJ_FW_VERSION` after the current patch stack is applied and refuses to upload if the staged firmware does not report the same version.
+
+See [`../VERSIONING.md`](../VERSIONING.md) for the mandatory version-bump rules.
+
+## Preserve the known-good hardware layer
 
 The proven APA106 driver uses the Arduino ESP32 HAL RMT path and should not be casually replaced while adding UI or protocol features.
 
@@ -30,7 +40,7 @@ Generic NeoPixel/FastLED attempts were not the proven path for this hardware.
 - both lamp VCC pins -> 5V
 - common GND
 
-The tested lamps accept the ESP32-S3's 3.3V GPIO data while powered from 5V, so this prototype currently runs without a separate level-shifter IC. Never feed 5V into an ESP32 GPIO.
+The tested lamps accept the ESP32-S3's 3.3V GPIO data while powered from 5V. Never feed 5V into an ESP32 GPIO.
 
 ### Capacitive touch
 
@@ -52,9 +62,7 @@ HOME behavior:
 - RIGHT enters the OLED menu
 - LEFT currently has no HOME action
 
-Menu/detail screens own the controls while active, preventing HOME light actions from leaking through menu navigation.
-
-The proven touch path uses direct `touchRead()`, the original roughly +20% threshold, ~60 ms qualification, baseline drift behavior and simple latch semantics. The later hysteresis/cooldown/release experiment was removed because it caused same-button repeat failures.
+The proven touch path uses direct `touchRead()`, roughly +20% thresholding, ~60 ms qualification, baseline drift and one action per touch/release cycle. Do not reintroduce the abandoned hysteresis/cooldown/release experiment that caused same-button repeat failures.
 
 ### OLED
 
@@ -65,174 +73,94 @@ Current 4-wire I2C OLED:
 - SDA -> GPIO8
 - SCL -> GPIO6
 - I2C address `0x3C`
-- U8g2 rendering path
+- U8g2 renderer
 - 128x64 layout
 
-The OLED provides centered HOME/menu/detail/status pages and the current idle screensaver system.
+The current HOME path uses the battery/power footer whether the clock is synced or not. The early-build `ALARM OFF` footer is no longer a valid current HOME screen.
 
 ## Fuel Gauge / power status
 
-The standard staging pipeline applies `patch_happyjarz_fuel_gauge.py` after the current saver/protocol layers, then applies `patch_happyjarz_home_power_cycle.py` as the final standalone HOME polish layer.
-
-The Fuel Gauge adds:
-
-- `POWER` item in the OLED main menu
-- battery voltage display
-- estimated battery percentage
-- raw ADC diagnostics
-- USB data-link diagnostics
-- `GET POWER` serial diagnostic
-- standalone HOME power-state cycle
-
-### Bench-proven prototype calibration
-
 Current sensing path:
 
-- GPIO3 = onboard battery/supply ADC sense path on the current ESP32-S3 SuperMini prototype
+- GPIO3 = onboard battery/supply ADC path
 - divider ratio = `2.0`
-- current provisional `BATTERY_CAL_FACTOR` = **`1.370`**
-- percentage is a LiPo voltage estimate, not a coulomb counter
+- provisional `BATTERY_CAL_FACTOR = 1.370`
+- percentage is voltage-estimated, not coulomb counted
 
-October 2, 2026 bench test:
-
-- battery physically connected to the board's B+/B- pads
-- battery-only operation initially read about `3.06 V` with calibration factor `1.000`
-- applying calibration factor `1.370` produced about **`4.16 V` and `98%`** on the charged battery
-- HOME correctly reported **`PWR BAT`**
-
-That 4.16 V / 98% battery-only result is the current bench-proven reference for this prototype board. Do not assume the same factor for a different ESP32-S3 SuperMini revision without checking it.
-
-### USB behavior
-
-With USB connected, the ADC path rises outside the plausible LiPo range. The firmware therefore refuses to present that value as a battery percentage and reports an unverified battery sensor state instead of inventing a number.
-
-Example USB-connected response observed during bench testing:
+October 2, 2026 bench reference:
 
 ```text
-HJ|POWER|sensor=UNVERIFIED|adc_mv=2384|voltage=4.768|percent=-1|usb_data=1|charge=HW_ONLY
+V 4.16
+BAT 98%
+PWR BAT
 ```
 
-`usb_data=1` means the native USB CDC data link is present. It is not a universal USB-power detector; a wall charger may provide power without enumerating as a data device.
+HOME cycles power information about every **2.5 seconds**.
 
-### HOME footer cycle
-
-The HOME footer keeps the menu affordance visible and rotates power information about every **2.5 seconds**.
-
-Battery-only operation cycles:
+Battery-only:
 
 ```text
-A MENU  BAT 98%
-A MENU  V 4.16
+A MENU  BAT xx%
+A MENU  V x.xx
 A MENU  PWR BAT
 ```
 
-With USB present it reports `PWR USB`; battery percentage is shown as unavailable while the sensed voltage is outside the valid LiPo range. The USB cycle also exposes:
+USB present:
 
 ```text
+A MENU  BAT --%
+A MENU  PWR USB
 A MENU  CHG ?
 ```
 
-`CHG ?` is intentional. The onboard charger IC's CHARGING/FULL signal is **not currently exposed to an ESP32 GPIO**, so firmware cannot honestly distinguish `CHARGING` from `FULL` yet. Do not infer charger state from USB CDC presence.
+`CHG ?` is intentional. The onboard charger IC's charging/full signal is not currently wired to an ESP32 GPIO. USB CDC presence must not be interpreted as proof of charging or full state.
 
-The detailed POWER page and serial protocol retain the same hardware-only limitation for charge state.
+Serial diagnostic:
+
+```text
+GET POWER
+```
 
 ## Brightness ceiling
 
 The current product build uses a **50% hard maximum LED brightness**.
 
-Bench testing showed that abrupt high-brightness WHITE commands above roughly 50% could collapse toward blue, while lower-level RGB/white frames were correct and 50% was already bright enough for the sensory/fidget use case. The firmware and desktop controller therefore agree on 50% as the normal ceiling.
-
-Do not change the custom RMT timing/order as a first response to this historical brightness behavior; the RGB frame format was separately proven at safe brightness.
+Bench testing showed that abrupt higher-brightness white loads could collapse toward blue while 50% was already bright enough for the sensory use case. The firmware and desktop controller therefore agree on 50% as the normal ceiling.
 
 ## Pattern library
 
-Current pattern names:
+Current patterns:
 
-- `SOLID`
-- `FADE`
-- `PULSE`
-- `RAINBOW`
-- `RANDOM`
-- `HUE_FADE`
-- `DUAL_HUE`
-- `BREATH`
-- `DRIFT`
-- `AURORA`
-- `OCEAN`
-- `LAVENDER`
-- `SUNSET`
-- `CHRISTMAS`
-- `HALLOWEEN`
-- `VALENTINE`
-- `EASTER`
-- `FOURTH`
-- `THANKSGIVING`
-- `CANDY`
-- `GALAXY`
-- `FIRE`
-- `ICE`
-- `FOREST`
-- `NEON`
-- `TWINKLE`
-- `SPARKLE`
-- `COLOR_SWAP`
-- `COMET`
-- `FIREFLY`
-- `BUBBLEGUM`
-- `OFF`
+`SOLID`, `FADE`, `PULSE`, `RAINBOW`, `RANDOM`, `HUE_FADE`, `DUAL_HUE`, `BREATH`, `DRIFT`, `AURORA`, `OCEAN`, `LAVENDER`, `SUNSET`, `CHRISTMAS`, `HALLOWEEN`, `VALENTINE`, `EASTER`, `FOURTH`, `THANKSGIVING`, `CANDY`, `GALAXY`, `FIRE`, `ICE`, `FOREST`, `NEON`, `TWINKLE`, `SPARKLE`, `COLOR_SWAP`, `COMET`, `FIREFLY`, `BUBBLEGUM`, `OFF`.
 
 Many generated modes use continuous/intermediate RGB values rather than only the small physical-button color palette.
 
-## OLED screensaver system
+## OLED screensavers
 
-Screensaver mode starts automatically after **30 seconds of inactivity**.
+Screensaver mode starts after **30 seconds of inactivity**.
 
-The original first-pass timeout was 10 seconds. Bench use showed that 10 seconds interrupted normal menu/power-status reading, so the final HOME power-cycle patch extends the idle timeout to 30 seconds.
+Current modes:
 
-Current saver modes:
+- **SAYINGS** — scrolling built-in/custom marquee
+- **SPIRAL** — procedural spiral generator
+- **TRIPPY** — procedural geometry engine
+- **PARTICLES** — procedural particle-universe saver
 
-### SAYINGS
-
-- horizontal marquee
-- varied vertical lanes
-- large built-in positive/funny/maker/glitter saying bank
-- persistent custom sayings
-- saying source modes: `BUILTIN`, `CUSTOM`, `MIXED`
-
-Custom business/user messages:
-
-- 8 slots
-- up to 96 characters per slot
-- stored in ESP32 Preferences
-- survive unplug/restart
-
-### SPIRAL
-
-Procedural spiral generator. A stable seed creates a recipe that animates smoothly until reseeded.
-
-### TRIPPY
-
-Procedural geometry engine built from simple drawing primitives, including waves, dots, rings, line fields, graphic-EQ bars, Lissajous-like point clouds and lattice patterns.
-
-### PARTICLES
-
-Procedural particle-universe saver layered into the current saver stack.
-
-### Art-saver controls
-
-While a screensaver is active:
+Controls:
 
 - LEFT / RIGHT = previous / next saver
-- B = exit screensaver
-- SPIRAL/TRIPPY/PARTICLES: UP = faster
-- SPIRAL/TRIPPY/PARTICLES: DOWN = slower
-- SPIRAL/TRIPPY/PARTICLES: A = reseed / generate a new universe
+- B = exit
+- SPIRAL/TRIPPY/PARTICLES: UP/DOWN = speed
+- SPIRAL/TRIPPY/PARTICLES: A = reseed / new universe
 
-The procedural seed mixes live board state such as `millis()`, `micros()`, ESP32 temperature, Wi-Fi RSSI, all six touch readings, brightness, current LED RGB state and PRNG state.
+Custom sayings:
 
-## Saver serial controls
+- 8 persistent slots
+- up to 96 characters each
+- `BUILTIN`, `CUSTOM`, or `MIXED`
+- stored in ESP32 Preferences
 
-The current firmware patch pipeline adds saver control/status commands used by the v0.3.3 desktop controller:
+Useful saver commands:
 
 ```text
 GET SAVER STATUS
@@ -246,7 +174,7 @@ SAVER SPEED DOWN
 SET SAVER MODE SAYINGS|SPIRAL|TRIPPY|PARTICLES
 ```
 
-Custom-sayings protocol includes:
+Custom-sayings commands:
 
 ```text
 GET CUSTOM SAYINGS
@@ -255,39 +183,42 @@ CLEAR CUSTOM SAYINGS
 SET SAYING SOURCE BUILTIN|CUSTOM|MIXED
 ```
 
-Power diagnostic:
+## USB identity and release version
+
+At 115200 baud the firmware responds to `HELLO` with an `HJ|IDENTITY|...` line used by the Pi/PC watcher.
+
+For the current release, identity must report:
 
 ```text
-GET POWER
+fw=0.6.0
 ```
 
-## USB identity
+The base sketch may still contain an older implementation version before staging. That is expected. The standard flasher injects the authoritative value from `firmware/VERSION` as the final release-version step before verification.
 
-At 115200 baud the firmware responds to `HELLO` with an `HJ|IDENTITY|...` line. The Pi/PC watcher uses this identity to distinguish a HAPPY JARZ from unrelated serial devices.
-
-The base identity string currently still reports `fw=0.5`; the later patch stack adds current OLED/saver/power behavior on top of that known-good v0.5 base.
+If `HJ|IDENTITY` does not match `firmware/VERSION`, treat the device as a stale/wrong build.
 
 ## Current Pi compile/upload path
 
-Use the standard helper:
+First refresh the split controller snapshot:
 
 ```bash
 cd ~/BloomCircuit
-git pull --ff-only
-bash happyjarz-controller/tools/flash_happyjarz_v0_5.sh
+git checkout main
+git pull
+bash ./tools/split_pi_apps.sh
 ```
 
-The helper stages:
+Then flash from that refreshed copy:
 
-```text
-happyjarz-controller/firmware/happyjarz_integrated_v0_5.ino
+```bash
+bash ~/HappyJarzController/tools/flash_happyjarz_v0_5.sh
 ```
 
-and applies the current patch stack before compiling/uploading.
+The legacy helper filename remains for compatibility; it does **not** mean the release is still v0.5.
 
-Current patch stages include:
+The helper stages the compatibility base and applies the current layers, including:
 
-- compatibility/Wi-Fi/USB host-time integration
+- compatibility / Wi-Fi / USB host-time integration
 - proven touch behavior
 - OLED pages/menu
 - HOME/menu control isolation
@@ -299,23 +230,50 @@ Current patch stages include:
 - particle-universe saver
 - saver serial protocol/status
 - Fuel Gauge POWER menu + GPIO3 ADC + `GET POWER`
-- final HOME power-cycle + **30-second** idle timeout
+- final HOME power cycle + 30-second idle timeout
+- release-version injection from `firmware/VERSION`
 
-The tested Arduino CLI FQBN is:
+Before compiling or uploading, the verifier confirms the final staged sketch contains the required current features and the expected firmware release number.
+
+Expected output for this release:
+
+```text
+HAPPY JARZ staged firmware verification: PASS
+  firmware version 0.6.0
+```
+
+If that PASS does not appear, **do not flash**.
+
+Tested Arduino CLI FQBN:
 
 ```text
 esp32:esp32:esp32s3:CDCOnBoot=cdc
 ```
 
-The helper auto-detects `/dev/ttyACM*` or `/dev/ttyUSB*`, stops the controller/watcher before compile/upload, and restarts the watcher after a successful upload.
+The helper auto-detects `/dev/ttyACM*` or `/dev/ttyUSB*`, stops the desktop controller/watcher before compile/upload, and restarts the watcher after a successful upload.
+
+## Version bump rule
+
+Firmware behavior changes require a firmware version bump before merge. This includes changes to:
+
+- touch behavior
+- OLED/menu behavior
+- battery/power handling
+- LED patterns/brightness
+- screensavers
+- serial protocol
+- startup/shutdown behavior
+- hardware pins/calibration
+
+Do not keep rebuilding different firmware under the same release number.
 
 ## Diagnostics / failure boundary
 
 Preserve known-good layers.
 
-If USB/controller behavior is wrong but local touch, LEDs and OLED still work, debug the protocol/controller side first.
+If USB/controller behavior is wrong but local touch, LEDs and OLED still work, debug watcher/controller/protocol deployment first.
 
-If local LEDs/touch/OLED fail, debug the firmware/hardware layer before changing the desktop application.
+If local LEDs/touch/OLED fail, debug firmware/hardware before changing the desktop application.
 
 Useful diagnostics include RGB tests, touch/input tests, status requests, `GET POWER`, saver status, Wi-Fi status/scan and service logs.
 
