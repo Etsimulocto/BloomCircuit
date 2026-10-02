@@ -1,6 +1,6 @@
 # HAPPY JARZ ESP32 Firmware
 
-**Current firmware release:** **v0.9.3**
+**Current firmware release:** **v0.10.0**
 
 **Compatibility staging base:** `happyjarz_integrated_v0_5.ino` + standard patch pipeline
 
@@ -90,6 +90,7 @@ Main menu:
 - GAMES
 - SETTINGS
 - SYSTEM
+- INFO
 
 ### CLOCK
 
@@ -104,7 +105,7 @@ The ESP32 system clock runs while powered. Without a battery-backed RTC, it cann
 
 ### LIGHTS / SOLID brightness
 
-Brightness is now a real board-local 0-100% setting:
+Brightness is a real board-local 0-100% setting:
 
 - UP / DOWN = +/-5%
 - LEFT / RIGHT = +/-1%
@@ -121,6 +122,27 @@ Current entries:
 - TIMER
 
 The DISPLAY brightness editor was removed because it was not useful on this OLED module/build.
+
+### INFO / MANUAL
+
+INFO is a 12-page built-in board manual. It requires no PC or Wi-Fi and covers:
+
+- HOME button map
+- Light 1 / Light 2 color controls
+- SOLID brightness controls and 0-100% range
+- clock/date setup
+- alarm and timer
+- HAPPY ARCADE
+- screensavers
+- power/battery status
+- USB/Wi-Fi behavior
+- firmware/system information
+
+Navigation:
+
+- RIGHT / DOWN / A = next page
+- LEFT / UP = previous page
+- B = back to main menu
 
 ## Fuel Gauge / power status
 
@@ -143,7 +165,7 @@ PWR BAT
 
 ## Brightness behavior
 
-The firmware range is now **0-100%**.
+The firmware range is **0-100%**.
 
 The old 50% clamp came from an earlier bench result where high-output white appeared to collapse toward blue. The later direct test on this prototype did not reproduce that behavior at either 3.3V or 5V lamp supply, so the cap was removed and the board-local tuner was added.
 
@@ -196,7 +218,7 @@ A long B press acts as HOME/escape from the arcade.
 At 115200 baud the firmware responds to `HELLO` with an `HJ|IDENTITY|...` line. For this branch/release it should report:
 
 ```text
-fw=0.9.3
+fw=0.10.0
 ```
 
 ## Current Pi compile/upload path
@@ -209,7 +231,7 @@ bash happyjarz-controller/tools/flash_happyjarz_v0_5.sh
 
 The legacy helper filename remains for compatibility; it does **not** mean the release is v0.5.
 
-The staging chain includes compatibility/Wi-Fi/host-time support, touch, OLED/menu, patterns, screensavers, sayings, particle saver, Fuel Gauge, HOME power cycle, standalone clock, standalone settings, board-native arcade, 0-100 SOLID brightness editing, release-version injection, final verification, compile and upload.
+The staging chain includes compatibility/Wi-Fi/host-time support, touch, OLED/menu, patterns, screensavers, sayings, particle saver, Fuel Gauge, HOME power cycle, standalone clock, standalone settings, 0-100 SOLID brightness editing, INFO/manual pages, board-native arcade, release-version injection, final verification, compile and upload.
 
 Arduino CLI FQBN:
 
