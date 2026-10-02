@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stage HAPPY JARZ touch diagnostics without changing the proven touch behavior.
+"""Stage HAPPY JARZ touch diagnostics without changing the proven local touch behavior.
 
 BloomCore rule: the original touch state machine worked before OLED/menu work.
 Do not stack extra cooldown/hysteresis/release logic on it.
@@ -11,10 +11,11 @@ This patch therefore preserves:
 - original slow baseline drift
 - original per-loop qualified/latch behavior
 
-It only adds:
+It also adds:
 - startup settle before calibration
 - calibration diagnostics
 - ESP32 reset-reason diagnostics
+- USB touch-stream protection: one telemetry stream only at 5 Hz
 """
 
 from pathlib import Path
@@ -55,5 +56,28 @@ boot_repl = '''  Serial.begin(115200); delay(250); rxLine.reserve(128); randomSe
 if boot_needle not in s:
     raise SystemExit("Touch diagnostics patch failed: setup diagnostic insertion point not found")
 s = s.replace(boot_needle, boot_repl, 1)
+
+# USB_TOUCH_STREAM_FIX_V1
+# STREAM TOUCH ON historically enabled both inputStream and touchStreamCompat,
+# causing two identical touch packets every 100 ms. On a connected desktop that
+# can waste USB/Serial loop time and starve OLED/input servicing. Keep one stream
+# only, throttle it to 5 Hz, and retire the duplicate compatibility emitter.
+old_stream_on = 'if(line=="STREAM TOUCH ON"){touchStreamCompat=true; inputStream=true; ack(line);return;}'
+new_stream_on = 'if(line=="STREAM TOUCH ON"){touchStreamCompat=false; inputStream=true; ack(line);return;}'
+if old_stream_on not in s:
+    raise SystemExit("Touch stream patch failed: STREAM TOUCH ON handler not found")
+s = s.replace(old_stream_on, new_stream_on, 1)
+
+old_primary_stream = 'if (inputStream && millis()-lastInputStreamMs>=100) { lastInputStreamMs=millis(); printInputTelemetry(); }'
+new_primary_stream = 'if (inputStream && Serial && millis()-lastInputStreamMs>=200) { lastInputStreamMs=millis(); printInputTelemetry(); }'
+if old_primary_stream not in s:
+    raise SystemExit("Touch stream patch failed: primary telemetry emitter not found")
+s = s.replace(old_primary_stream, new_primary_stream, 1)
+
+old_compat_stream = 'if(touchStreamCompat && millis()-lastTouchCompatMs>=100){lastTouchCompatMs=millis();printInputTelemetry();}'
+new_compat_stream = '// USB_TOUCH_STREAM_FIX_V1: duplicate compatibility telemetry emitter disabled.'
+if old_compat_stream not in s:
+    raise SystemExit("Touch stream patch failed: compatibility telemetry emitter not found")
+s = s.replace(old_compat_stream, new_compat_stream, 1)
 
 p.write_text(s, encoding="utf-8")
