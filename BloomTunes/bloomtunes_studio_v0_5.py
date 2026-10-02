@@ -6,7 +6,7 @@ on top. Meditation output is always mono.
 """
 from __future__ import annotations
 
-import math, os, shutil, struct, subprocess, tempfile, threading, wave
+import math, shutil, struct, subprocess, threading
 import tkinter as tk
 from tkinter import ttk, messagebox
 
@@ -29,9 +29,10 @@ def clamp(x, lo=-1.0, hi=1.0):
 
 
 class MeditationEngine:
+    """Real-time mono meditation sweep streamed directly into aplay."""
+
     def __init__(self):
         self.process = None
-        self.path = None
         self.lock = threading.Lock()
         self.cancel = threading.Event()
 
@@ -51,23 +52,42 @@ class MeditationEngine:
     def stop(self):
         self.cancel.set()
         with self.lock:
-            if self.process and self.process.poll() is None:
-                self.process.terminate()
-                try:
-                    self.process.wait(timeout=1.0)
-                except subprocess.TimeoutExpired:
-                    self.process.kill()
+            proc = self.process
             self.process = None
-            if self.path:
-                try:
-                    os.unlink(self.path)
-                except OSError:
-                    pass
-                self.path = None
+        if proc and proc.poll() is None:
+            try:
+                if proc.stdin:
+                    proc.stdin.close()
+            except (BrokenPipeError, OSError):
+                pass
+            proc.terminate()
+            try:
+                proc.wait(timeout=1.0)
+            except subprocess.TimeoutExpired:
+                proc.kill()
 
-    def render_wav(self, start_hz: float, end_hz: float, minutes: float,
-                   waveform: str, volume: float, curve: str,
-                   fx: base.MasterFX, path: str):
+    @staticmethod
+    def _aplay_command():
+        if not shutil.which("aplay"):
+            return None
+        return ["aplay", "-q", "-t", "raw", "-f", "S16_LE", "-c", "1", "-r", str(SR)]
+
+    def play(self, start_hz: float, end_hz: float, minutes: float,
+             waveform: str, volume: float, curve: str,
+             fx: base.MasterFX):
+        self.stop()
+        self.cancel.clear()
+        cmd = self._aplay_command()
+        if not cmd:
+            raise RuntimeError("Meditation streaming currently requires aplay")
+
+        proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
+        with self.lock:
+            if self.cancel.is_set():
+                proc.terminate()
+                return
+            self.process = proc
+
         seconds = max(1.0, minutes * 60.0)
         total = int(seconds * SR)
         phase = 0.0
@@ -79,86 +99,51 @@ class MeditationEngine:
         trem_r = max(0.0, fx.trem_rate)
         pwm_d = clamp(fx.pwm_depth / 100.0, 0.0, 1.0)
         pwm_r = max(0.0, fx.pwm_rate)
+        chunk_samples = 2048
 
-        with wave.open(path, "wb") as wf:
-            wf.setnchannels(1)
-            wf.setsampwidth(2)
-            wf.setframerate(SR)
-            frames = bytearray()
-            for i in range(total):
+        try:
+            for start_i in range(0, total, chunk_samples):
                 if self.cancel.is_set():
-                    return False
-                t = i / SR
-                u = i / max(1, total - 1)
-                if curve == "LOG" and start_hz > 0 and end_hz > 0:
-                    freq = start_hz * ((end_hz / start_hz) ** u)
+                    break
+                frames = bytearray()
+                end_i = min(total, start_i + chunk_samples)
+                for i in range(start_i, end_i):
+                    t = i / SR
+                    u = i / max(1, total - 1)
+                    if curve == "LOG" and start_hz > 0 and end_hz > 0:
+                        freq = start_hz * ((end_hz / start_hz) ** u)
+                    else:
+                        freq = start_hz + (end_hz - start_hz) * u
+                    phase += freq / SR
+                    env = min(1.0, t / max(attack, 1e-6)) * min(1.0, (seconds - t) / max(release, 1e-6))
+                    s = self.osc(waveform, phase) * env
+                    if trem_d > 0.0 and trem_r > 0.0:
+                        s *= 1.0 - trem_d * (0.5 + 0.5 * math.sin(2 * math.pi * trem_r * t))
+                    if pwm_d > 0.0 and pwm_r > 0.0:
+                        s *= 1.0 if (t * pwm_r) % 1.0 < 0.5 else 1.0 - pwm_d
+                    if drive > 0.1:
+                        g = 1.0 + drive / 8.0
+                        s = math.tanh(s * g) / max(1e-6, math.tanh(g))
+                    frames.extend(struct.pack("<h", int(clamp(s * master) * 32767)))
+                if proc.stdin:
+                    proc.stdin.write(frames)
+                    proc.stdin.flush()
+        except (BrokenPipeError, OSError):
+            pass
+        finally:
+            try:
+                if proc.stdin:
+                    proc.stdin.close()
+            except (BrokenPipeError, OSError):
+                pass
+            if proc.poll() is None:
+                if self.cancel.is_set():
+                    proc.terminate()
                 else:
-                    freq = start_hz + (end_hz - start_hz) * u
-                phase += freq / SR
-                env = min(1.0, t / max(attack, 1e-6)) * min(1.0, (seconds - t) / max(release, 1e-6))
-                s = self.osc(waveform, phase) * env
-                if trem_d > 0.0 and trem_r > 0.0:
-                    s *= 1.0 - trem_d * (0.5 + 0.5 * math.sin(2 * math.pi * trem_r * t))
-                if pwm_d > 0.0 and pwm_r > 0.0:
-                    s *= 1.0 if (t * pwm_r) % 1.0 < 0.5 else 1.0 - pwm_d
-                if drive > 0.1:
-                    g = 1.0 + drive / 8.0
-                    s = math.tanh(s * g) / max(1e-6, math.tanh(g))
-                s = clamp(s * master)
-                frames.extend(struct.pack("<h", int(s * 32767)))
-                if len(frames) >= 131072:
-                    wf.writeframesraw(frames)
-                    frames.clear()
-            if frames:
-                wf.writeframesraw(frames)
-        return not self.cancel.is_set()
-
-    @staticmethod
-    def player(path):
-        players = [
-            ("aplay", ["aplay", "-q", path]),
-            ("paplay", ["paplay", path]),
-            ("ffplay", ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", path]),
-        ]
-        return next((cmd for exe, cmd in players if shutil.which(exe)), None)
-
-    def play(self, *args):
-        self.stop()
-        self.cancel.clear()
-        fd, path = tempfile.mkstemp(prefix="bloom_meditation_", suffix=".wav")
-        os.close(fd)
-        with self.lock:
-            self.path = path
-
-        completed = self.render_wav(*args, path)
-        if not completed or self.cancel.is_set():
+                    proc.wait()
             with self.lock:
-                if self.path == path:
-                    try:
-                        os.unlink(path)
-                    except OSError:
-                        pass
-                    self.path = None
-            return
-
-        cmd = self.player(path)
-        if not cmd:
-            with self.lock:
-                if self.path == path:
-                    self.path = None
-            os.unlink(path)
-            raise RuntimeError("No audio player found (aplay, paplay, ffplay)")
-
-        with self.lock:
-            if self.cancel.is_set():
-                try:
-                    os.unlink(path)
-                except OSError:
-                    pass
-                if self.path == path:
-                    self.path = None
-                return
-            self.process = subprocess.Popen(cmd)
+                if self.process is proc:
+                    self.process = None
 
 
 class Studio(base.Studio):
@@ -167,8 +152,6 @@ class Studio(base.Studio):
         self.title("BloomTunes Studio v0.5 — Sequencer + Meditation Mode")
         self.med_engine = MeditationEngine()
         self._build_meditation_panel()
-        # Rebind explicitly after med_engine exists so window-close always stops
-        # both the base sequencer player and Meditation Mode.
         self.protocol("WM_DELETE_WINDOW", self.close)
 
     def _build_meditation_panel(self):
@@ -216,6 +199,7 @@ class Studio(base.Studio):
         try:
             start = float(self.med_start.get()); end = float(self.med_end.get())
             minutes = float(self.med_minutes.get()); volume = float(self.med_volume.get())
+            waveform = self.med_wave.get(); curve = self.med_curve.get()
             if not (1 <= start <= 20000 and 1 <= end <= 20000):
                 raise ValueError("Start/end frequency must be 1–20000 Hz")
             if not (0.05 <= minutes <= 180):
@@ -227,15 +211,13 @@ class Studio(base.Studio):
 
         self.sync_fx()
         fx = base.MasterFX(**base.asdict(self.song.fx))
-        self.status.set(f"Rendering meditation {start:g} → {end:g} Hz / {minutes:g} min...")
+        self.status.set(f"Meditation playing — {start:g} → {end:g} Hz / {minutes:g} min / MONO")
 
         def worker():
             try:
-                self.med_engine.play(start, end, minutes, self.med_wave.get(), volume,
-                                     self.med_curve.get(), fx)
+                self.med_engine.play(start, end, minutes, waveform, volume, curve, fx)
                 if not self.med_engine.cancel.is_set() and self.winfo_exists():
-                    self.after(0, lambda: self.status.set(
-                        f"Meditation playing — {start:g} → {end:g} Hz / {minutes:g} min / MONO"))
+                    self.after(0, lambda: self.status.set("Meditation complete"))
             except Exception as ex:
                 try:
                     if self.winfo_exists():
