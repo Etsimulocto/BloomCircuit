@@ -17,9 +17,11 @@ LIGHTS / SOLID editor:
   Range      -> 0..100, live preview
 
 MENU/GAME input modes are temporary desktop/service modes. They are never
-restored from Preferences, are never persisted, and automatically fall back to
-JAR mode when USB CDC is no longer open. This prevents closing or crashing the
-desktop controller from stranding the physical buttons in a non-local mode.
+restored from Preferences or persisted. USB loss only hands input ownership
+back to the jar; it does not alter OLED, lights, pattern, or menu state.
+
+Local HOME color/pattern changes are persisted immediately so a USB/battery
+power handoff or reset restores the state the user was actually seeing.
 """
 
 from pathlib import Path
@@ -44,11 +46,11 @@ if save_old not in s:
     raise SystemExit("menu mode patch failed: persisted inputMode save not found")
 s = s.replace(save_old, '', 1)
 
-new_block = '''  // MENU/GAME are temporary desktop/service modes. If the USB CDC session
-  // disappears, immediately hand control back to the standalone jar.
+new_block = '''  // MENU/GAME are temporary desktop/service modes. USB loss changes only
+  // input ownership; never dim the OLED, turn off LEDs, or rewrite UI state.
   if (inputMode != "JAR" && !Serial) {
     inputMode = "JAR";
-    uiGoHome();
+    oledDirty = true;
   }
 
   if (inputMode == "JAR") {
@@ -59,23 +61,27 @@ new_block = '''  // MENU/GAME are temporary desktop/service modes. If the USB CD
       if (q[IN_UP] && !latched[IN_UP]) {
         localPatternIndex=(localPatternIndex+1)%PATTERN_COUNT;
         hjSetPattern(PATTERN_NAMES[localPatternIndex]);
+        persistSettings();
         oledDirty=true;
       }
       if (q[IN_DOWN] && !latched[IN_DOWN]) {
         localPatternIndex=(localPatternIndex+PATTERN_COUNT-1)%PATTERN_COUNT;
         hjSetPattern(PATTERN_NAMES[localPatternIndex]);
+        persistSettings();
         oledDirty=true;
       }
       if (q[IN_LEFT] && !latched[IN_LEFT]) {
         paletteIndex1=(paletteIndex1+1)%9;
         Rgb c=palette[paletteIndex1];
         hjSetLed(1,c.r,c.g,c.b);
+        persistSettings();
         oledDirty=true;
       }
       if (q[IN_RIGHT] && !latched[IN_RIGHT]) {
         paletteIndex2=(paletteIndex2+1)%9;
         Rgb c=palette[paletteIndex2];
         hjSetLed(2,c.r,c.g,c.b);
+        persistSettings();
         oledDirty=true;
       }
     } else if (uiScreen == UI_MAIN_MENU) {
