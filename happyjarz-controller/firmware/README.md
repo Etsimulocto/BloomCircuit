@@ -2,7 +2,7 @@
 
 **Current staging path:** `happyjarz_integrated_v0_5.ino` + standard patch pipeline
 
-This folder contains the integrated ESP32-S3 firmware used by the HAPPY JARZ desktop/Pi controller. The current product build is intentionally assembled through the Pi flash helper so the known-good hardware layer can stay stable while newer OLED, menu, pattern, sayings, screensaver and protocol behavior is applied in controlled stages.
+This folder contains the integrated ESP32-S3 firmware used by the HAPPY JARZ desktop/Pi controller. The current product build is intentionally assembled through the Pi flash helper so the known-good hardware layer can stay stable while newer OLED, menu, pattern, sayings, screensaver, power-status and protocol behavior is applied in controlled stages.
 
 ## Preserve the known-good light layer
 
@@ -69,6 +69,40 @@ Current 4-wire I2C OLED:
 - 128x64 layout
 
 The OLED provides centered HOME/menu/detail/status pages and the current idle screensaver system.
+
+## Fuel Gauge / power status
+
+The standard staging pipeline now applies `patch_happyjarz_fuel_gauge.py` after the current saver/protocol layers.
+
+The Fuel Gauge is intentionally isolated from the proven LED, touch, OLED and screensaver code. It adds:
+
+- `POWER` item in the OLED main menu
+- battery voltage display
+- estimated battery percentage
+- raw ADC diagnostics
+- USB **data-link** IN/OUT state
+- `GET POWER` serial diagnostic
+
+Current sensing path:
+
+- GPIO3 = battery/supply ADC sense path on the current ESP32-S3 SuperMini hardware assumption
+- default divider ratio = `2.0`
+- default calibration factor = `1.000`
+- percentage is a LiPo voltage estimate, not a coulomb counter
+
+Example serial response:
+
+```text
+HJ|POWER|sensor=OK|adc_mv=1960|voltage=3.920|percent=70|usb_data=1|charge=HW_ONLY
+```
+
+Important limits:
+
+- `usb_data=1` means the native USB CDC data link is present; a power-only charger may not enumerate and therefore may still show `usb_data=0`.
+- The onboard charger IC's CHARGING/FULL signal is **not currently exposed to firmware**. The OLED therefore says `CHARGE: HW LED`, and the protocol reports `charge=HW_ONLY` rather than inventing a software charge state.
+- If a future hardware revision wires the charger-status output to a free GPIO, the Fuel Gauge layer can be extended to report true `CHARGING` / `FULL` state.
+- Before treating the percentage as calibrated, compare `GET POWER` voltage against a multimeter and adjust `BATTERY_CAL_FACTOR` only if needed.
+- If the sensed voltage is outside the plausible LiPo range, the Fuel Gauge reports `sensor=UNVERIFIED` / `BAT SENSOR CHECK` rather than presenting a fake percentage.
 
 ## Brightness ceiling
 
@@ -186,6 +220,12 @@ CLEAR CUSTOM SAYINGS
 SET SAYING SOURCE BUILTIN|CUSTOM|MIXED
 ```
 
+Power diagnostic:
+
+```text
+GET POWER
+```
+
 ## USB identity
 
 At 115200 baud the firmware responds to `HELLO` with an `HJ|IDENTITY|...` line. The Pi/PC watcher uses this identity to distinguish a HAPPY JARZ from unrelated serial devices.
@@ -220,6 +260,7 @@ Current patch stages include:
 - persistent custom sayings
 - procedural SPIRAL/TRIPPY controls
 - saver serial protocol/status
+- Fuel Gauge POWER menu + GPIO3 ADC + `GET POWER`
 
 The tested Arduino CLI FQBN is:
 
@@ -237,6 +278,6 @@ If USB/controller behavior is wrong but local touch, LEDs and OLED still work, d
 
 If local LEDs/touch/OLED fail, debug the firmware/hardware layer before changing the desktop application.
 
-Useful diagnostics include RGB tests, touch/input tests, status requests, saver status, Wi-Fi status/scan and service logs.
+Useful diagnostics include RGB tests, touch/input tests, status requests, `GET POWER`, saver status, Wi-Fi status/scan and service logs.
 
 **Every feature should carry its own diagnostic path.**
