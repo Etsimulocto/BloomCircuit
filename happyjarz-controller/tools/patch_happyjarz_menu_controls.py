@@ -1,27 +1,27 @@
 #!/usr/bin/env python3
-"""Give HAPPY JARZ two mutually exclusive local control modes.
+"""Give HAPPY JARZ reliable local controls with transient desktop input modes.
 
-HOME screen = original proven jar controls only:
-  A     -> next Light 1 palette color
-  B     -> next Light 2 palette color
+HOME screen:
+  A     -> enter OLED main menu
+  B     -> no HOME action
   UP    -> next light pattern
   DOWN  -> previous light pattern
-  RIGHT -> enter OLED main menu
+  LEFT  -> next Light 1 palette color
+  RIGHT -> next Light 2 palette color
 
-OLED menu/detail screens = menu controls only:
-  UP/DOWN -> move menu cursor (main menu)
-  A       -> select highlighted item (main menu)
-  B       -> back; from main menu returns HOME
-  LEFT    -> back; from main menu returns HOME
-  RIGHT   -> no light action
+LIGHTS / SOLID editor:
+  UP/DOWN    -> brightness +/- 5
+  LEFT/RIGHT -> brightness +/- 1
+  A          -> save brightness
+  B          -> back to main menu
+  Range      -> 0..100, live preview
 
-The same physical touch is never allowed to execute both a light action and a
-menu action. This replaces the whole JAR-control block structurally so staged
-OLED edits cannot stack a second control set on top of the original controls.
+MENU/GAME input modes are temporary desktop/service modes. They are never
+restored from Preferences or persisted. USB loss only hands input ownership
+back to the jar; it does not alter OLED, lights, pattern, or menu state.
 
-The sensory-pattern patch runs later in staging and provides PATTERN_NAMES and
-PATTERN_COUNT. HOME UP/DOWN intentionally reference those final library symbols
-so the physical controls cycle the same pattern set as the desktop controller.
+Local HOME color/pattern changes are persisted immediately so a USB/battery
+power handoff or reset restores the state the user was actually seeing.
 """
 
 from pathlib import Path
@@ -35,36 +35,56 @@ if len(sys.argv) != 2:
 p = Path(sys.argv[1])
 s = p.read_text(encoding="utf-8")
 
-new_block = '''  if (inputMode == "JAR") {
+# inputMode is session state, not a saved product setting.
+load_old = '  inputMode = prefs.getString("inputmode", "JAR");\n'
+if load_old not in s:
+    raise SystemExit("menu mode patch failed: persisted inputMode load not found")
+s = s.replace(load_old, '  inputMode = "JAR";\n', 1)
+
+save_old = '  prefs.putString("inputmode", inputMode);\n'
+if save_old not in s:
+    raise SystemExit("menu mode patch failed: persisted inputMode save not found")
+s = s.replace(save_old, '', 1)
+
+new_block = '''  // MENU/GAME are temporary desktop/service modes. USB loss changes only
+  // input ownership; never dim the OLED, turn off LEDs, or rewrite UI state.
+  if (inputMode != "JAR" && !Serial) {
+    inputMode = "JAR";
+    oledDirty = true;
+  }
+
+  if (inputMode == "JAR") {
     if (uiScreen == UI_HOME) {
-      // HOME MODE: original jar controls only.
       if (q[IN_A] && !latched[IN_A]) {
-        paletteIndex1=(paletteIndex1+1)%9;
-        Rgb c=palette[paletteIndex1];
-        hjSetLed(1,c.r,c.g,c.b);
-        oledDirty=true;
-      }
-      if (q[IN_B] && !latched[IN_B]) {
-        paletteIndex2=(paletteIndex2+1)%9;
-        Rgb c=palette[paletteIndex2];
-        hjSetLed(2,c.r,c.g,c.b);
-        oledDirty=true;
+        uiOpenMainMenu();
       }
       if (q[IN_UP] && !latched[IN_UP]) {
         localPatternIndex=(localPatternIndex+1)%PATTERN_COUNT;
         hjSetPattern(PATTERN_NAMES[localPatternIndex]);
+        persistSettings();
         oledDirty=true;
       }
       if (q[IN_DOWN] && !latched[IN_DOWN]) {
         localPatternIndex=(localPatternIndex+PATTERN_COUNT-1)%PATTERN_COUNT;
         hjSetPattern(PATTERN_NAMES[localPatternIndex]);
+        persistSettings();
+        oledDirty=true;
+      }
+      if (q[IN_LEFT] && !latched[IN_LEFT]) {
+        paletteIndex1=(paletteIndex1+1)%9;
+        Rgb c=palette[paletteIndex1];
+        hjSetLed(1,c.r,c.g,c.b);
+        persistSettings();
         oledDirty=true;
       }
       if (q[IN_RIGHT] && !latched[IN_RIGHT]) {
-        uiOpenMainMenu();
+        paletteIndex2=(paletteIndex2+1)%9;
+        Rgb c=palette[paletteIndex2];
+        hjSetLed(2,c.r,c.g,c.b);
+        persistSettings();
+        oledDirty=true;
       }
     } else if (uiScreen == UI_MAIN_MENU) {
-      // MENU MODE: no light commands are allowed here.
       if (q[IN_UP] && !latched[IN_UP]) {
         uiCursor=(uiCursor+4)%5;
         oledDirty=true;
@@ -79,8 +99,31 @@ new_block = '''  if (inputMode == "JAR") {
       if ((q[IN_B] && !latched[IN_B]) || (q[IN_LEFT] && !latched[IN_LEFT])) {
         uiGoHome();
       }
+    } else if (uiScreen == UI_LIGHTS) {
+      // SOLID brightness editor. All changes preview immediately on the LEDs.
+      int nextBrightness = (int)brightnessPercent;
+      bool changed = false;
+      if (q[IN_UP] && !latched[IN_UP]) { nextBrightness += 5; changed = true; }
+      if (q[IN_DOWN] && !latched[IN_DOWN]) { nextBrightness -= 5; changed = true; }
+      if (q[IN_RIGHT] && !latched[IN_RIGHT]) { nextBrightness += 1; changed = true; }
+      if (q[IN_LEFT] && !latched[IN_LEFT]) { nextBrightness -= 1; changed = true; }
+      if (changed) {
+        if (nextBrightness < 0) nextBrightness = 0;
+        if (nextBrightness > 100) nextBrightness = 100;
+        hjSetPattern("SOLID");
+        hjSetBrightness((uint8_t)nextBrightness);
+        oledDirty = true;
+      }
+      if (q[IN_A] && !latched[IN_A]) {
+        persistSettings();
+        oledDirty = true;
+      }
+      if (q[IN_B] && !latched[IN_B]) {
+        persistSettings();
+        uiOpenMainMenu();
+      }
     } else {
-      // DETAIL/STATUS MODE: still no light commands. B/LEFT return to menu.
+      // DETAIL/STATUS MODE: B/LEFT return to menu.
       if ((q[IN_B] && !latched[IN_B]) || (q[IN_LEFT] && !latched[IN_LEFT])) {
         uiOpenMainMenu();
       }

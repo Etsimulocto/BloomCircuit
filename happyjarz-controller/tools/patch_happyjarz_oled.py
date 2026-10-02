@@ -10,6 +10,8 @@ BloomCore intent:
 - A opens menu; UP/DOWN navigate; A selects; B backs out/home
 - while menus are open, local jar controls are temporarily captured by UI
 - when HOME is visible, normal jar controls remain active
+- OLED contrast is fixed at full output; the retired display-brightness setting
+  must never dim the panel after a USB/battery handoff or reboot
 """
 
 from pathlib import Path
@@ -86,8 +88,11 @@ static String timerText() {
 
 static void oledApplyBrightness() {
   if (!oledReady || !oled) return;
-  uint8_t contrast = (uint8_t)map(displayBrightness, 0, 100, 0, 255);
-  oled->setContrast(contrast);
+  // DISPLAY brightness control was retired. Keep OLED contrast fixed at full
+  // output so stale Preferences values cannot make the screen look dim after
+  // a USB disconnect, brownout, or source handoff.
+  displayBrightness = 100;
+  oled->setContrast(255);
 }
 
 static void oledInit() {
@@ -269,13 +274,14 @@ if nav_needle not in s:
 s = s.replace(nav_needle, nav_repl, 1)
 
 old_bri = '''  if(line.startsWith("SET DISPLAY BRIGHTNESS ")){int v=line.substring(23).toInt();if(v<0||v>100)err("display brightness must be 0-100");else{displayBrightness=v;ack("SET DISPLAY BRIGHTNESS");}return;}'''
-new_bri = '''  if(line.startsWith("SET DISPLAY BRIGHTNESS ")){int v=line.substring(23).toInt();if(v<0||v>100)err("display brightness must be 0-100");else{displayBrightness=v;oledApplyBrightness();oledDirty=true;ack("SET DISPLAY BRIGHTNESS");}return;}'''
+new_bri = '''  if(line.startsWith("SET DISPLAY BRIGHTNESS ")){int v=line.substring(23).toInt();if(v<0||v>100)err("display brightness must be 0-100");else{displayBrightness=100;oledApplyBrightness();oledDirty=true;ack("SET DISPLAY BRIGHTNESS FIXED 100");}return;}'''
 if old_bri in s:
     s = s.replace(old_bri, new_bri, 1)
 
 setup_needle = '''  loadSettings();
   if(!initApa106Rmt())'''
 setup_repl = '''  loadSettings();
+  displayBrightness=100;
   oledInit();
   if(!initApa106Rmt())'''
 if setup_needle not in s:

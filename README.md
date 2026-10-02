@@ -10,12 +10,13 @@ The repository also contains the current **HAPPY JARZ controller/firmware stack*
 
 See [`happyjarz-controller/README.md`](happyjarz-controller/README.md) for the controller/service workflow and [`happyjarz-controller/firmware/README.md`](happyjarz-controller/firmware/README.md) for the ESP32 firmware layer.
 
+Current development firmware on `feature/happyjarz-catch-the-glitter`: **v0.9.3**.
+
 Current proven hardware:
 
 - ESP32-S3 SuperMini
 - GPIO7 -> 220 ohm -> APA106 #1 DIN
 - APA106 #1 DOUT -> APA106 #2 DIN
-- APA106 VCC -> **5V**
 - common GND
 - GPIO4 = UP touch
 - GPIO5 = DOWN touch
@@ -28,57 +29,46 @@ Current proven hardware:
 - OLED VCC -> 3.3V
 - OLED address `0x3C`
 
-The tested APA106 lamps accept the ESP32-S3's 3.3V data signal while powered from 5V, so the current working prototype does **not** require the earlier planned SN74AHCT125 level-shifter stage. The proven custom RMT timing and RGB byte order should be treated as a known-good hardware layer.
+The tested APA106 lamps accept the ESP32-S3's 3.3V data signal. The current two-lamp prototype has now been bench-tested through the full **0-100% firmware brightness range** with lamp VCC at both **3.3V and 5V**, with no blue-collapse observed in the latest test. Never route 5V into an ESP32 GPIO.
 
-Current HAPPY JARZ firmware is staged from `happyjarz_integrated_v0_5.ino` and patched by the normal Pi flasher. Current behavior includes:
+Practical brightness result:
 
-- independent Light 1 / Light 2 color control
-- a **50% hard brightness ceiling** based on bench testing
-- expanded sensory/holiday/color pattern library
-- HOME controls: A/B colors, UP/DOWN patterns, RIGHT menu
-- OLED HOME/menu/status pages
-- 10-second idle screensaver entry
-- SAYINGS marquee screensaver with a large built-in positive/funny saying bank
-- persistent editable business/custom sayings with BUILTIN / CUSTOM / MIXED modes
-- procedural SPIRAL and TRIPPY art screensavers
-- LEFT/RIGHT saver switching, B exit, UP/DOWN art speed, A reseed / "new universe"
-- procedural seeds mixed from live board state such as uptime, timing jitter, temperature, Wi-Fi RSSI, touch readings, brightness and RGB state
-- USB control/status for saver preview, reseed, speed and live saver status
+- **24% at 3.3V** is already plenty for normal HAPPY JARZ sensory use
+- **5V at 100% is extremely bright** and can create a strong wall/ceiling glow
+- the previous 50% hard brightness ceiling has been removed
+- full 0-100% remains available for tuning and intentional high-output use
+
+Current HOME controls:
+
+- UP = next pattern
+- DOWN = previous pattern
+- LEFT = next Light 1 color
+- RIGHT = next Light 2 color
+- A = open menu
+- B = no HOME action
+
+Current on-device UI includes:
+
+- CLOCK with standalone date/time setting
+- LIGHTS with live SOLID brightness editing from 0-100%
+- GAMES with seven native OLED mini-games
+- SETTINGS with ALARM and TIMER
+- SYSTEM status
+- 30-second SAYINGS / SPIRAL / TRIPPY / PARTICLES screensavers
 
 The pattern library currently includes:
 
 `SOLID`, `FADE`, `PULSE`, `RAINBOW`, `RANDOM`, `HUE_FADE`, `DUAL_HUE`, `BREATH`, `DRIFT`, `AURORA`, `OCEAN`, `LAVENDER`, `SUNSET`, `CHRISTMAS`, `HALLOWEEN`, `VALENTINE`, `EASTER`, `FOURTH`, `THANKSGIVING`, `CANDY`, `GALAXY`, `FIRE`, `ICE`, `FOREST`, `NEON`, `TWINKLE`, `SPARKLE`, `COLOR_SWAP`, `COMET`, `FIREFLY`, `BUBBLEGUM`, `OFF`.
 
-The desktop controller is currently layered through `happyjarz_controller_v0_3_2.py`. It provides:
-
-- light color/brightness/pattern control
-- Wi-Fi scan/setup and status
-- USB host-time sync
-- touch/input diagnostics
-- current OLED/screensaver controls
-- SAYINGS / SPIRAL / TRIPPY preview controls
-- live saver status
-- persistent 8-slot custom marquee editor for banks, clinics, shops, offices, events, gifts, and similar installations
-
-The PC/Pi service layer can:
-
-- detect a HAPPY JARZ over USB
-- open the current controller app when a Jar is plugged in
-- reconnect after unplug/replug
-- keep diagnostic logs
-- auto-check the tracked GitHub branch on startup and every 6 hours
-- fast-forward only when safe, without overwriting local edits
-- support remote compatibility/content/controller patches for deployed units
-
 ### Current Pi flash/update workflow
 
 ```bash
 cd ~/BloomCircuit
-git pull --ff-only
+git pull
 bash happyjarz-controller/tools/flash_happyjarz_v0_5.sh
 ```
 
-The flasher stops the controller/watcher, stages the integrated v0.5 firmware, applies the current touch/OLED/menu/pattern/screensaver/custom-sayings/procedural-art patches, compiles with Arduino CLI, uploads, and restarts the watcher.
+The flasher stops the controller/watcher, stages the compatibility base, applies the current firmware patch chain, verifies the final sketch, compiles with Arduino CLI, uploads, and restarts the watcher.
 
 ## Raspberry Pi offline BloomCircuit app
 
@@ -108,8 +98,6 @@ From the controller folder:
 cd ~/BloomCircuit/happyjarz-controller
 bash install_pi_autostart.sh
 ```
-
-This installs the lightweight USB watcher. The full controller GUI remains closed until a HAPPY JARZ is detected.
 
 Service logs:
 
@@ -207,14 +195,6 @@ Open:
 
 ```text
 http://localhost:8080
-```
-
-If already cloned:
-
-```bash
-cd ~/BloomCircuit
-git pull
-python3 -m http.server 8080
 ```
 
 ## License
