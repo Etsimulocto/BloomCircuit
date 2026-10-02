@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Final HAPPY JARZ HOME power-status polish.
 
-Runs after the Fuel Gauge patch so it can safely adjust only the already-staged
-HOME power helper and screensaver timeout without disturbing LED/touch/menu
-architecture.
+Runs after the Fuel Gauge patch. Before the HOME power polish is applied, this
+final stage also appends the optional cheesy-happy sayings pack so every normal
+flash automatically includes the expanded joy bank without replacing the
+known-good sayings v2 layer.
 
 HOME footer cycles every 2.5 seconds.
 Battery-only:
@@ -22,12 +23,22 @@ Also extends the idle screensaver timeout from 10 seconds to 30 seconds so the
 OLED menus/status pages are readable during standalone use.
 """
 from pathlib import Path
+import subprocess
 import sys
 
 if len(sys.argv) != 2:
     raise SystemExit("usage: patch_happyjarz_home_power_cycle.py <staged .ino>")
 
 p = Path(sys.argv[1])
+
+# Keep themed sayings additive and isolated from the known-good sayings v2
+# patch. This runs late enough that custom sayings support is already staged;
+# HJ_SAYING_COUNT is sizeof-based, so appended built-ins are counted normally.
+happy_pack = Path(__file__).with_name("patch_happyjarz_happy_sayings_pack.py")
+if not happy_pack.exists():
+    raise SystemExit(f"HOME power-cycle patch failed: missing {happy_pack.name}")
+subprocess.run([sys.executable, str(happy_pack), str(p)], check=True)
+
 s = p.read_text(encoding="utf-8")
 
 old_timeout = "static constexpr unsigned long HJ_SCREENSAVER_IDLE_MS = 10000UL;"
@@ -87,4 +98,4 @@ if old_helper not in s:
 s = s.replace(old_helper, new_helper, 1)
 
 p.write_text(s, encoding="utf-8")
-print("Applied HOME power cycle + 30-second screensaver timeout.")
+print("Applied cheesy happy sayings pack + HOME power cycle + 30-second screensaver timeout.")
