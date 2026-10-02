@@ -161,12 +161,13 @@ s = s.replace(switch_fallback,
               '    case UI_POWER: oledRenderPower(); break;\n' + switch_fallback,
               1)
 
-# Initialize ADC before the OLED comes up.
-setup_old = '''  loadSettings();\n  oledInit();'''
-setup_new = '''  loadSettings();\n  fuelGaugeInit();\n  oledInit();'''
-if setup_old not in s:
-    raise SystemExit("Fuel Gauge patch failed: setup insertion point not found")
-s = s.replace(setup_old, setup_new, 1)
+# Initialize ADC at the stable Arduino setup() boundary. Do not depend on
+# loadSettings()/oledInit() adjacency because later patch stages may insert
+# setup work between them.
+setup_marker = 'void setup() {'
+if setup_marker not in s:
+    raise SystemExit("Fuel Gauge patch failed: setup() not found")
+s = s.replace(setup_marker, setup_marker + '\n  fuelGaugeInit();', 1)
 
 # Machine-readable diagnostic path.
 proto_old = '''  if(line=="GET STATUS"){Serial.println(statusLine());return;}\n'''
