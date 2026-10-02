@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stage standalone editors + board arcade, then inject firmware/VERSION."""
+"""Stage standalone editors + INFO manual + board arcade, then inject firmware/VERSION."""
 
 from pathlib import Path
 import re
@@ -24,19 +24,25 @@ if not manual_clock_patch.exists():
     raise SystemExit(f"release staging failed: missing manual clock patch {manual_clock_patch}")
 subprocess.run([sys.executable, str(manual_clock_patch), str(sketch)], check=True)
 
-# Standalone SETTINGS editors reuse the existing alarm/timer/display state.
+# Standalone SETTINGS editors reuse the existing alarm/timer state.
 settings_patch = Path(__file__).with_name("patch_happyjarz_settings_menu.py")
 if not settings_patch.exists():
     raise SystemExit(f"release staging failed: missing settings patch {settings_patch}")
 subprocess.run([sys.executable, str(settings_patch), str(sketch)], check=True)
 
 # Late brightness patch deliberately lifts the old 50% product ceiling to 100%
-# and turns MENU -> LIGHTS into a live SOLID brightness tuner. It runs after the
-# sensory pattern patch has created HJ_MAX_BRIGHTNESS and its saved-value clamp.
+# and turns MENU -> LIGHTS into a live SOLID brightness tuner.
 brightness_patch = Path(__file__).with_name("patch_happyjarz_brightness_editor.py")
 if not brightness_patch.exists():
     raise SystemExit(f"release staging failed: missing brightness patch {brightness_patch}")
 subprocess.run([sys.executable, str(brightness_patch), str(sketch)], check=True)
+
+# Board-local INFO / manual pages. Apply after menu/editors so it can extend the
+# final menu count and input router without earlier patches rewriting it.
+info_patch = Path(__file__).with_name("patch_happyjarz_info_manual.py")
+if not info_patch.exists():
+    raise SystemExit(f"release staging failed: missing info manual patch {info_patch}")
+subprocess.run([sys.executable, str(info_patch), str(sketch)], check=True)
 
 # Arcade is part of the product firmware now. Copy its normal Arduino translation
 # units into the staged sketch directory, then patch the already-staged OLED/menu.
@@ -59,4 +65,4 @@ if count != 1:
     raise SystemExit("release version patch failed: HJ_FW_VERSION marker not found")
 
 sketch.write_text(s, encoding="utf-8")
-print(f"Applied HAPPY JARZ firmware release version {version} with standalone editors + 0-100 brightness + board arcade staged.")
+print(f"Applied HAPPY JARZ firmware release version {version} with standalone editors + 0-100 brightness + INFO manual + board arcade staged.")
