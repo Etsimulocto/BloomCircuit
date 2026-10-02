@@ -6,7 +6,7 @@ BLOOMCORE MODULE
 identity:
   name: HAPPY JARZ — Bloom Runner
   module: bloom_runner
-  version: 0.1
+  version: 0.2
   format: bloomcore/v1.3
 
 purpose:
@@ -19,7 +19,8 @@ display:
   optional desktop scale: --scale N
 
 controls:
-  LEFT / RIGHT = shift between 3 running lanes
+  UP / DOWN = shift between 3 running lanes
+  LEFT / RIGHT = move runner backward / forward on screen
   A / Z / Enter = jump
   B / X = duck / slide while playing
   Escape = back / exit
@@ -27,7 +28,8 @@ controls:
 
 gameplay:
   Character runs automatically.
-  Shift between three lanes to avoid lane hazards and collect glitter.
+  Shift up/down between three lanes to avoid lane hazards and collect glitter.
+  Move left/right to change the runner's horizontal position.
   Jump clears ground blocks.
   Duck clears overhead bars.
   Glitter gives bonus points.
@@ -51,8 +53,8 @@ W = 128
 H = 64
 FPS_MS = 33
 HUD_H = 9
-GROUND_Y = 58
 LANE_Y = (26, 41, 56)
+PLAYER_X_SLOTS = (14, 22, 30, 38, 46)
 SAVE_PATH = Path(__file__).with_name("bloom_runner_best.txt")
 
 
@@ -94,8 +96,10 @@ class BloomRunner:
             pass
 
     def bind_keys(self):
-        self.root.bind("<KeyPress-Left>", lambda e: self.shift(-1))
-        self.root.bind("<KeyPress-Right>", lambda e: self.shift(1))
+        self.root.bind("<KeyPress-Up>", lambda e: self.shift_lane(-1))
+        self.root.bind("<KeyPress-Down>", lambda e: self.shift_lane(1))
+        self.root.bind("<KeyPress-Left>", lambda e: self.shift_x(-1))
+        self.root.bind("<KeyPress-Right>", lambda e: self.shift_x(1))
         for key in ("a", "A", "z", "Z", "Return"):
             self.root.bind(f"<KeyPress-{key}>", self.press_a)
         for key in ("b", "B", "x", "X"):
@@ -112,6 +116,8 @@ class BloomRunner:
 
     def reset_game(self):
         self.lane = 1
+        self.player_x_slot = 1
+        self.player_x = PLAYER_X_SLOTS[self.player_x_slot]
         self.score = 0.0
         self.glitter = 0
         self.objects = []
@@ -127,9 +133,15 @@ class BloomRunner:
         self.reset_game()
         self.state = "play"
 
-    def shift(self, delta):
+    def shift_lane(self, delta):
         if self.state == "play":
             self.lane = max(0, min(2, self.lane + delta))
+
+    def shift_x(self, delta):
+        if self.state == "play":
+            self.player_x_slot = max(0, min(len(PLAYER_X_SLOTS)-1,
+                                            self.player_x_slot + delta))
+            self.player_x = PLAYER_X_SLOTS[self.player_x_slot]
 
     def press_a(self, event=None):
         if self.state in ("title", "gameover"):
@@ -176,6 +188,7 @@ class BloomRunner:
         self.elapsed += dt
         self.score += dt * 4.0
         self.message_timer = max(0.0, self.message_timer - dt)
+        self.player_x = PLAYER_X_SLOTS[self.player_x_slot]
 
         if self.jump_y != 0 or self.jump_v != 0:
             self.jump_v += 90.0 * dt
@@ -190,12 +203,11 @@ class BloomRunner:
             gap = max(0.52, 1.15 - self.elapsed * 0.008)
             self.spawn_timer = gap * random.uniform(0.8, 1.25)
 
-        px = 20
         survivors = []
         for obj in self.objects:
             obj.x -= self.speed() * dt
             same_lane = obj.lane == self.lane
-            near_player = 15 <= obj.x <= 28
+            near_player = abs(obj.x - self.player_x) <= 7
 
             if same_lane and near_player and not obj.passed:
                 if obj.kind == "glitter":
@@ -245,7 +257,7 @@ class BloomRunner:
                                 font=("TkFixedFont", max(4, size*s)))
 
     def draw_runner(self):
-        x = 20
+        x = int(self.player_x)
         base_y = LANE_Y[self.lane] + int(self.jump_y)
         if self.ducking and self.jump_y == 0:
             self.px_rect(x-4, base_y-3, x+4, base_y)
@@ -278,6 +290,7 @@ class BloomRunner:
 
     def render_game(self):
         self.text(1, 0, f"S{int(self.score):04d}", size=5)
+        self.text(64, 0, "UD:LANE  LR:POS", anchor="n", size=3)
         self.text(127, 0, f"G{self.glitter:02d}", anchor="ne", size=5)
         self.line(0, 8, 127, 8)
         for y in LANE_Y:
