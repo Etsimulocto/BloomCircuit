@@ -97,5 +97,15 @@ if old_helper not in s:
     raise SystemExit("HOME power-cycle patch failed: existing HOME power helper not found")
 s = s.replace(old_helper, new_helper, 1)
 
+# The Fuel Gauge patch already redirects the CLOCK-NOT-SET HOME footer to
+# oledHomePowerText(). The clock-synced branch in the original OLED layer still
+# ends with ALARM OFF / timer text, so replace that final footer too. This keeps
+# HOME power behavior identical whether NTP/USB time has synced or not.
+old_synced_footer = '''  String bottom = timerEnabled ? timerText() : String(alarmBuf);\n  oledCentered(61, bottom);'''
+new_synced_footer = '''  oledCentered(61, oledHomePowerText());'''
+if old_synced_footer not in s:
+    raise SystemExit("HOME power-cycle patch failed: synced HOME alarm/timer footer not found")
+s = s.replace(old_synced_footer, new_synced_footer, 1)
+
 p.write_text(s, encoding="utf-8")
 print("Applied cheesy happy sayings pack + HOME power cycle + 30-second screensaver timeout.")
