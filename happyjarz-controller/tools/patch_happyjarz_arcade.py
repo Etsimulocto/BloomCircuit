@@ -30,7 +30,6 @@ if '#include "happyjarz_arcade.h"' not in s:
         raise SystemExit("arcade patch failed: U8g2 include not found; OLED patch must run first")
     s = s.replace(marker, marker + '#include "happyjarz_arcade.h"\n', 1)
 
-# Insert U8g2 -> HjArcadeDisplay adapter beside the known-good OLED layer.
 marker = '''static bool oledDirty = true;
 static unsigned long oledLastDrawMs = 0;
 '''
@@ -92,7 +91,6 @@ static const HjArcadeDisplay ARCADE_DISPLAY = {
 '''
 s = s.replace(marker, marker + adapter, 1)
 
-# Replace the placeholder GAMES detail screen with arcade entry instructions.
 old_games = '''static void oledRenderGames() {
   oledCentered(13, "GAMES");
   oledCentered(29, "COMING SOON");
@@ -111,14 +109,19 @@ if old_games not in s:
     raise SystemExit("arcade patch failed: GAMES placeholder screen not found")
 s = s.replace(old_games, new_games, 1)
 
-# Final staging adds screensaver ownership around the existing JAR controls.
-# Do NOT replace that whole structure. Gate the normal JAR block only while the
-# arcade owns controls, then insert an independent edge-event bridge before it.
 jar_marker = '  if (inputMode == "JAR") {\n'
 if jar_marker not in s:
     raise SystemExit("arcade patch failed: JAR input entry not found")
 
-arcade_input = r'''  if (inputMode == "JAR" && hjArcadeActive()) {
+arcade_input = r'''  // Enter the arcade directly from the existing GAMES detail page.
+  // This sits outside the normal menu block so it does not depend on that
+  // block's exact wording or layout.
+  if (inputMode == "JAR" && !hjArcadeActive() && uiScreen == UI_GAMES &&
+      q[IN_A] && !latched[IN_A]) {
+    hjArcadeEnter();
+  }
+
+  if (inputMode == "JAR" && hjArcadeActive()) {
     // ARCADE MODE: only consume edges already qualified by the proven touch
     // layer. Normal HOME/menu/light actions are gated below while active.
     if (q[IN_UP] && !latched[IN_UP]) hjArcadeButton(HJ_BTN_UP);
@@ -144,22 +147,6 @@ arcade_input = r'''  if (inputMode == "JAR" && hjArcadeActive()) {
 '''
 s = s.replace(jar_marker, arcade_input + '  if (inputMode == "JAR" && !hjArcadeActive()) {\n', 1)
 
-# On the existing GAMES detail page A starts the arcade. This hook goes before
-# the normal detail-page back handling and leaves every other detail page alone.
-detail_marker = '''    } else {
-      // DETAIL/STATUS MODE: still no light commands. B/LEFT return to menu.
-'''
-if detail_marker not in s:
-    raise SystemExit("arcade patch failed: detail/status menu marker not found")
-detail_repl = '''    } else {
-      if (uiScreen == UI_GAMES && q[IN_A] && !latched[IN_A]) {
-        hjArcadeEnter();
-      }
-      // DETAIL/STATUS MODE: still no light commands. B/LEFT return to menu.
-'''
-s = s.replace(detail_marker, detail_repl, 1)
-
-# Initialize the arcade after the known-good OLED is initialized.
 setup_marker = '''  oledInit();
   if(!initApa106Rmt())'''
 setup_repl = '''  oledInit();
@@ -169,7 +156,6 @@ if setup_marker not in s:
     raise SystemExit("arcade patch failed: oledInit setup marker not found")
 s = s.replace(setup_marker, setup_repl, 1)
 
-# When arcade is active it owns rendering. Otherwise the normal OLED service runs.
 loop_marker = '''  serviceTimer();
   serviceOled();
   static bool timeStarted=false;'''
