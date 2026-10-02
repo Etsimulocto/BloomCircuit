@@ -1,15 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# HAPPY JARZ v0.5 safe Pi flash helper.
+# HAPPY JARZ safe Pi flash helper.
+# Legacy filename retained for compatibility; release version comes from firmware/VERSION.
 # Stops the USB controller/watcher so /dev/ttyACM* is free, stages the current
-# firmware patch chain, verifies the FINAL staged sketch, compiles, uploads,
-# then restarts the watcher.
+# firmware patch chain, injects the release version, verifies the FINAL staged
+# sketch, compiles, uploads, then restarts the watcher.
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONTROLLER_DIR="$(cd "$HERE/.." && pwd)"
 REPO="$(cd "$CONTROLLER_DIR/.." && pwd)"
 SRC="$CONTROLLER_DIR/firmware/happyjarz_integrated_v0_5.ino"
+FW_VERSION_FILE="$CONTROLLER_DIR/firmware/VERSION"
+VERSION_PATCH="$HERE/patch_happyjarz_release_version.py"
 TOUCH_PATCH="$HERE/patch_happyjarz_touch.py"
 OLED_PATCH="$HERE/patch_happyjarz_oled.py"
 MENU_PATCH="$HERE/patch_happyjarz_menu_controls.py"
@@ -29,12 +32,18 @@ if ! command -v arduino-cli >/dev/null 2>&1; then
   exit 1
 fi
 
-for required in "$SRC" "$TOUCH_PATCH" "$OLED_PATCH" "$MENU_PATCH" "$PATTERN_PATCH" "$SCREENSAVER_PATCH" "$SAYINGS_PATCH" "$CUSTOM_SAYINGS_PATCH" "$SAVER_CONTROLS_PATCH" "$SAVER_PROTOCOL_PATCH" "$VERIFY_STAGE"; do
+for required in "$SRC" "$FW_VERSION_FILE" "$VERSION_PATCH" "$TOUCH_PATCH" "$OLED_PATCH" "$MENU_PATCH" "$PATTERN_PATCH" "$SCREENSAVER_PATCH" "$SAYINGS_PATCH" "$CUSTOM_SAYINGS_PATCH" "$SAVER_CONTROLS_PATCH" "$SAVER_PROTOCOL_PATCH" "$VERIFY_STAGE"; do
   if [[ ! -f "$required" ]]; then
     echo "ERROR: required file missing: $required"
     exit 1
   fi
 done
+
+FW_VERSION="$(tr -d '[:space:]' < "$FW_VERSION_FILE")"
+if [[ ! "$FW_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "ERROR: invalid firmware version in $FW_VERSION_FILE: $FW_VERSION"
+  exit 1
+fi
 
 PORT="${1:-}"
 if [[ -z "$PORT" ]]; then
@@ -50,7 +59,7 @@ if [[ -z "$PORT" ]]; then
   exit 1
 fi
 
-echo "HAPPY JARZ v0.5 CURRENT flasher"
+echo "HAPPY JARZ firmware v$FW_VERSION CURRENT flasher"
 echo "Repo: $REPO"
 echo "Controller source: $CONTROLLER_DIR"
 echo "Port: $PORT"
@@ -236,6 +245,10 @@ python3 "$SAVER_CONTROLS_PATCH" "$SKETCH"
 # layers. Do not duplicate those patches here.
 python3 "$SAVER_PROTOCOL_PATCH" "$SKETCH"
 
+# Release version is injected LAST so the binary identity always matches the
+# firmware/VERSION source of truth for this build.
+python3 "$VERSION_PATCH" "$SKETCH"
+
 sed -i \
   -e 's/if (inputStream && millis()-lastInputStreamMs>=100)/if (inputStream \&\& Serial \&\& millis()-lastInputStreamMs>=100)/' \
   -e 's/if(touchStreamCompat && millis()-lastTouchCompatMs>=100)/if(touchStreamCompat \&\& Serial \&\& millis()-lastTouchCompatMs>=100)/' \
@@ -251,14 +264,14 @@ if ! arduino-cli lib list | grep -q '^U8g2[[:space:]]'; then
   arduino-cli lib install U8g2
 fi
 
-echo "Compiling VERIFIED staged firmware..."
+echo "Compiling VERIFIED firmware v$FW_VERSION..."
 arduino-cli compile --fqbn "$FQBN" "$WORK"
 
-echo "Uploading VERIFIED staged firmware..."
+echo "Uploading VERIFIED firmware v$FW_VERSION..."
 arduino-cli upload -p "$PORT" --fqbn "$FQBN" "$WORK"
 
 echo
 echo "Upload complete. Restarting HAPPY JARZ plug watcher..."
 nohup python3 "$CONTROLLER_DIR/happyjarz_plug_watch.py" \
   >> "$HOME/.happyjarz/plug_watch_manual_start.log" 2>&1 &
-echo "Done. Current build verified: Fuel Gauge + HOME power cycle + 30s saver + expanded patterns/particles present."
+echo "Done. Firmware v$FW_VERSION verified: Fuel Gauge + HOME power cycle + 30s saver + expanded patterns/particles present."
