@@ -158,6 +158,53 @@ The SERVICE tab adds the current Fuel Gauge card:
 
 The firmware deliberately reports charger state as hardware-only/unknown until a real charger-status signal is available.
 
+## BloomSaver desktop integration target
+
+The standalone `BloomSaver/` app on `main` is now a **Glitter-first** visual engine intended to be patched into the HAPPY JARZ desktop controller after tuning.
+
+Current BloomSaver behavior includes:
+
+- continuously generated Glitter instead of a timed background-mode playlist
+- moving emitters, attractors and repulsors
+- bursts, drift, swirl, field noise, trails, glow and twinkle
+- particle sizes up to **24**
+- a large ASCII/symbol glyph pool mixed with geometric glitter shapes
+- simple randomized dark background fades
+- saved user Glitter presets that do not auto-cycle
+
+### Match Jar Colors on Start
+
+BloomSaver now exposes a persistent **MATCH JAR COLORS ON START** toggle.
+
+The intended integration rule is:
+
+```text
+active Jar light pattern
+        ↓
+controller resolves a representative palette
+        ↓
+BloomSaver receives that palette once at startup
+        ↓
+Glitter + initial background match the physical Jar
+        ↓
+user may freely change BloomSaver controls afterward
+```
+
+This must remain a **startup handoff**, not a continuous override. The user should always be able to move the Glitter hue, spread, background and other sliders after launch without the controller fighting those edits.
+
+The browser-side bridge accepts a direct call such as:
+
+```javascript
+window.BloomSaver.setJarPalette({
+  name: "OCEAN",
+  colors: ["#0066ff", "#00d8ff", "#6f4cff"]
+});
+```
+
+It can also consume compatible RGB/HSL/hue objects, `primary` / `secondary` / `accent` fields, palette `postMessage` events, supported globals, localStorage palette entries and startup URL color parameters.
+
+Controller integration should therefore expose or derive a small representative palette for each active lighting pattern rather than trying to mirror the LED animation frame-for-frame. The physical light animation and desktop Glitter physics stay independent while sharing the same visual color family.
+
 ## Known-good APA106 timing
 
 Do not replace this casually. The integrated firmware uses the Arduino ESP32 HAL RMT driver:
