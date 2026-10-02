@@ -1,38 +1,37 @@
 (() => {
   "use strict";
 
-  const baseCanvas = document.getElementById("stage");
   const mode = document.getElementById("mode");
   const panel = document.getElementById("panel");
   const showPanel = document.getElementById("showPanel");
   const primary = document.querySelector(".primary-actions");
 
-  // Add Glitter Jar as a first-class selectable BloomSaver mode.
-  if (mode && !mode.querySelector('option[value="glitter"]')) {
-    const option = document.createElement("option");
-    option.value = "glitter";
-    option.textContent = "Glitter Jar";
-    mode.appendChild(option);
-  }
-
-  const glitterButton = document.createElement("button");
+  // Glitter is now an independent fullscreen overlay layer.
+  // It does NOT replace or hide the selected BloomSaver base mode.
+  const glitterButton = document.getElementById("glitterPreset") || document.createElement("button");
   glitterButton.id = "glitterPreset";
-  glitterButton.textContent = "GLITTER JAR";
-  glitterButton.title = "Load the built-in floating glitter preset";
-  if (primary) primary.appendChild(glitterButton);
+  glitterButton.textContent = "GLITTER OVERLAY";
+  glitterButton.title = "Toggle fullscreen glitter over the current BloomSaver mode";
+  if (!glitterButton.parentElement && primary) primary.appendChild(glitterButton);
+
+  // Remove the old first-class Glitter Jar mode if it was injected by an earlier build.
+  if (mode) {
+    const oldGlitterOption = mode.querySelector('option[value="glitter"]');
+    if (oldGlitterOption) oldGlitterOption.remove();
+  }
 
   const canvas = document.createElement("canvas");
   canvas.id = "glitterStage";
   canvas.setAttribute("aria-hidden", "true");
   document.body.insertBefore(canvas, document.querySelector(".topbar"));
-  const ctx = canvas.getContext("2d", { alpha: false });
+  const ctx = canvas.getContext("2d", { alpha: true });
 
   let width = innerWidth;
   let height = innerHeight;
   let dpr = Math.min(devicePixelRatio || 1, 2);
   let flakes = [];
   let last = performance.now();
-  let active = false;
+  let active = true;
   let idleTimer = 0;
 
   function num(key, fallback) {
@@ -61,7 +60,7 @@
   }
 
   function desiredCount() {
-    return Math.max(30, Math.min(700, Math.floor(num("count", 360))));
+    return Math.max(40, Math.min(950, Math.floor(num("count", 420) * 1.25)));
   }
 
   function makeFlake(i) {
@@ -69,13 +68,14 @@
       x: Math.random(),
       y: Math.random(),
       vx: (Math.random() - .5) * .018,
-      vy: .012 + Math.random() * .055,
-      size: .65 + Math.random() * 2.8,
+      vy: .008 + Math.random() * .042,
+      size: .7 + Math.random() * 3.2,
       phase: Math.random() * Math.PI * 2,
-      spin: (Math.random() - .5) * .08,
+      spin: (Math.random() - .5) * .09,
       angle: Math.random() * Math.PI,
       hueOffset: (Math.random() - .5) * 2,
       twinkle: .45 + Math.random() * 1.8,
+      depth: .45 + Math.random() * .9,
       lane: i
     };
   }
@@ -90,32 +90,6 @@
     }
   }
 
-  function jarBox() {
-    const portrait = height > width;
-    const w = Math.min(width * (portrait ? .78 : .58), 760);
-    const h = Math.min(height * .82, 850);
-    return { x:(width-w)/2, y:(height-h)/2 + 8, w, h };
-  }
-
-  function jarPath(box) {
-    const {x,y,w,h} = box;
-    const neck = w * .18;
-    const shoulderY = y + h * .105;
-    const bottomR = Math.min(46, w * .075);
-    ctx.beginPath();
-    ctx.moveTo(x + w*.5 - neck, y);
-    ctx.lineTo(x + w*.5 + neck, y);
-    ctx.lineTo(x + w*.5 + neck, y + h*.04);
-    ctx.bezierCurveTo(x+w*.82, y+h*.065, x+w*.93, shoulderY, x+w*.93, y+h*.20);
-    ctx.lineTo(x+w*.93, y+h-bottomR);
-    ctx.quadraticCurveTo(x+w*.93, y+h, x+w*.93-bottomR, y+h);
-    ctx.lineTo(x+w*.07+bottomR, y+h);
-    ctx.quadraticCurveTo(x+w*.07, y+h, x+w*.07, y+h-bottomR);
-    ctx.lineTo(x+w*.07, y+h*.20);
-    ctx.bezierCurveTo(x+w*.07, shoulderY, x+w*.18, y+h*.065, x+w*.5-neck, y+h*.04);
-    ctx.closePath();
-  }
-
   function colorFor(flake, alpha) {
     const hue = num("hue", 42);
     const spread = num("hueSpread", 145);
@@ -123,133 +97,120 @@
     return `hsla(${h},96%,72%,${alpha})`;
   }
 
-  function drawBackground(t) {
-    const hue = num("hue", 42);
-    const grad = ctx.createRadialGradient(width*.5,height*.42,10,width*.5,height*.5,Math.max(width,height)*.72);
-    grad.addColorStop(0, `hsla(${(hue+30)%360},45%,10%,1)`);
-    grad.addColorStop(.48, "#070812");
-    grad.addColorStop(1, "#020306");
-    ctx.fillStyle = grad;
-    ctx.fillRect(0,0,width,height);
-
-    const pulse = num("pulse", .35);
-    const glow = .04 + (Math.sin(t*.00045)+1)*.018*pulse;
-    ctx.fillStyle = `rgba(255,255,255,${glow})`;
-    ctx.beginPath();
-    ctx.ellipse(width*.5,height*.47,width*.22,height*.38,0,0,Math.PI*2);
-    ctx.fill();
-  }
-
   function drawGlitter(t, dt) {
     buildFlakes();
-    drawBackground(t);
-    const box = jarBox();
+    ctx.clearRect(0, 0, width, height);
+
     const speed = num("speed", .42);
     const noise = num("noise", .62);
     const swirl = num("swirl", .18);
     const scale = num("scale", 1.25);
     const glow = num("glow", 20);
 
-    ctx.save();
-    jarPath(box);
-    ctx.clip();
-
-    // faint liquid/glass body
-    const liquid = ctx.createLinearGradient(0,box.y,0,box.y+box.h);
-    liquid.addColorStop(0,"rgba(255,255,255,.035)");
-    liquid.addColorStop(.55,"rgba(100,130,200,.025)");
-    liquid.addColorStop(1,"rgba(255,255,255,.06)");
-    ctx.fillStyle = liquid;
-    ctx.fillRect(box.x,box.y,box.w,box.h);
-
     for (const f of flakes) {
-      const wave = Math.sin(t*.00048 + f.phase + f.y*7) * noise;
-      const eddy = Math.cos(t*.00019 + f.phase*1.7 + f.x*9) * swirl;
-      f.vx += (wave*.000085 + eddy*.000055) * dt;
+      const wave = Math.sin(t * .00048 + f.phase + f.y * 7) * noise;
+      const eddy = Math.cos(t * .00019 + f.phase * 1.7 + f.x * 9) * swirl;
+
+      f.vx += (wave * .000075 + eddy * .00005) * dt;
       f.vx *= .985;
-      f.x += f.vx * speed * dt * .06;
-      f.y += f.vy * speed * dt * .06;
+      f.x += f.vx * speed * dt * .06 * f.depth;
+      f.y += f.vy * speed * dt * .06 * f.depth;
       f.angle += f.spin * speed * dt * .04;
 
-      // slow suspended settling with recirculation from the bottom.
-      if (f.y > .965) {
-        f.y = .08 + Math.random()*.08;
-        f.x = .14 + Math.random()*.72;
-        f.vx = (Math.random()-.5)*.02;
+      // Fullscreen recirculation: flakes drift off one edge and quietly return.
+      if (f.y > 1.03) {
+        f.y = -.03;
+        f.x = Math.random();
+        f.vx = (Math.random() - .5) * .02;
       }
-      if (f.x < .08) { f.x=.08; f.vx=Math.abs(f.vx); }
-      if (f.x > .92) { f.x=.92; f.vx=-Math.abs(f.vx); }
+      if (f.x < -.03) f.x = 1.03;
+      if (f.x > 1.03) f.x = -.03;
 
-      const x = box.x + f.x*box.w;
-      const y = box.y + f.y*box.h;
-      const shimmer = .36 + .64*Math.abs(Math.sin(t*.0012*f.twinkle + f.phase));
-      const s = f.size * scale * (1 + shimmer*.32);
+      const x = f.x * width;
+      const y = f.y * height;
+      const shimmer = .28 + .72 * Math.abs(Math.sin(t * .0012 * f.twinkle + f.phase));
+      const s = f.size * scale * (.82 + shimmer * .42) * f.depth;
+      const c = colorFor(f, .28 + shimmer * .65);
 
       ctx.save();
-      ctx.translate(x,y);
+      ctx.translate(x, y);
       ctx.rotate(f.angle);
-      ctx.shadowBlur = glow * (.35 + shimmer*.8);
-      ctx.shadowColor = colorFor(f,.85);
-      ctx.fillStyle = colorFor(f,.35 + shimmer*.64);
+      ctx.shadowBlur = glow * (.28 + shimmer * .7);
+      ctx.shadowColor = c;
+      ctx.fillStyle = c;
+      ctx.strokeStyle = c;
+
       if (f.lane % 3 === 0) {
         ctx.beginPath();
-        ctx.moveTo(0,-s*1.5); ctx.lineTo(s*.72,0); ctx.lineTo(0,s*1.5); ctx.lineTo(-s*.72,0); ctx.closePath();
+        ctx.moveTo(0, -s * 1.5);
+        ctx.lineTo(s * .72, 0);
+        ctx.lineTo(0, s * 1.5);
+        ctx.lineTo(-s * .72, 0);
+        ctx.closePath();
         ctx.fill();
       } else if (f.lane % 3 === 1) {
-        ctx.fillRect(-s*.65,-s*.18,s*1.3,s*.36);
-        ctx.fillRect(-s*.18,-s*.65,s*.36,s*1.3);
+        ctx.lineWidth = Math.max(.55, s * .22);
+        ctx.beginPath();
+        ctx.moveTo(-s, 0);
+        ctx.lineTo(s, 0);
+        ctx.moveTo(0, -s);
+        ctx.lineTo(0, s);
+        ctx.stroke();
       } else {
-        ctx.beginPath(); ctx.arc(0,0,s*.58,0,Math.PI*2); ctx.fill();
+        ctx.beginPath();
+        ctx.arc(0, 0, Math.max(.45, s * .5), 0, Math.PI * 2);
+        ctx.fill();
       }
       ctx.restore();
     }
-    ctx.restore();
-
-    // Glass outline and mouth stay subtle so it still reads as a screensaver.
-    ctx.save();
-    ctx.lineWidth = 1.2;
-    ctx.strokeStyle = "rgba(205,225,255,.18)";
-    ctx.shadowBlur = 14;
-    ctx.shadowColor = "rgba(140,190,255,.12)";
-    jarPath(box);
-    ctx.stroke();
-    ctx.strokeStyle = "rgba(255,255,255,.12)";
-    ctx.beginPath();
-    ctx.moveTo(box.x+box.w*.32,box.y+box.h*.18);
-    ctx.bezierCurveTo(box.x+box.w*.20,box.y+box.h*.36,box.x+box.w*.23,box.y+box.h*.65,box.x+box.w*.29,box.y+box.h*.82);
-    ctx.stroke();
-    ctx.restore();
   }
 
   function setActive(next) {
-    active = next;
+    active = !!next;
     canvas.classList.toggle("active", active);
-    baseCanvas.classList.toggle("glitter-hidden", active);
+    glitterButton.classList.toggle("active", active);
+    glitterButton.textContent = active ? "GLITTER ON" : "GLITTER OFF";
     if (active) buildFlakes(true);
+    else ctx.clearRect(0, 0, width, height);
   }
 
   function applyGlitterPreset() {
-    mode.value = "glitter";
     const values = {
-      count: 420, speed:.42, trails:.86, links:0, attraction:0, repel:.08,
-      noise:.62, swirl:.18, glow:20, symmetry:1, hue:42, hueSpread:145,
-      pulse:.35, scale:1.25
+      count: 420,
+      speed: .42,
+      trails: .86,
+      links: 0,
+      attraction: 0,
+      repel: .08,
+      noise: .62,
+      swirl: .18,
+      glow: 20,
+      symmetry: 1,
+      hue: 42,
+      hueSpread: 145,
+      pulse: .35,
+      scale: 1.25
     };
-    Object.entries(values).forEach(([key,value]) => setControl(key,value));
+    Object.entries(values).forEach(([key, value]) => setControl(key, value));
     setActive(true);
     revealUI();
   }
 
-  glitterButton.addEventListener("click", applyGlitterPreset);
-  mode.addEventListener("change", () => setActive(mode.value === "glitter"));
-
-  // Buttons that deliberately choose another universe should drop the overlay.
-  ["randomize","mutate"].forEach(id => {
-    const button = document.getElementById(id);
-    if (button) button.addEventListener("click", () => setTimeout(() => setActive(mode.value === "glitter"), 0));
+  // Click toggles the overlay. Shift-click reloads the built-in glitter preset.
+  glitterButton.addEventListener("click", event => {
+    if (event.shiftKey) applyGlitterPreset();
+    else setActive(!active);
+    revealUI();
   });
-  const loadPreset = document.getElementById("loadPreset");
-  if (loadPreset) loadPreset.addEventListener("click", () => setTimeout(() => setActive(mode.value === "glitter"), 0));
+
+  // G toggles glitter; Shift+G reapplies the glitter preset.
+  addEventListener("keydown", event => {
+    if (["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement.tagName)) return;
+    if (event.key.toLowerCase() === "g") {
+      if (event.shiftKey) applyGlitterPreset();
+      else setActive(!active);
+    }
+  });
 
   function hideUI() {
     document.body.classList.add("idle-clean");
@@ -261,22 +222,22 @@
     idleTimer = setTimeout(hideUI, 5000);
   }
 
-  ["pointermove","pointerdown","touchstart","wheel","keydown"].forEach(name => {
-    addEventListener(name, revealUI, { passive:true });
+  ["pointermove", "pointerdown", "touchstart", "wheel", "keydown"].forEach(name => {
+    addEventListener(name, revealUI, { passive: true });
   });
   if (panel) panel.addEventListener("input", revealUI);
   if (showPanel) showPanel.addEventListener("click", revealUI);
 
   function frame(t) {
-    const dt = Math.min(40, Math.max(1, t-last));
+    const dt = Math.min(40, Math.max(1, t - last));
     last = t;
-    if (active) drawGlitter(t,dt);
+    if (active) drawGlitter(t, dt);
     requestAnimationFrame(frame);
   }
 
   addEventListener("resize", resize);
   resize();
   revealUI();
-  setActive(mode.value === "glitter");
+  setActive(true);
   requestAnimationFrame(frame);
 })();
