@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stage board arcade files, apply arcade integration, then inject firmware/VERSION."""
+"""Stage standalone clock editor + board arcade, then inject firmware/VERSION."""
 
 from pathlib import Path
 import re
@@ -17,6 +17,14 @@ version_file = firmware_dir / "VERSION"
 version = version_file.read_text(encoding="utf-8").strip()
 if not re.fullmatch(r"\d+\.\d+\.\d+", version):
     raise SystemExit(f"invalid firmware VERSION: {version!r}")
+
+# The standalone clock editor is applied to the fully staged OLED/menu firmware
+# so it can set local date/time directly from the six touch controls without a
+# PC or Wi-Fi connection.
+manual_clock_patch = Path(__file__).with_name("patch_happyjarz_manual_clock.py")
+if not manual_clock_patch.exists():
+    raise SystemExit(f"release staging failed: missing manual clock patch {manual_clock_patch}")
+subprocess.run([sys.executable, str(manual_clock_patch), str(sketch)], check=True)
 
 # Arcade is part of the product firmware now. Copy its normal Arduino translation
 # units into the staged sketch directory, then patch the already-staged OLED/menu
@@ -40,4 +48,4 @@ if count != 1:
     raise SystemExit("release version patch failed: HJ_FW_VERSION marker not found")
 
 sketch.write_text(s, encoding="utf-8")
-print(f"Applied HAPPY JARZ firmware release version {version} with board arcade staged.")
+print(f"Applied HAPPY JARZ firmware release version {version} with manual clock + board arcade staged.")
