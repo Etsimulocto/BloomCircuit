@@ -2,7 +2,7 @@
 
 Pi-first procedural audio lab for HAPPY JARZ and future BloomCircuit builds.
 
-## Current app: BloomTunes Studio v0.3
+## Current app: BloomTunes Studio v0.4
 
 Launch:
 
@@ -10,29 +10,48 @@ Launch:
 python3 BloomTunes/bloomtunes_studio.py
 ```
 
-BloomTunes Studio is a dark-mode, sample-free synth/sequencer intended for tuning sounds by ear on the Raspberry Pi before porting compact sound recipes to the ESP32-S3.
+BloomTunes Studio is a dark-mode, sample-free mono synth/sequencer intended for tuning sounds on the Raspberry Pi before porting compact recipes to the ESP32-S3.
 
 ### Sequencer
 
 - 8 synth tracks
-- 16-step piano-roll style editor
-- 24 visible pitches per track
+- full 88-key MIDI range: A0 through C8
+- four-bar piano-roll editing window
+- songs can store up to 256 bars
+- bar navigation in four-bar pages
 - BPM control
-- note sizes: 1/16, 1/8, 3/16, 1/4
+- note sizes from very short steps through a full bar
 - click a grid cell to place a note
+- placing a note immediately auditions that pitch
 - click an existing note to erase it
+- notes store absolute MIDI pitch
 - per-track waveform: sine, square, triangle, saw, noise
 - per-track volume
-- octave shift
 - pulse width / PWM control
 - attack and release
+- detune
+- harmonics
 - per-track mute
+
+The Pi preview renders the visible four-bar page rather than allocating a giant whole-song Python float buffer during every edit. The song data itself can still span 256 bars.
+
+### Instrument patch bank
+
+Built-in starting patches include:
+
+- Pure Sine
+- Soft Bell
+- Warm Pad
+- PWM Pluck
+- Glass
+- Bass
+- Noise Hit
+
+Instrument patches can also be saved as JSON.
 
 ### Forced mono signal path
 
-All eight tracks are mixed to one mono bus before output. WAV export/playback is one-channel mono so Pi auditioning represents the single-speaker HAPPY JARZ architecture instead of using artificial stereo spread.
-
-Signal path:
+All eight tracks are mixed to one mono bus before effects and playback. The WAV output is one-channel mono so Pi auditioning represents the single-speaker HAPPY JARZ architecture.
 
 ```text
 Track 1 --\
@@ -43,22 +62,55 @@ Track 8 ---/
 
 ### Master effects rack
 
-The end-of-chain rack currently provides:
+End-of-chain controls include:
 
 - master volume
-- LOW / MID / HIGH tone shaping
 - drive / saturation
-- PWM-style rhythmic amplitude modulation: rate + depth
-- lightweight phaser: rate + depth
-- echo: milliseconds + mix
-- low-pass filtering
-- high-pass filtering
+- three parametric-style EQ bands
+  - frequency
+  - Q
+  - gain
+- compressor
+  - threshold
+  - ratio
+  - attack
+  - release
+  - makeup gain
+- tremolo
+  - rate
+  - depth
+- PWM-style rhythmic amplitude modulation
+  - rate
+  - depth
+- phaser
+  - rate
+  - depth
+- echo
+  - milliseconds
+  - mix
+- high-pass filter
+- low-pass filter
 
-The effects intentionally use lightweight algorithms so the useful recipes can later be simplified for the ESP32 rather than depending on a desktop DAW or sample library.
+Reset buttons are provided for EQ, dynamics, modulation, delay/filter, all FX, and the current track.
+
+### FX patch bank
+
+Built-in FX presets include:
+
+- Clean
+- Soft Glow
+- Dream Phaser
+- Rain Wash
+- Deep Calm
+- Sparkle
+- Tremolo Pulse
+- Crunch
+
+FX patches can also be saved as JSON.
 
 ### Song files
 
-SAVE and LOAD use JSON. Songs store BPM, all eight tracks, notes, synth controls and master FX parameters.
+SAVE SONG and LOAD SONG use JSON. Songs store BPM, bar count, all eight tracks, note data, synth controls and master FX parameters.
 
 ## Earlier prototypes
 
