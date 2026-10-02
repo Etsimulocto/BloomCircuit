@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Integrate the HAPPY JARZ board-native arcade into the staged firmware.
+"""Integrate the HAPPY JARZ board-native arcade into the final staged firmware.
 
-Requires the OLED and menu patches to have already run.
+Requires the OLED/menu/saver patch stack to have already run.
 Uses the proven OLED layer:
 - SSD1306 128x64
 - U8g2
@@ -10,9 +10,12 @@ Uses the proven OLED layer:
 - I2C address 0x3C
 
 Uses the proven six-touch edge layer rather than reading touch pins itself.
-This patch deliberately avoids replacing the existing HOME/menu control block;
-it gates that block while the arcade is active and inserts a separate arcade
-input branch immediately before it.
+
+IMPORTANT: this patch intentionally does NOT search for or rewrite the later
+HOME/menu JAR-control block. That block is reshaped by several staging patches.
+Instead, arcade ownership is injected immediately after the six qualified input
+states are computed at the top of serviceInputs(). Arcade-owned input returns
+early, so no downstream HOME/menu/light/saver action can leak through.
 """
 
 from pathlib import Path
@@ -30,6 +33,9 @@ if '#include "happyjarz_arcade.h"' not in s:
         raise SystemExit("arcade patch failed: U8g2 include not found; OLED patch must run first")
     s = s.replace(marker, marker + '#include "happyjarz_arcade.h"\n', 1)
 
+# ---------------------------------------------------------------------------
+# U8g2 -> board-native arcade display adapter
+# ---------------------------------------------------------------------------
 marker = '''static bool oledDirty = true;
 static unsigned long oledLastDrawMs = 0;
 '''
@@ -91,6 +97,10 @@ static const HjArcadeDisplay ARCADE_DISPLAY = {
 '''
 s = s.replace(marker, marker + adapter, 1)
 
+# ---------------------------------------------------------------------------
+# Replace only the known OLED GAMES placeholder. This marker is supplied by
+# patch_happyjarz_oled.py and is intentionally independent of serviceInputs().
+# ---------------------------------------------------------------------------
 old_games = '''static void oledRenderGames() {
   oledCentered(13, "GAMES");
   oledCentered(29, "COMING SOON");
@@ -109,21 +119,32 @@ if old_games not in s:
     raise SystemExit("arcade patch failed: GAMES placeholder screen not found")
 s = s.replace(old_games, new_games, 1)
 
-jar_marker = '  if (inputMode == "JAR") {\n'
-if jar_marker not in s:
-    raise SystemExit("arcade patch failed: JAR input entry not found")
+# ---------------------------------------------------------------------------
+# Arcade input ownership.
+# Anchor only to the stable top of serviceInputs(): the six qualified readings.
+# Do NOT depend on the shape or wording of any later JAR/menu/saver block.
+# ---------------------------------------------------------------------------
+service_marker = '''static void serviceInputs() {
+  bool q[INPUT_COUNT];
+  for (uint8_t i=0;i<INPUT_COUNT;++i) q[i]=updateInputState(i);
+'''
+if service_marker not in s:
+    raise SystemExit("arcade patch failed: stable serviceInputs input-scan marker not found")
 
-arcade_input = r'''  // Enter the arcade directly from the existing GAMES detail page.
-  // This sits outside the normal menu block so it does not depend on that
-  // block's exact wording or layout.
-  if (inputMode == "JAR" && !hjArcadeActive() && uiScreen == UI_GAMES &&
+arcade_input = r'''
+
+  // HAPPY ARCADE owns controls before any downstream HOME/menu/saver routing.
+  // Enter only from the visible GAMES page, and never steal the first touch
+  // from an active screensaver.
+  if (!hjArcadeActive() && !hjScreensaverActive && uiScreen == UI_GAMES &&
       q[IN_A] && !latched[IN_A]) {
     hjArcadeEnter();
+    for (uint8_t i=0;i<INPUT_COUNT;++i) latched[i]=q[i];
+    oledDirty = true;
+    return;
   }
 
-  if (inputMode == "JAR" && hjArcadeActive()) {
-    // ARCADE MODE: only consume edges already qualified by the proven touch
-    // layer. Normal HOME/menu/light actions are gated below while active.
+  if (hjArcadeActive()) {
     if (q[IN_UP] && !latched[IN_UP]) hjArcadeButton(HJ_BTN_UP);
     if (q[IN_DOWN] && !latched[IN_DOWN]) hjArcadeButton(HJ_BTN_DOWN);
     if (q[IN_LEFT] && !latched[IN_LEFT]) hjArcadeButton(HJ_BTN_LEFT);
@@ -131,7 +152,7 @@ arcade_input = r'''  // Enter the arcade directly from the existing GAMES detail
     if (q[IN_A] && !latched[IN_A]) hjArcadeButton(HJ_BTN_A);
     if (q[IN_B] && !latched[IN_B]) hjArcadeButton(HJ_BTN_B);
 
-    // Long B always escapes the arcade back to the GAMES page.
+    // Long B is the hard escape back to the normal GAMES detail page.
     if (q[IN_B] && !bHomeSent && inputs[IN_B].qualifiedMs &&
         millis() - inputs[IN_B].qualifiedMs >= 1000) {
       bHomeSent = true;
@@ -142,11 +163,24 @@ arcade_input = r'''  // Enter the arcade directly from the existing GAMES detail
       uiScroll = 0;
       oledDirty = true;
     }
+
+    // Preserve the proven one-action-per-touch/release edge state even though
+    // downstream HOME/menu handling is intentionally skipped this cycle.
+    for (uint8_t i=0;i<INPUT_COUNT;++i) latched[i]=q[i];
+
+    // Keep optional raw-input telemetry usable while playing.
+    if (inputStream && Serial && millis()-lastInputStreamMs>=100) {
+      lastInputStreamMs=millis();
+      printInputTelemetry();
+    }
+    return;
   }
-
 '''
-s = s.replace(jar_marker, arcade_input + '  if (inputMode == "JAR" && !hjArcadeActive()) {\n', 1)
+s = s.replace(service_marker, service_marker + arcade_input, 1)
 
+# ---------------------------------------------------------------------------
+# Initialize after known-good OLED init.
+# ---------------------------------------------------------------------------
 setup_marker = '''  oledInit();
   if(!initApa106Rmt())'''
 setup_repl = '''  oledInit();
@@ -156,6 +190,9 @@ if setup_marker not in s:
     raise SystemExit("arcade patch failed: oledInit setup marker not found")
 s = s.replace(setup_marker, setup_repl, 1)
 
+# ---------------------------------------------------------------------------
+# Arcade owns display refresh while active; normal OLED service resumes on exit.
+# ---------------------------------------------------------------------------
 loop_marker = '''  serviceTimer();
   serviceOled();
   static bool timeStarted=false;'''
