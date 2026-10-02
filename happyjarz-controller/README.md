@@ -1,12 +1,10 @@
 # HAPPY JARZ Controller
 
-**Current release pair:** desktop app **v1.1.0** + firmware **v0.6.0**
+**Current release pair:** desktop app **v1.1.0** + firmware **v0.9.3**
 
 This subsystem is the PC/Raspberry Pi field-service and control layer for the HAPPY JARZ powered stand. It sits above the known-good ESP32-S3 light/touch/OLED hardware layer and is designed so desktop-side changes do not casually rewrite the proven APA106 timing.
 
 ## Release/version discipline
-
-Version numbers are now mandatory release data, not decorative strings.
 
 Authoritative files:
 
@@ -19,32 +17,27 @@ Current values:
 
 ```text
 App      1.1.0
-Firmware 0.6.0
+Firmware 0.9.3
 ```
 
-See [`VERSIONING.md`](VERSIONING.md) for the required bump rules. Any runtime or behavior-changing app/firmware change must bump the relevant version before merge. If a change affects both sides, bump both.
-
-Legacy filenames such as `happyjarz_controller_v0_3_3.py`, `happyjarz_integrated_v0_5.ino`, and `flash_happyjarz_v0_5.sh` are retained for compatibility only. **They are not release-version sources.**
-
-The desktop launcher reads the app release from `VERSION`. The flasher reads `firmware/VERSION`, injects it into `HJ_FW_VERSION`, and the staged verifier refuses to upload a binary whose embedded version does not match.
+Legacy filenames such as `happyjarz_controller_v0_3_3.py`, `happyjarz_integrated_v0_5.ino`, and `flash_happyjarz_v0_5.sh` are compatibility names only. The flasher reads `firmware/VERSION`, injects it into `HJ_FW_VERSION`, and verifies the final staged build before upload.
 
 ## Current proven behavior
 
-- identify a Jar over USB serial
-- reconnect after unplug/replug
-- independently control Light 1 and Light 2 colors
-- enforce the current **50% maximum brightness**
-- expose the expanded sensory/holiday/color pattern library
-- watch six capacitive-touch inputs live
-- run RGB / touch / input diagnostics
-- configure Wi-Fi and scan networks visible to the ESP32-S3
-- set/sync the clock over Wi-Fi or directly from the host computer over USB
-- save persistent Jar settings
-- keep service logs
-- show Fuel Gauge / `GET POWER` telemetry
-- run OLED menus and procedural screensavers
-- store custom marquee sayings
-- use a lightweight USB watcher to open the desktop controller when a Jar is detected
+- identify a Jar over USB serial and reconnect after unplug/replug
+- independent Light 1 / Light 2 color control
+- full **0-100% LED brightness range** in firmware
+- on-device SOLID brightness tuning under `MENU -> LIGHTS`
+- expanded sensory/holiday/color pattern library
+- six capacitive-touch controls
+- OLED HOME/menu/status pages
+- standalone CLOCK date/time editor with no PC or Wi-Fi required while powered
+- SETTINGS editors for ALARM and TIMER
+- board-native HAPPY ARCADE with seven mini-games
+- Fuel Gauge / `GET POWER` telemetry
+- 30-second screensaver timeout with SAYINGS / SPIRAL / TRIPPY / PARTICLES
+- persistent custom marquee sayings
+- transient desktop MENU/GAME input modes that fall back to local JAR control when the USB CDC session disappears
 
 ## Bench-proven hardware map
 
@@ -54,11 +47,21 @@ Controller: **ESP32-S3 SuperMini**
 
 - GPIO7 -> 220 ohm -> APA106 #1 DIN
 - APA106 #1 DOUT -> APA106 #2 DIN
-- APA106 VCC -> **5V**
 - common GND with ESP32
 - proven byte order: **RGB**
+- ESP32 data is 3.3V logic
 
-The tested lamps accept ESP32-S3 3.3V GPIO data while powered from 5V. Do not route 5V into an ESP32 GPIO.
+Bench update, October 2, 2026:
+
+- the current two-lamp prototype operated through the full **0-100%** firmware range with lamp VCC at **3.3V**
+- the same prototype also operated through the full **0-100%** range with lamp VCC at **5V**
+- no blue-collapse / blue-shift was observed during this test
+- **24% at 3.3V** was already visually plenty for normal jar use
+- **5V at 100% is extremely bright** and is better treated as an intentional high-output / room-glow mode than a normal default
+
+The old 50% firmware hard cap is therefore retired. The product can keep the full range available while using a much lower normal brightness setting.
+
+Do not route 5V into an ESP32 GPIO. The successful 5V test applies to the APA106 lamp supply, not the ESP32 data pin.
 
 Known-good RMT timing:
 
@@ -66,8 +69,6 @@ Known-good RMT timing:
 - bit 0 ~= 4 ticks high / 14 low
 - bit 1 ~= 14 high / 4 low
 - ~100 us reset/latch
-
-Generic NeoPixel/FastLED attempts were not the proven path for this hardware.
 
 ### Capacitive touch
 
@@ -80,16 +81,16 @@ Physical map:
 - GPIO1 = A
 - GPIO2 = B
 
-HOME behavior:
+Current HOME behavior:
 
-- A = next Light 1 palette color
-- B = next Light 2 palette color
 - UP = next pattern
 - DOWN = previous pattern
-- RIGHT = enter OLED menu
-- LEFT = no HOME action
+- LEFT = next Light 1 color
+- RIGHT = next Light 2 color
+- A = open OLED menu
+- B = no HOME action
 
-The proven touch layer uses direct `touchRead()`, roughly +20% thresholding, ~60 ms qualification, slow baseline drift and one action per touch/release cycle. Do not reintroduce the abandoned hysteresis/cooldown/release experiment that caused same-button repeat failures.
+The proven touch layer uses direct `touchRead()`, roughly +20% thresholding, ~60 ms qualification, slow baseline drift and one action per touch/release cycle.
 
 ### OLED
 
@@ -103,7 +104,46 @@ Current 4-wire I2C OLED:
 - U8g2 renderer
 - 128x64 layout
 
-The HOME footer keeps `A MENU` visible and cycles power information instead of the old early-build `ALARM OFF` footer.
+## MENU behavior
+
+Main menu includes:
+
+- CLOCK
+- LIGHTS
+- GAMES
+- SETTINGS
+- SYSTEM
+
+### CLOCK
+
+CLOCK can be set entirely on the board:
+
+- LEFT / RIGHT = choose MONTH / DAY / YEAR / HOUR / MINUTE
+- UP / DOWN = change selected value
+- A = save
+- B = cancel/back
+
+Without a battery-backed RTC, the ESP32 cannot account for elapsed time while fully powered off.
+
+### LIGHTS / SOLID brightness
+
+The current board-local brightness editor exposes the real 0-100% range:
+
+- UP / DOWN = +/-5%
+- LEFT / RIGHT = +/-1%
+- A = save
+- B = save/back
+
+Bench preference for normal sensory use is approximately **24% at 3.3V**. Higher values remain available for brighter wall/ceiling illumination.
+
+### SETTINGS
+
+Current SETTINGS entries:
+
+- ALARM
+- TIMER
+
+The earlier DISPLAY brightness editor was removed because it did not provide a useful product control for this OLED module/build.
 
 ## Battery / power telemetry
 
@@ -114,7 +154,7 @@ Current prototype sensing path:
 - provisional `BATTERY_CAL_FACTOR = 1.370`
 - battery percentage is voltage-estimated, not coulomb counted
 
-October 2, 2026 bench reference with charged battery-only operation:
+Bench reference:
 
 ```text
 V 4.16
@@ -122,169 +162,45 @@ BAT 98%
 PWR BAT
 ```
 
-HOME cycles about every 2.5 seconds.
+`CHG ?` is intentional when USB is present because the charger IC charging/full signal is not wired to an ESP32 GPIO.
 
-Battery-only:
-
-```text
-BAT xx%
-V x.xx
-PWR BAT
-```
-
-USB present:
-
-```text
-BAT --%
-PWR USB
-CHG ?
-```
-
-`CHG ?` is intentional. The charger IC charging/full signal is not wired to an ESP32 GPIO, so firmware must not invent a charger state from USB CDC presence.
-
-## Lighting + pattern library
-
-Current maximum LED brightness is **50%**.
+## Pattern library
 
 Current patterns:
 
 `SOLID`, `FADE`, `PULSE`, `RAINBOW`, `RANDOM`, `HUE_FADE`, `DUAL_HUE`, `BREATH`, `DRIFT`, `AURORA`, `OCEAN`, `LAVENDER`, `SUNSET`, `CHRISTMAS`, `HALLOWEEN`, `VALENTINE`, `EASTER`, `FOURTH`, `THANKSGIVING`, `CANDY`, `GALAXY`, `FIRE`, `ICE`, `FOREST`, `NEON`, `TWINKLE`, `SPARKLE`, `COLOR_SWAP`, `COMET`, `FIREFLY`, `BUBBLEGUM`, `OFF`.
 
-Many modes calculate continuous RGB values rather than stepping only through the small physical-button palette.
-
 ## OLED screensavers
 
-The firmware enters screensaver mode after **30 seconds of inactivity**.
+Screensaver mode starts after **30 seconds of inactivity**.
 
 Modes:
 
-- **SAYINGS** — scrolling built-in/custom marquee
-- **SPIRAL** — procedural spiral generator
-- **TRIPPY** — procedural waves/rings/bars/fields/lattices
-- **PARTICLES** — procedural particle-universe saver
+- SAYINGS
+- SPIRAL
+- TRIPPY
+- PARTICLES
 
-Saver controls:
+Controls:
 
 - LEFT / RIGHT = previous / next saver
 - B = exit
 - SPIRAL/TRIPPY/PARTICLES: UP/DOWN = speed
 - SPIRAL/TRIPPY/PARTICLES: A = reseed / new universe
 
-Custom sayings:
-
-- 8 persistent slots
-- up to 96 characters each
-- `BUILTIN`, `CUSTOM`, or `MIXED`
-- stored in ESP32 Preferences
-
-## Current desktop controller
-
-The compatibility launcher target remains:
-
-```text
-happyjarz_controller_v0_3_3.py
-```
-
-but the actual displayed/reported app release is read from:
-
-```text
-happyjarz-controller/VERSION
-```
-
-Current app release: **v1.1.0**.
-
-The SERVICE tab includes:
-
-- Battery %
-- Voltage
-- USB DATA IN/OUT
-- Charge status
-- Raw ADC mV
-- Refresh Power
-- automatic `GET POWER` polling
-
-## Raspberry Pi split-app layout
-
-The normal Pi layout is:
-
-```text
-~/BloomCircuit          # main Git checkout / wiring editor
-~/HappyJarzController   # current controller snapshot
-~/BloomTunes            # audio/meditation snapshot
-~/BloomSaver            # generative Glitter snapshot
-```
-
-Refresh all snapshots from the current repository branches with:
-
-```bash
-cd ~/BloomCircuit
-git checkout main
-git pull
-bash ./tools/split_pi_apps.sh
-```
-
-Using `bash` explicitly is safe even if a local checkout has temporarily lost the executable bit.
-
-The split script refreshes `~/HappyJarzController`, rewrites the Pi login autostart entry to use that stable path, and restarts the watcher.
-
-Manual app launch:
-
-```bash
-cd ~/HappyJarzController
-python3 happyjarz_controller_v0_3_3.py
-```
-
-Expected title:
-
-```text
-HAPPY JARZ Controller v1.1.0
-```
-
-### Desktop icon
-
-The Pi desktop launcher must point at the current split controller copy, not the retired `happyjarz_os.py` path.
-
-Expected launcher command:
-
-```text
-Exec=/usr/bin/python3 /home/quarterbitgames/HappyJarzController/happyjarz_controller_v0_3_3.py
-Path=/home/quarterbitgames/HappyJarzController
-```
+Custom sayings provide 8 persistent slots up to 96 characters each with `BUILTIN`, `CUSTOM`, and `MIXED` source modes.
 
 ## Current Pi flash workflow
 
-Refresh the controller snapshot first, then flash from that same copy:
+From the feature branch during current development:
 
 ```bash
 cd ~/BloomCircuit
-git checkout main
 git pull
-bash ./tools/split_pi_apps.sh
-bash ~/HappyJarzController/tools/flash_happyjarz_v0_5.sh
+bash happyjarz-controller/tools/flash_happyjarz_v0_5.sh
 ```
 
-The helper now:
-
-1. reads the authoritative firmware release from `firmware/VERSION`
-2. stops the controller/watcher so the serial port is free
-3. stages the known-good integrated base sketch
-4. applies compatibility, touch, OLED/menu, pattern, screensaver, sayings, particle, Fuel Gauge and HOME power-cycle layers
-5. injects the release firmware version into `HJ_FW_VERSION`
-6. verifies the **final staged sketch before compile/upload**
-7. refuses to flash if required features or the expected version are missing
-8. compiles and uploads only after verification passes
-9. restarts the plug watcher
-
-Current firmware release: **v0.6.0**.
-
-Expected verification output includes:
-
-```text
-HAPPY JARZ staged firmware verification: PASS
-  firmware version 0.6.0
-```
-
-Do not flash if the PASS line is absent.
+The helper stages the compatibility base, applies the current patch chain, verifies the final sketch, compiles with Arduino CLI, uploads, and restarts the watcher.
 
 Current Arduino CLI FQBN:
 
@@ -292,24 +208,7 @@ Current Arduino CLI FQBN:
 esp32:esp32:esp32s3:CDCOnBoot=cdc
 ```
 
-## BloomSaver integration target
-
-`BloomSaver/` on `main` is the Glitter-first visual engine intended to integrate with the controller.
-
-The controller should hand BloomSaver a small representative Jar palette at startup. BloomSaver's `MATCH JAR COLORS ON START` behavior is a startup handoff only; user Glitter controls remain free afterward.
-
-Example browser bridge:
-
-```javascript
-window.BloomSaver.setJarPalette({
-  name: "OCEAN",
-  colors: ["#0066ff", "#00d8ff", "#6f4cff"]
-});
-```
-
 ## Logs
-
-Pi service logs:
 
 ```text
 ~/.happyjarz/plug_watch.log
@@ -318,18 +217,10 @@ Pi service logs:
 ~/.happyjarz/controller.log
 ```
 
-These are the first files to inspect when a remote unit will not auto-open or connect.
-
 ## Protocol + firmware
 
 See [`PROTOCOL.md`](PROTOCOL.md), [`APP_PROTOCOL_V0_3.md`](APP_PROTOCOL_V0_3.md), [`firmware/README.md`](firmware/README.md), and [`VERSIONING.md`](VERSIONING.md).
 
 ## Failure boundary
 
-Preserve known-good layers.
-
-If local LED/touch/OLED behavior works but the desktop UI does not, debug watcher/controller/protocol deployment first.
-
-If local LED/touch/OLED behavior fails, debug firmware/hardware before changing the desktop app.
-
-**Every feature should carry its own diagnostic path.**
+Preserve known-good layers. If local LED/touch/OLED behavior works but the desktop UI does not, debug watcher/controller/protocol deployment first. If local LED/touch/OLED behavior fails, debug firmware/hardware before changing the desktop app.
