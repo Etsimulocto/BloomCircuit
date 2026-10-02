@@ -2,9 +2,9 @@
 set -euo pipefail
 
 # HAPPY JARZ v0.5 safe Pi flash helper.
-# Stops the USB controller/watcher so /dev/ttyACM* is free, stages the v0.5
-# sketch, applies compatibility + Wi-Fi + USB clock + touch + OLED/menu +
-# sensory pattern + screensaver patches, compiles, uploads, then restarts watcher.
+# Stops the USB controller/watcher so /dev/ttyACM* is free, stages the current
+# firmware patch chain, verifies the FINAL staged sketch, compiles, uploads,
+# then restarts the watcher.
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONTROLLER_DIR="$(cd "$HERE/.." && pwd)"
@@ -19,6 +19,7 @@ SAYINGS_PATCH="$HERE/patch_happyjarz_sayings_v2.py"
 CUSTOM_SAYINGS_PATCH="$HERE/patch_happyjarz_custom_sayings.py"
 SAVER_CONTROLS_PATCH="$HERE/patch_happyjarz_saver_controls.py"
 SAVER_PROTOCOL_PATCH="$HERE/patch_happyjarz_saver_protocol.py"
+VERIFY_STAGE="$HERE/verify_happyjarz_staged_v0_5.py"
 WORK="$HOME/hjflash/happyjarz_integrated_v0_5"
 SKETCH="$WORK/happyjarz_integrated_v0_5.ino"
 FQBN="esp32:esp32:esp32s3:CDCOnBoot=cdc"
@@ -28,7 +29,7 @@ if ! command -v arduino-cli >/dev/null 2>&1; then
   exit 1
 fi
 
-for required in "$SRC" "$TOUCH_PATCH" "$OLED_PATCH" "$MENU_PATCH" "$PATTERN_PATCH" "$SCREENSAVER_PATCH" "$SAYINGS_PATCH" "$CUSTOM_SAYINGS_PATCH" "$SAVER_CONTROLS_PATCH" "$SAVER_PROTOCOL_PATCH"; do
+for required in "$SRC" "$TOUCH_PATCH" "$OLED_PATCH" "$MENU_PATCH" "$PATTERN_PATCH" "$SCREENSAVER_PATCH" "$SAYINGS_PATCH" "$CUSTOM_SAYINGS_PATCH" "$SAVER_CONTROLS_PATCH" "$SAVER_PROTOCOL_PATCH" "$VERIFY_STAGE"; do
   if [[ ! -f "$required" ]]; then
     echo "ERROR: required file missing: $required"
     exit 1
@@ -49,8 +50,9 @@ if [[ -z "$PORT" ]]; then
   exit 1
 fi
 
-echo "HAPPY JARZ v0.5 flasher + OLED menus + sensory patterns + screensavers"
+echo "HAPPY JARZ v0.5 CURRENT flasher"
 echo "Repo: $REPO"
+echo "Controller source: $CONTROLLER_DIR"
 echo "Port: $PORT"
 echo
 
@@ -60,8 +62,10 @@ pkill -f '[h]appyjarz_plug_watch.py' 2>/dev/null || true
 sleep 1
 
 mkdir -p "$WORK"
+rm -f "$SKETCH"
 cp "$SRC" "$SKETCH"
 
+echo "Staging compatibility + Wi-Fi/clock support..."
 sed -i \
   -e 's/static bool updateInputState(InputIndex idx)/static bool updateInputState(uint8_t idx)/' \
   -e 's/updateInputState((InputIndex)i)/updateInputState(i)/' \
@@ -218,6 +222,7 @@ s = s.replace(old_loop, new_loop, 1)
 p.write_text(s, encoding="utf-8")
 PY
 
+echo "Applying current HAPPY JARZ patch chain..."
 python3 "$TOUCH_PATCH" "$SKETCH"
 python3 "$OLED_PATCH" "$SKETCH"
 python3 "$MENU_PATCH" "$SKETCH"
@@ -226,6 +231,9 @@ python3 "$SCREENSAVER_PATCH" "$SKETCH"
 python3 "$SAYINGS_PATCH" "$SKETCH"
 python3 "$CUSTOM_SAYINGS_PATCH" "$SKETCH"
 python3 "$SAVER_CONTROLS_PATCH" "$SKETCH"
+# SAVER_PROTOCOL intentionally applies the later smooth-drift, PARTICLES,
+# Fuel Gauge, expanded happy sayings, HOME power-cycle and 30-second saver
+# layers. Do not duplicate those patches here.
 python3 "$SAVER_PROTOCOL_PATCH" "$SKETCH"
 
 sed -i \
@@ -233,19 +241,24 @@ sed -i \
   -e 's/if(touchStreamCompat && millis()-lastTouchCompatMs>=100)/if(touchStreamCompat \&\& Serial \&\& millis()-lastTouchCompatMs>=100)/' \
   "$SKETCH"
 
+echo
+echo "Verifying FINAL staged firmware before compile/upload..."
+python3 "$VERIFY_STAGE" "$SKETCH"
+echo
+
 if ! arduino-cli lib list | grep -q '^U8g2[[:space:]]'; then
   echo "Installing U8g2 OLED library..."
   arduino-cli lib install U8g2
 fi
 
-echo "Compiling..."
+echo "Compiling VERIFIED staged firmware..."
 arduino-cli compile --fqbn "$FQBN" "$WORK"
 
-echo "Uploading..."
+echo "Uploading VERIFIED staged firmware..."
 arduino-cli upload -p "$PORT" --fqbn "$FQBN" "$WORK"
 
 echo
 echo "Upload complete. Restarting HAPPY JARZ plug watcher..."
 nohup python3 "$CONTROLLER_DIR/happyjarz_plug_watch.py" \
   >> "$HOME/.happyjarz/plug_watch_manual_start.log" 2>&1 &
-echo "Done. 50% max brightness; sensory patterns + screensavers + editable marquee sayings + procedural art controls enabled."
+echo "Done. Current build verified: Fuel Gauge + HOME power cycle + 30s saver + expanded patterns/particles present."
