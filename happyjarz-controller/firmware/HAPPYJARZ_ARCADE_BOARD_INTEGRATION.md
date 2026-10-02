@@ -1,74 +1,74 @@
-# HAPPY JARZ Arcade — Board Integration Boundary
+# HAPPY JARZ Arcade — Board Integration
 
-Status: board-native arcade logic is present in `happyjarz_arcade.h/.cpp`.
+Status: board-native arcade logic is present in `happyjarz_arcade.h/.cpp` and is now staged automatically by the standard firmware flasher.
 
-## Proven layers that must remain intact
+## Proven layers preserved
 
-- APA106 custom RMT layer from firmware v0.5
+- APA106 custom RMT layer
 - GPIO7 LED data path
 - six-input capacitive calibration/debounce layer
-- input map:
-  - GPIO4 = UP
-  - GPIO5 = DOWN
-  - GPIO9 = LEFT
-  - GPIO10 = RIGHT
-  - GPIO1 = A / SELECT
-  - GPIO2 = B / BACK; hold B = HOME
-- USB protocol / Wi-Fi / clock / alarm / timer services
+- USB protocol / Wi-Fi / clock / alarm / timer / screensaver services
 
-## Arcade input bridge
+Confirmed input map:
 
-Firmware v0.5 already computes edge-triggered input events in `serviceInputs()` using the `latched[]` array.
+- GPIO4 = UP
+- GPIO5 = DOWN
+- GPIO9 = LEFT
+- GPIO10 = RIGHT
+- GPIO1 = A / SELECT
+- GPIO2 = B / BACK; hold B = HOME
 
-When `inputMode == "MENU"` or `inputMode == "GAME"`, each new qualified edge should call:
+The arcade consumes the existing qualified edge events. It does not call `touchRead()` or duplicate touch calibration.
 
-```cpp
-if (q[IN_UP]    && !latched[IN_UP])    hjArcadeButton(HJ_BTN_UP);
-if (q[IN_DOWN]  && !latched[IN_DOWN])  hjArcadeButton(HJ_BTN_DOWN);
-if (q[IN_LEFT]  && !latched[IN_LEFT])  hjArcadeButton(HJ_BTN_LEFT);
-if (q[IN_RIGHT] && !latched[IN_RIGHT]) hjArcadeButton(HJ_BTN_RIGHT);
-if (q[IN_A]     && !latched[IN_A])     hjArcadeButton(HJ_BTN_A);
-if (q[IN_B]     && !latched[IN_B])     hjArcadeButton(HJ_BTN_B);
-```
+## Confirmed OLED layer
 
-The existing one-second B hold should additionally call:
+The firmware README and OLED patch define the current known-good display path:
 
-```cpp
-hjArcadeButton(HJ_BTN_HOME);
-```
+- SSD1306 128x64 monochrome OLED
+- U8g2 renderer
+- I2C address `0x3C`
+- SDA = GPIO8
+- SCL = GPIO6
+- VCC = 3.3V
+- GND = GND
 
-Do not duplicate touch calibration inside the arcade module.
-
-## Main loop bridge
-
-When arcade mode is active:
+The existing OLED initialization remains authoritative:
 
 ```cpp
-hjArcadeService(millis());
+Wire.begin(8, 6);
+Wire.setClock(400000);
+U8G2_SSD1306_128X64_NONAME_F_HW_I2C oledSsd1306(U8G2_R0, U8X8_PIN_NONE);
+oledSsd1306.setI2CAddress(0x3C << 1);
 ```
 
-The existing pattern/alarm/timer/serial services can continue to run non-blocking around it.
+The arcade uses a small `HjArcadeDisplay` adapter bound directly to that existing U8g2 object. The game engine does not own or replace OLED initialization.
 
-## OLED adapter — intentionally not guessed
+## Menu integration
 
-The 128x64 OLED is confirmed at I2C address `0x3C`, but the known-good ESP32 OLED source and exact SDA/SCL GPIO assignments are not currently present in GitHub. Firmware v0.5 explicitly documents this gap.
+Normal HOME behavior is preserved.
 
-Therefore the arcade uses `HjArcadeDisplay`, a small rendering interface:
+Path into the arcade:
 
-```cpp
-struct HjArcadeDisplay {
-  void (*clear)();
-  void (*pixel)(int16_t x, int16_t y, bool on);
-  void (*line)(int16_t x0, int16_t y0, int16_t x1, int16_t y1, bool on);
-  void (*rect)(int16_t x, int16_t y, int16_t w, int16_t h, bool fill, bool on);
-  void (*text)(int16_t x, int16_t y, const char *s, uint8_t size);
-  void (*present)();
-};
+```text
+HOME
+  -> RIGHT
+MAIN MENU
+  -> GAMES
+  -> A
+HAPPY ARCADE
 ```
 
-Bind those seven functions to the already-proven OLED driver once its source is recovered. Do **not** replace the proven OLED initialization merely to make the games compile.
+Inside the arcade:
 
-## Games currently board-native
+- UP/DOWN = menu navigation or game-specific vertical control
+- LEFT/RIGHT = game-specific horizontal control
+- A = select / primary action
+- B = back / game-specific secondary action where used
+- hold B = HOME escape back to the normal menu layer
+
+When the arcade is active, its controls are captured so light/menu actions do not leak through.
+
+## Board-native games
 
 1. Catch the Glitter
 2. Glitter Dodge
@@ -78,13 +78,26 @@ Bind those seven functions to the already-proven OLED driver once its source is 
 6. Meteor Tap
 7. Bloom Runner
 
-## Runner controls
+Bloom Runner controls:
 
 - UP / DOWN = vertical lane
 - LEFT / RIGHT = move runner backward / forward
 - A = jump
 - B = duck
 
-## Next safe hardware step
+## Standard flash staging
 
-Recover the currently flashed/known-good OLED initialization or its exact SDA/SCL pins, bind the seven display callbacks, compile as a new firmware version, and run the display diagnostic before enabling the arcade menu.
+`patch_happyjarz_release_version.py` now performs the final arcade staging step automatically:
+
+1. copy `happyjarz_arcade.h` into the Arduino sketch directory
+2. copy `happyjarz_arcade.cpp` into the Arduino sketch directory
+3. run `patch_happyjarz_arcade.py` against the fully staged firmware
+4. inject the authoritative release number from `firmware/VERSION`
+
+This means the existing normal flash command remains the product path; no manual arcade file copying is required.
+
+## Release
+
+Arcade integration is a firmware behavior change and therefore bumps the release to **0.7.0**.
+
+Before uploading, the standard staged-firmware verifier must still report PASS. Do not flash if verification or compilation fails.
