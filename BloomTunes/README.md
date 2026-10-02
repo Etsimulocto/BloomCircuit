@@ -2,94 +2,78 @@
 
 Pi-first procedural audio lab for HAPPY JARZ and future BloomCircuit builds.
 
-## Goal
+## Current app: BloomTunes Studio v0.3
 
-Prototype sounds on the Raspberry Pi using generated tones/noise instead of stored samples, tune them by ear, save the successful settings as tiny JSON recipes, then port those recipes to the ESP32-S3.
-
-## BloomTunes Synth Lab
-
-Launch the graphical tuning app with:
+Launch:
 
 ```bash
-python3 BloomTunes/bloomtunes_app.py
+python3 BloomTunes/bloomtunes_studio.py
 ```
 
-The app uses Tkinter and the Python standard library only. It renders temporary 44.1 kHz stereo WAV previews and plays them through the first available player: `aplay`, `paplay`, or `ffplay`.
+BloomTunes Studio is a dark-mode, sample-free synth/sequencer intended for tuning sounds by ear on the Raspberry Pi before porting compact sound recipes to the ESP32-S3.
 
-### Controls
+### Sequencer
 
-**Oscillator**
-- Modes: Tone, Drone, Chimes, Rain, Wind, Particles, Galaxy
-- Waveforms: sine, square/PWM, triangle, saw, noise
-- Base frequency
-- Detune in cents
-- Pulse width
-- Harmonic count
-- Harmonic falloff
-- Master level
+- 8 synth tracks
+- 16-step piano-roll style editor
+- 24 visible pitches per track
+- BPM control
+- note sizes: 1/16, 1/8, 3/16, 1/4
+- click a grid cell to place a note
+- click an existing note to erase it
+- per-track waveform: sine, square, triangle, saw, noise
+- per-track volume
+- octave shift
+- pulse width / PWM control
+- attack and release
+- per-track mute
 
-**Envelope**
-- Attack
-- Decay
-- Sustain
-- Release
+### Forced mono signal path
 
-**Modulation / filtering**
-- Amplitude LFO rate and depth
-- Vibrato rate and depth
-- Noise mix
-- Low-pass amount
-- High-pass amount
+All eight tracks are mixed to one mono bus before output. WAV export/playback is one-channel mono so Pi auditioning represents the single-speaker HAPPY JARZ architecture instead of using artificial stereo spread.
 
-**Texture / performance**
-- Event density
-- Randomness
-- Preview duration
-- Random seed
-- Reserved glide control for a later engine revision
+Signal path:
 
-### Factory patches
-
-- Pure 528
-- Warm Drone
-- Soft Chimes
-- Rain
-- Wind
-- Particles
-- Galaxy
-
-The **SOLFEGGIO** button cycles through:
-
-`174, 285, 396, 417, 528, 639, 741, 852, 963 Hz`
-
-**SAVE PATCH** writes the current control settings to JSON. These files are intended to become the compact source-of-truth sound recipes for the later ESP32 implementation.
-
-## Command-line prototype
-
-The original v0.1 sound generator remains available:
-
-```bash
-python3 BloomTunes/bloomtunes.py
+```text
+Track 1 --\
+Track 2 ---\
+...         > MONO MIX -> MASTER FX -> MONO WAV -> Pi audio output
+Track 8 ---/
 ```
 
-It provides simple procedural chimes, rain, wind, particles, and galaxy previews.
+### Master effects rack
 
-## Design approach
+The end-of-chain rack currently provides:
 
-BloomTunes deliberately does not depend on prerecorded WAV/MP3 sound libraries. Sound is generated mathematically from oscillator frequencies, pulse width, harmonics, ADSR envelopes, modulation, filtered pseudo-random noise, event timing, and seeded randomness.
+- master volume
+- LOW / MID / HIGH tone shaping
+- drive / saturation
+- PWM-style rhythmic amplitude modulation: rate + depth
+- lightweight phaser: rate + depth
+- echo: milliseconds + mix
+- low-pass filtering
+- high-pass filtering
 
-This makes it possible to create many variations while keeping the eventual HAPPY JARZ firmware recipes small.
+The effects intentionally use lightweight algorithms so the useful recipes can later be simplified for the ESP32 rather than depending on a desktop DAW or sample library.
 
-The Raspberry Pi app uses normal PCM audio output for auditioning. The eventual ESP32 version can translate the proven recipes into its own hardware audio/PWM implementation; the Pi app is not claiming to electrically reproduce that final output stage.
+### Song files
 
-## Planned HAPPY JARZ integration
+SAVE and LOAD use JSON. Songs store BPM, all eight tracks, notes, synth controls and master FX parameters.
 
-- GPIO11: audio signal/control path to a small mono amplifier
-- GPIO12: separate motor-driver control
-- Speaker target: compact Same Sky full-range driver
-- No speaker may be driven directly from an ESP32 GPIO
-- Motor remains isolated through its own proper driver/MOSFET and flyback protection
+## Earlier prototypes
 
-## Status
+`bloomtunes.py` — first command-line procedural sound test.
 
-Experimental sound-design workbench. Pi tuning comes first. ESP32 implementation follows after the recipes sound good.
+`bloomtunes_app.py` — first GUI synth workbench for tuning individual procedural patches.
+
+These remain in the repository as development references.
+
+## HAPPY JARZ target
+
+- one mono speaker
+- compact Same Sky full-range driver
+- small mono amplifier
+- ESP32-generated procedural tones/noise rather than stored WAV/MP3 samples where practical
+- audio control path remains separate from the future motor-driver path
+
+Sound recipes can eventually be associated with HAPPY JARZ light presets after they are tuned on the Pi.
