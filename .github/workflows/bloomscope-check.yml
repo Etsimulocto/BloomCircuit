@@ -1,0 +1,27 @@
+name: BloomScope checks
+on:
+  push:
+    paths: ['BloomScope/**', '.github/workflows/bloomscope-check.yml']
+  pull_request:
+    paths: ['BloomScope/**', '.github/workflows/bloomscope-check.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Desktop dependencies
+        run: sudo apt-get update && sudo apt-get install -y python3-tk python3-serial xvfb
+      - name: Protocol tests
+        run: python3 -m unittest discover -s BloomScope/tests -v
+      - name: Desktop smoke test
+        run: xvfb-run -a python3 BloomScope/tests/gui_smoke.py
+      - uses: arduino/setup-arduino-cli@v2
+      - name: Install ESP32 core
+        run: |
+          arduino-cli core update-index --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+          arduino-cli core install esp32:esp32@3.0.7 --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+      - name: Compile ESP32-S3 firmware
+        run: bash BloomScope/flash.sh --compile-only

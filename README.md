@@ -6,6 +6,10 @@
 
 This repository also carries standalone HAPPY JARZ development apps alongside the BloomCircuit wiring editor.
 
+### BloomScope — USB bench doctor
+
+[`BloomScope/`](BloomScope/README.md) contains the new v0.1.0 Pi/Windows USB app and separate ESP32-S3 firmware: voltage, PWM/frequency, slow waveform capture, four digital channels, touch controls and an explicitly armed piezo continuity tester. Start with `python3 BloomScope/bloomscope.py --demo`; see its README for protected breadboard inputs, installation, and flashing the damaged bench board. Physical hardware validation is still required.
+
 ### Current HAPPY JARZ release pair
 
 ```text
