@@ -4,14 +4,32 @@ import argparse
 import csv
 import json
 import math
+import os
+from pathlib import Path
 import queue
 import threading
 import time
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
-VERSION = "0.1.0"
+VERSION = "0.1.1"
 MODES = ("METER", "PWM", "SCOPE", "LOGIC")
+
+
+def instance_lock():
+    """One desktop window on Linux; watcher uses the same advisory lock."""
+    if os.name != "posix":
+        return None
+    import fcntl
+    directory = Path.home() / ".cache" / "bloomscope"
+    directory.mkdir(parents=True, exist_ok=True)
+    lock = open(directory / "app.lock", "a")
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        lock.close()
+        raise RuntimeError("BloomScope is already open")
+    return lock
 
 
 def decode(line):
@@ -367,7 +385,16 @@ class App:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--demo", action="store_true", help="Simulated signals; no hardware")
+    parser.add_argument("--port", help="Connect this port when the window opens")
     args = parser.parse_args()
+    try:
+        desktop_lock = instance_lock()
+    except RuntimeError as exc:
+        print(exc)
+        raise SystemExit(0)
     root = tk.Tk()
-    App(root, args.demo)
+    app = App(root, args.demo)
+    if args.port and not args.demo:
+        app.port.set(args.port)
+        root.after(500, app.connect)
     root.mainloop()

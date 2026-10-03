@@ -1,4 +1,4 @@
-# BloomScope 0.1.0
+# BloomScope app 0.1.1 / firmware 0.1.0
 
 A breadboard USB bench doctor for the Architect's ESP32-S3 SuperMini with damaged battery inputs. USB powers the board; the battery socket stays unused. This is a separate firmware/app pair, not a HAPPY JARZ controller patch.
 
@@ -13,6 +13,8 @@ python3 BloomScope/bloomscope.py --demo
 ```
 
 Demo is explicitly simulated and needs no ESP32. Close it when ready for real measurements.
+
+The Pi installer also starts a USB watcher now and registers it for future desktop logins. When an Espressif USB device appears, the watcher checks for the BloomScope firmware handshake, releases the port, then opens and connects the app. It opens once per plug event and avoids duplicate windows. Already-connected boards are checked when the watcher starts. Close the current app and unplug/replug to test auto-open. No firmware reflash is needed for this app update. The watcher only runs in your logged-in desktop session; its log is `~/.cache/bloomscope/watcher.log`.
 
 1. Disconnect every probe. Verify the board's printed GPIO labels against the proposed map below; the photo cannot establish the precise vendor pinout. Do not use header position as a GPIO number.
 2. Plug only the damaged bench ESP32 into USB. Close the HAPPY JARZ controller and its plug watcher, if running, so neither grabs this board. Flashing overwrites the connected board's firmware. Select the bench board's port explicitly.
@@ -89,7 +91,7 @@ Disconnect target USB, battery, and every other supply; discharge capacitors. Th
 
 Scope and logic have gaps between bursts while records are sent. Touch and commands are handled between bursts; PWM edges are timestamped by an interrupt. Wi-Fi/Bluetooth are not used. USB transport is newline-delimited JSON at 115200 nominal baud. Each capture carries `t_us` and `values`; scope values are ADC millivolts, logic values are a four-bit mask. App CSV records demo status, actual time, values and channel states. Stopped captures remain available for export, but the readout explicitly marks stopped readings stale.
 
-Firmware version and app version are both 0.1.0. Any behavior change must bump both release labels and the handshake as appropriate; protocol-breaking changes must bump `protocol`. App `--demo` is a preview, not hardware validation.
+Firmware version is 0.1.0; app version is 0.1.1 (USB auto-open). Behavior changes must bump the affected component's release label; protocol-breaking changes must bump `protocol`. App `--demo` is a preview, not hardware validation.
 
 ## Validation before relying on it
 
