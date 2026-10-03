@@ -30,7 +30,7 @@ app.turn(1);app.tap();app.weird()
 assert before==(app.face.mood,app.face.control,app.face.surprise)
 assert app.usb.port is None
 assert not app.console.show_output("BRO","Must not publish after session end")
-app.console.toggle_session();app.turn(1)
+app.console.toggle_session();app.face.control=0;app.turn(1)
 assert app.face.mood!=before[0]
 assert app.face.detent==2
 app.console.camera_visible.set(False);app.console.toggle_camera()
