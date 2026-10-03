@@ -1,6 +1,7 @@
 """BRO development panels. Speaker labels do not instantiate agents."""
 import tkinter as tk
 from tkinter import ttk
+from camera import CameraPanel
 
 SPEAKERS=("BRO","Sky","Cold","Monday","GRIT")
 
@@ -45,8 +46,8 @@ class Console:
         ttk.Label(self.dev,text="Activity log",font=("Sans",11,"bold")).pack(anchor="w",pady=(10,4))
         self.activity=self.text_box(self.dev,8,expand=True)
         ttk.Button(self.dev,text="Copy log",command=app.copy_log).pack(fill="x",pady=5)
-        self.camera=ttk.LabelFrame(self.dev,text="Camera preview",padding=12)
-        ttk.Label(self.camera,text="Camera not connected\nPreview space reserved",justify="center").pack(fill="both",expand=True)
+        self.camera_feed=CameraPanel(self.dev,app)
+        self.camera=self.camera_feed.frame
         self.show_output("BRO","Face online. Ready to build.",source="sample")
 
     def text_box(self,parent,height,expand=False):
@@ -91,18 +92,25 @@ class Console:
     def toggle_dev(self):
         if self.developer.get():
             self.panes.add(self.dev,weight=1)
-        else:self.panes.forget(self.dev)
+        else:
+            self.camera_feed.stop()
+            self.camera_visible.set(False);self.camera.pack_forget()
+            self.panes.forget(self.dev)
 
     def toggle_camera(self):
         if self.camera_visible.get():
             if not self.developer.get():
                 self.developer.set(True);self.toggle_dev()
             self.camera.pack(fill="x",pady=8)
-        else:self.camera.pack_forget()
-        self.app.log("Camera placeholder "+("shown" if self.camera_visible.get() else "hidden"))
+            self.camera_feed.start()
+        else:
+            self.camera_feed.stop()
+            self.camera.pack_forget()
+        self.app.log("Camera panel "+("shown" if self.camera_visible.get() else "hidden"))
 
     def toggle_session(self):
         if self.active:
+            self.camera_feed.stop()
             self.app.disconnect()
             self.active=False
             self.session_status.set("Session ended · USB released")

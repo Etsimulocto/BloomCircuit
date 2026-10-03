@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-sudo apt-get install -y python3-tk python3-serial
+sudo apt-get install -y python3-tk python3-serial python3-opencv
 mkdir -p "$HOME/.local/share/applications" "$HOME/.config/autostart" "$HOME/.cache/bloomface"
 cat > "$HOME/.local/share/applications/bloomface.desktop" <<EOF
 [Desktop Entry]

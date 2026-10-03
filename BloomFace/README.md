@@ -1,4 +1,4 @@
-# BRO / BloomFace 0.2.0
+# BRO / BloomFace 0.3.0
 
 A playful robot-face prototype: the Pi/PC draws animated eyes and a mouth; the ESP32-S3 reads a rotary encoder over USB. No display, motor, or robot movement is connected to the ESP32.
 
@@ -69,16 +69,22 @@ The face watcher rejects BloomScope firmware and releases the port. Rebuild the 
 
 On the physical bench, confirm one expression per detent, one control change per click, a burst for long hold with no extra release-click, and both directions. Native USB handshakes, actual encoder behavior and frame rate still need testing on your board.
 
-App, firmware and protocol are 0.2.0 / 0.1.0 / 1. Bump the changed component version for behavior changes; bump protocol for incompatible changes.
+App, firmware and protocol are 0.3.0 / 0.1.0 / 1. Bump the changed component version for behavior changes; bump protocol for incompatible changes.
 
 ## BRO development console
 
 BRO is the robot name. Speaker selection offers BRO, Sky, Cold, Monday and GRIT as distinct labels. These labels do not start agents or provide a conversation backend. Manual test text and BRO sample lines are explicitly marked as such. Speech stays separate from the timestamped activity log; both have copy buttons. Text widgets allow normal typing without triggering the face keyboard shortcuts.
 
-Use **Dev panels** to hide or show the testing/log area. The face and speech remain visible. **Camera preview** opens a collapsible placeholder; no camera is accessed or recorded. Keyboard/mouse and the existing USB rotary work now; the joystick indicator says not connected until an adapter is implemented.
+Use **Dev panels** to hide or show the testing/log area. The face and speech remain visible. **Camera preview** detects a local webcam and opens a collapsible live feed; nothing is recorded. Keyboard/mouse and the existing USB rotary work now; the joystick indicator says not connected until an adapter is implemented.
 
 **End session** releases USB and pauses knob, keyboard/mouse face actions and text publication. **Start session** resumes local controls; connect USB again to resume the knob. This is a local session control, with no account login or authentication. Copy buffers remain available after ending the session.
 
 For future conversation integration, call `app.console.show_output(speaker, text)` on Tk's main thread. It preserves speaker attribution, accepts only the five known labels, bounds text/history and rejects publication when the session is ended.
 
 Update this desktop release with `git pull` and restart the app. Existing encoder firmware 0.1.0 and wiring remain compatible; no reflash is needed.
+
+## Live camera (0.3.0)
+
+Install Pi dependencies with `bash BloomFace/install_pi.sh`, restart the app, and enable **Camera preview**. It detects the first readable local webcam and displays a small live feed. **Detect / rescan** retries after plugging in a camera; the selector switches devices; **Stop** releases capture. Hiding the camera or Dev panels, ending the session, or closing the app stops capture. Preview is local and is not recorded or uploaded.
+
+Linux support uses OpenCV/V4L2 `/dev/video*` devices, including typical USB webcams. Windows checks camera indices 0–3. A Pi ribbon camera using libcamera/Picamera2 is not supported by this adapter unless exposed as a compatible V4L2 capture device. Camera capture runs in a separate process so a stalled driver can be stopped without freezing the face. Missing dependencies, unreadable devices, unplugged feeds and detection timeouts appear in the panel/log. Real camera testing remains necessary on the Pi.

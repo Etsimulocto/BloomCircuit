@@ -16,7 +16,7 @@ import tkinter as tk
 from tkinter import ttk
 from model import FaceState, MOODS, CONTROLS
 
-VERSION="0.2.0"
+VERSION="0.3.0"
 from console import Console
 
 
@@ -303,6 +303,7 @@ class App:
 
     def frame(self):
         now=time.monotonic();t=now-self.started;self.poll(now)
+        self.console.camera_feed.poll()
         if t>self.next_blink:
             self.blink_at=t;self.next_blink=t+random.uniform(2,5)
         if self.face.surprise!=self.last_surprise:
@@ -310,7 +311,7 @@ class App:
         self.control.set("KNOB → "+CONTROLS[self.face.control])
         self.draw(t);self.root.after(33,self.frame)
 
-    def close(self):self.usb.close();self.root.destroy()
+    def close(self):self.console.camera_feed.stop();self.usb.close();self.root.destroy()
 
 
 if __name__=="__main__":
