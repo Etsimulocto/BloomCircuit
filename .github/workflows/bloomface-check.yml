@@ -1,0 +1,32 @@
+name: BloomFace checks
+on:
+  push:
+    paths: ['BloomFace/**', '.github/workflows/bloomface-check.yml']
+  pull_request:
+    paths: ['BloomFace/**', '.github/workflows/bloomface-check.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Desktop dependencies
+        run: sudo apt-get update && sudo apt-get install -y python3-tk python3-serial python3-pil xvfb
+      - name: Control tests
+        run: python3 -m unittest discover -s BloomFace/tests -v
+      - name: Face rendering and clipboard
+        run: xvfb-run -a python3 BloomFace/tests/gui_smoke.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bloomface-preview
+          path: /tmp/bloomface-preview.png
+          if-no-files-found: error
+      - uses: arduino/setup-arduino-cli@v2
+      - name: Install ESP32 core
+        run: |
+          arduino-cli core update-index --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+          arduino-cli core install esp32:esp32@3.0.7 --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+      - name: Compile encoder firmware
+        run: bash BloomFace/flash.sh --compile-only

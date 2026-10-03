@@ -10,6 +10,10 @@ This repository also carries standalone HAPPY JARZ development apps alongside th
 
 [`BloomScope/`](BloomScope/README.md) contains the new v0.1.0 Pi/Windows USB app and separate ESP32-S3 firmware: voltage, PWM/frequency, slow waveform capture, four digital channels, touch controls and an explicitly armed piezo continuity tester. Start with `python3 BloomScope/bloomscope.py --demo`; see its README for protected breadboard inputs, installation, and flashing the damaged bench board. Physical hardware validation is still required.
 
+### BloomFace — rotary robot face
+
+[`BloomFace/`](BloomFace/README.md) is a standalone Pi/Windows animated robot-face experiment with twelve expressions, blinks, eye movement, color/energy controls, and a USB ESP32-S3 rotary remote. Run `python3 BloomFace/bloomface.py --demo` to preview. Its separate firmware replaces the bench board's BloomScope firmware when flashed; see the wiring and setup instructions first.
+
 ### Current HAPPY JARZ release pair
 
 ```text
