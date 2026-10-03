@@ -16,7 +16,8 @@ import tkinter as tk
 from tkinter import ttk
 from model import FaceState, MOODS, CONTROLS
 
-VERSION="0.1.0"
+VERSION="0.2.0"
+from console import Console
 
 
 def instance_lock():
@@ -78,14 +79,14 @@ class App:
         self.ready=False;self.last_rx=0;self.connect_at=0;self.last_keep=0
         self.started=time.monotonic();self.blink_at=0;self.next_blink=2.5
         self.burst_at=-100;self.last_surprise=0;self.fullscreen=False;self.logs=deque(maxlen=100)
-        root.title(f"BloomFace {VERSION}"+(" — DEMO" if demo else ""))
-        root.geometry("1100x780");root.minsize(750,560);root.configure(bg="#060b15")
+        root.title(f"BRO · BloomFace {VERSION}"+(" — DEMO" if demo else ""))
+        root.geometry("1280x850");root.minsize(980,680);root.configure(bg="#060b15")
         style=ttk.Style();style.theme_use("clam")
         style.configure("TFrame",background="#0d1727")
         style.configure("TLabel",background="#0d1727",foreground="#c7d3e9")
         style.configure("TButton",padding=7)
         top=ttk.Frame(root,padding=12);top.pack(fill="x")
-        ttk.Label(top,text="BLOOMFACE",font=("Sans",19,"bold")).pack(side="left",padx=(0,15))
+        ttk.Label(top,text="BRO",font=("Sans",19,"bold")).pack(side="left",padx=(0,15))
         self.port=ttk.Combobox(top,width=18);self.port.pack(side="left")
         ttk.Button(top,text="Refresh",command=self.refresh).pack(side="left",padx=4)
         ttk.Button(top,text="Connect",command=self.connect).pack(side="left")
@@ -93,7 +94,8 @@ class App:
         ttk.Button(top,text="Fullscreen [F]",command=self.toggle_fullscreen).pack(side="right")
         self.status=tk.StringVar(value="DEMO · keyboard/mouse control" if demo else "Plug in the rotary board and Connect")
         ttk.Label(root,textvariable=self.status,padding=(12,7)).pack(fill="x")
-        self.canvas=tk.Canvas(root,bg="#060b15",highlightthickness=0)
+        self.console=Console(self)
+        self.canvas=tk.Canvas(self.console.face,bg="#060b15",highlightthickness=0)
         self.canvas.pack(fill="both",expand=True)
         self.canvas.bind("<Button-1>",lambda _:self.tap())
         self.canvas.bind("<MouseWheel>",lambda e:self.turn(1 if e.delta>0 else -1))
@@ -110,17 +112,28 @@ class App:
         ttk.Label(row,text="Turn: change selected control  •  Click: next control  •  Hold 0.7 s: weird burst").pack(side="left")
         self.reverse=tk.BooleanVar(value=False)
         ttk.Checkbutton(row,text="Reverse knob",variable=self.reverse,command=self.settings).pack(side="right")
-        self.detent=tk.StringVar(value="4")
+        self.face.detent=2
+        self.detent=tk.StringVar(value="2")
         det=ttk.Combobox(row,textvariable=self.detent,values=("4","2"),state="readonly",width=3)
         det.pack(side="right",padx=6);det.bind("<<ComboboxSelected>>",lambda _:self.settings())
         ttk.Label(row,text="Edges/click:").pack(side="right")
-        root.bind("<Left>",lambda _:self.turn(-1));root.bind("<Right>",lambda _:self.turn(1))
-        root.bind("<space>",lambda _:self.tap());root.bind("<Return>",lambda _:self.weird())
-        root.bind("f",lambda _:self.toggle_fullscreen());root.bind("<Escape>",lambda _:self.leave_fullscreen())
+        root.bind("<Left>",lambda e:self.keyboard(e,lambda:self.turn(-1)))
+        root.bind("<Right>",lambda e:self.keyboard(e,lambda:self.turn(1)))
+        root.bind("<space>",lambda e:self.keyboard(e,self.tap))
+        root.bind("<Return>",lambda e:self.keyboard(e,self.weird))
+        root.bind("f",lambda e:self.keyboard(e,self.toggle_fullscreen))
+        root.bind("<Escape>",lambda _:self.leave_fullscreen())
         root.protocol("WM_DELETE_WINDOW",self.close)
         self.refresh();self.log("Session started"+(" DEMO" if demo else ""));self.frame()
 
-    def log(self,text):self.logs.append(datetime.now().astimezone().isoformat(timespec="seconds")+"  "+text)
+    def keyboard(self,event,action):
+        if isinstance(event.widget,(tk.Text,tk.Entry,ttk.Entry,ttk.Combobox)):return
+        action()
+        return "break"
+
+    def log(self,text):
+        self.logs.append(datetime.now().astimezone().isoformat(timespec="seconds")+"  "+text)
+        if hasattr(self,"console"):self.console.update_log()
 
     def copy_log(self):
         self.root.clipboard_clear()
@@ -139,7 +152,7 @@ class App:
         self.face.reverse=self.reverse.get();self.face.detent=int(self.detent.get());self.face.remainder=0
 
     def connect(self):
-        if self.demo:return
+        if self.demo or not self.console.active:return
         self.disconnect()
         try:
             if not self.port.get():raise ValueError("Choose a port")
@@ -151,9 +164,15 @@ class App:
         self.usb.close();self.ready=False;self.face.baseline=None
         self.status.set("Disconnected · face still works with keyboard/mouse")
 
-    def turn(self,n):self.face.turn(n);self.log(f"turn {n} → {MOODS[self.face.mood]} / {CONTROLS[self.face.control]}")
-    def tap(self):self.face.tap();self.log("control → "+CONTROLS[self.face.control])
-    def weird(self):self.face.weird();self.log("WEIRD BURST → "+MOODS[self.face.mood])
+    def turn(self,n):
+        if not self.console.active:return
+        self.face.turn(n);self.log(f"turn {n} → {MOODS[self.face.mood]} / {CONTROLS[self.face.control]}")
+    def tap(self):
+        if not self.console.active:return
+        self.face.tap();self.log("control → "+CONTROLS[self.face.control])
+    def weird(self):
+        if not self.console.active:return
+        self.face.weird();self.log("WEIRD BURST → "+MOODS[self.face.mood])
     def toggle_fullscreen(self):self.fullscreen=not self.fullscreen;self.root.attributes("-fullscreen",self.fullscreen)
     def leave_fullscreen(self):self.fullscreen=False;self.root.attributes("-fullscreen",False)
 
@@ -200,7 +219,7 @@ class App:
         sy=50+(t*28)%570;line(60,sy,1140,sy,fill="#14263b",width=2)
         for x,y,sx,sy2 in ((45,45,1,1),(1155,45,-1,1),(45,635,1,-1),(1155,635,-1,-1)):
             line(x+sx*55,y,x,y,x,y+sy2*45,fill=accent,width=3)
-        text(600,73,"B L O O M  /  F A C E",fill="#5f789b",font=("Monospace",13,"bold"))
+        text(600,73,"B R O  /  "+self.console.speaker.get(),fill="#5f789b",font=("Monospace",13,"bold"))
         # Ambient motion is procedural; no AI/image assets or external services.
         bob=math.sin(t*(1+f.energy*3))*7*f.energy
         blink=1.0

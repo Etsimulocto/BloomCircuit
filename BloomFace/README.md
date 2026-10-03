@@ -1,4 +1,4 @@
-# BloomFace 0.1.0
+# BRO / BloomFace 0.2.0
 
 A playful robot-face prototype: the Pi/PC draws animated eyes and a mouth; the ESP32-S3 reads a rotary encoder over USB. No display, motor, or robot movement is connected to the ESP32.
 
@@ -46,7 +46,7 @@ Windows: install Python with Tk, `py -m pip install -r BloomFace/requirements.tx
 - **Click:** cycle EXPRESSION → GAZE → ENERGY → COLOR.
 - **Hold 0.7 seconds:** random expression and spark burst; releasing does not also count as a click.
 - **Reverse knob:** corrects direction without moving wires.
-- **Edges/click:** default 4. If it takes two physical detents for one app step, try 2. Hardware encoders differ.
+- **Edges/click:** default 2 (matches the tested knob). If it takes two physical detents for one app step, try 2; if one detent advances twice, use 4. Hardware encoders differ.
 - Keyboard **← / →** turns, **Space** clicks, **Enter** bursts, **F** fullscreen, **Esc** leaves fullscreen. Mouse wheel turns and clicking the face cycles controls.
 - **Copy debug:** copies a short timestamped event log for troubleshooting; keep the app open until pasted on Linux.
 
@@ -69,4 +69,16 @@ The face watcher rejects BloomScope firmware and releases the port. Rebuild the 
 
 On the physical bench, confirm one expression per detent, one control change per click, a burst for long hold with no extra release-click, and both directions. Native USB handshakes, actual encoder behavior and frame rate still need testing on your board.
 
-App, firmware and protocol start at 0.1.0 / 0.1.0 / 1. Bump the changed component version for behavior changes; bump protocol for incompatible changes.
+App, firmware and protocol are 0.2.0 / 0.1.0 / 1. Bump the changed component version for behavior changes; bump protocol for incompatible changes.
+
+## BRO development console
+
+BRO is the robot name. Speaker selection offers BRO, Sky, Cold, Monday and GRIT as distinct labels. These labels do not start agents or provide a conversation backend. Manual test text and BRO sample lines are explicitly marked as such. Speech stays separate from the timestamped activity log; both have copy buttons. Text widgets allow normal typing without triggering the face keyboard shortcuts.
+
+Use **Dev panels** to hide or show the testing/log area. The face and speech remain visible. **Camera preview** opens a collapsible placeholder; no camera is accessed or recorded. Keyboard/mouse and the existing USB rotary work now; the joystick indicator says not connected until an adapter is implemented.
+
+**End session** releases USB and pauses knob, keyboard/mouse face actions and text publication. **Start session** resumes local controls; connect USB again to resume the knob. This is a local session control, with no account login or authentication. Copy buffers remain available after ending the session.
+
+For future conversation integration, call `app.console.show_output(speaker, text)` on Tk's main thread. It preserves speaker attribution, accepts only the five known labels, bounds text/history and rejects publication when the session is ended.
+
+Update this desktop release with `git pull` and restart the app. Existing encoder firmware 0.1.0 and wiring remain compatible; no reflash is needed.
