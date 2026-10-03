@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-sudo apt-get install -y python3-tk python3-serial
+sudo apt-get install -y python3-tk python3-serial pulseaudio-utils alsa-utils
 mkdir -p "$HOME/.local/share/applications"
 DESKTOP="$HOME/.local/share/applications/bloomscope.desktop"
 cat > "$DESKTOP" <<EOF

@@ -6,13 +6,21 @@ import json
 import math
 import os
 from pathlib import Path
+from collections import deque
+from datetime import datetime
+import shutil
+import struct
+import subprocess
+import tempfile
+import wave
 import queue
 import threading
 import time
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
+from tkinter.scrolledtext import ScrolledText
 
-VERSION = "0.1.1"
+VERSION = "0.1.2"
 MODES = ("METER", "PWM", "SCOPE", "LOGIC")
 
 
@@ -123,9 +131,23 @@ class App:
         self.running = False
         self.capture = None
         self.last_rx = self.connected_at = 0
+        self.firmware = "unknown"
+        self.log_lines = deque(maxlen=500)
+        self.log_times = {}
+        self.cont_closed = None
+        self.cont_rx = 0
+        self.audio_process = None
+        self.last_beep = 0
+        self.audio_dir = tempfile.TemporaryDirectory(prefix="bloomscope-audio-")
+        self.audio_file = Path(self.audio_dir.name) / "continuity.wav"
+        with wave.open(str(self.audio_file), "wb") as f:
+            f.setparams((1, 2, 22050, 0, "NONE", "not compressed"))
+            # Quiet 100 ms tone with tapered edges, through the default audio output.
+            samples = [int(3500 * math.sin(2*math.pi*1200*i/22050) * min(1, i/110, (2204-i)/110)) for i in range(2205)]
+            f.writeframes(struct.pack("<" + "h"*len(samples), *samples))
         root.title(f"BloomScope {VERSION}" + (" — DEMO / simulated signals" if demo else ""))
-        root.geometry("1000x720")
-        root.minsize(820, 620)
+        root.geometry("1050x850")
+        root.minsize(820, 720)
         style = ttk.Style()
         style.theme_use("clam")
         style.configure("TFrame", background="#14202e")
@@ -159,18 +181,104 @@ class App:
         ttk.Label(row, text="Voltage calibration gain:").pack(side="left", padx=8)
         self.gain = tk.StringVar(value="1.0000")
         ttk.Entry(row, textvariable=self.gain, width=9).pack(side="left")
+        row = ttk.Frame(box); row.pack(fill="x", pady=(8, 0))
+        self.indicator = tk.Label(row, text="● CONTINUITY: IDLE", bg="#14202e", fg="#8199af", font=("Sans", 16, "bold"))
+        self.indicator.pack(side="left")
+        self.headphone_beep = tk.BooleanVar(value=False)
+        ttk.Checkbutton(row, text="Headphone beep", variable=self.headphone_beep, command=self.stop_audio).pack(side="left", padx=18)
         self.readout = tk.StringVar(value="Connect, select a mode, then Start")
         ttk.Label(box, textvariable=self.readout, font=("Monospace", 20, "bold")).pack(anchor="w", pady=18)
         self.canvas = tk.Canvas(box, bg="#09131e", highlightthickness=0, height=300)
         self.canvas.pack(fill="both", expand=True)
         self.canvas.bind("<Configure>", lambda _: self.draw())
+        row = ttk.Frame(box); row.pack(fill="x", pady=(8, 4))
+        ttk.Label(row, text="Readout log · latest 500 entries").pack(side="left")
+        ttk.Button(row, text="Copy log", command=self.copy_log).pack(side="right")
+        ttk.Button(row, text="Save log", command=self.save_log).pack(side="right", padx=5)
+        ttk.Button(row, text="Clear log", command=self.clear_log).pack(side="right")
+        self.log_widget = ScrolledText(box, height=7, bg="#09131e", fg="#d8e6f0", insertbackground="white", font=("Monospace", 10), state="disabled")
+        self.log_widget.pack(fill="x")
         ttk.Label(box, text="Touch: GPIO4 mode · GPIO5 start/stop · GPIO6 mute. Continuity must be armed in the app.").pack(anchor="w", pady=(10, 0))
         ttk.Label(box, text="Continuity: UNPOWERED circuits only. Use protected inputs from README. Battery socket stays unused.").pack(anchor="w")
         root.protocol("WM_DELETE_WINDOW", self.close)
         self.ports()
         if demo:
             self.ready = True
+        self.log("Session started" + (" — DEMO / simulated measurements" if demo else ""))
         self.tick()
+
+    def log(self, text, key=None):
+        now = time.monotonic()
+        if key and now-self.log_times.get(key, -10) < 1:
+            return
+        if key:
+            self.log_times[key] = now
+        self.log_lines.append(datetime.now().astimezone().isoformat(timespec="milliseconds") + "  " + text)
+        self.log_widget.configure(state="normal")
+        self.log_widget.delete("1.0", "end")
+        self.log_widget.insert("end", "\n".join(self.log_lines) + "\n")
+        self.log_widget.see("end")
+        self.log_widget.configure(state="disabled")
+
+    def log_text(self):
+        return (f"BloomScope app {VERSION} | firmware {self.firmware} | protocol 1\n"
+                f"DEMO={self.demo} | port={self.port.get() or 'none'} | voltage gain={self.gain_value():.6g}\n"
+                "Measurements are bench estimates. Scope/logic are nominal 1 ksample/s bursts.\n"
+                + "\n".join(self.log_lines) + "\n")
+
+    def copy_log(self):
+        self.root.clipboard_clear()
+        self.root.clipboard_append(self.log_text())
+        self.status.set("Log copied — paste it into chat (keep app open until pasted)")
+
+    def save_log(self):
+        path = filedialog.asksaveasfilename(defaultextension=".txt", filetypes=[("Text log", "*.txt")])
+        if path:
+            try:
+                Path(path).write_text(self.log_text(), encoding="utf-8")
+            except OSError as exc:
+                messagebox.showerror("Save failed", str(exc))
+
+    def clear_log(self):
+        self.log_lines.clear()
+        self.log_times.clear()
+        self.log("Log cleared")
+
+    def stop_audio(self):
+        if self.audio_process and self.audio_process.poll() is None:
+            self.audio_process.terminate()
+        self.audio_process = None
+        if os.name == "nt":
+            import winsound
+            winsound.PlaySound(None, 0)
+
+    def continuity_light(self, closed=None):
+        self.cont_closed = closed
+        label, color = ("CLOSED", "#51e5bc") if closed is True else (("OPEN", "#f8c75e") if closed is False else ("IDLE", "#8199af"))
+        self.indicator.configure(text="● CONTINUITY: " + label, fg=color)
+        if closed is not True:
+            self.stop_audio()
+
+    def beep(self):
+        if self.demo or not self.headphone_beep.get() or self.cont_closed is not True:
+            return
+        if not self.running or self.mode != "CONT" or time.monotonic()-self.cont_rx > 1:
+            return
+        try:
+            if os.name == "nt":
+                import winsound
+                winsound.PlaySound(str(self.audio_file), winsound.SND_FILENAME | winsound.SND_ASYNC)
+            else:
+                player = shutil.which("paplay") or shutil.which("aplay")
+                if not player:
+                    raise OSError("No audio player: install pulseaudio-utils or alsa-utils")
+                if self.audio_process and self.audio_process.poll() not in (None, 0):
+                    raise OSError("Audio playback failed; check the default output device")
+                if not self.audio_process or self.audio_process.poll() is not None:
+                    self.audio_process = subprocess.Popen([player, str(self.audio_file)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except OSError as exc:
+            self.headphone_beep.set(False)
+            self.log("Headphone beep unavailable: " + str(exc))
 
     def gain_value(self):
         try:
@@ -200,6 +308,7 @@ class App:
             self.link.connect(self.port.get())
             self.connected_at = time.monotonic()
             self.status.set("Waiting for BloomScope firmware…")
+            self.log("Connecting to " + self.port.get())
         except Exception as exc:
             self.status.set(str(exc))
 
@@ -210,6 +319,8 @@ class App:
         self.connected_at = 0
         self.status.set("DEMO — simulated data" if self.demo else "Disconnected")
         self.readout.set("Stopped — readings are stale")
+        self.continuity_light()
+        self.log("Disconnected / stopped")
 
     def send(self, command):
         if self.demo:
@@ -224,6 +335,7 @@ class App:
             self.status.set(str(exc))
 
     def select(self, mode):
+        self.continuity_light()
         self.mode = mode
         self.capture = None
         self.draw()
@@ -242,6 +354,8 @@ class App:
         self.send("STOP")
         self.running = False
         self.readout.set("Stopped / disarmed — readings are stale")
+        self.continuity_light()
+        self.log("STOP / disarm requested")
 
     def arm(self):
         if not self.ready:
@@ -261,17 +375,26 @@ class App:
                 self.status.set("Unsupported device / protocol")
                 return
             self.ready = True
+            self.firmware = d.get("version", "?")
+            self.log("Connected · firmware " + self.firmware)
             self.status.set("Connected · firmware " + d.get("version", "?"))
         elif kind == "state":
             self.mode = d["mode"]
             self.running = d["running"]
+            self.log(f"State: {self.mode}, running={self.running}, piezo muted={d['muted']}", key="state")
+            if not self.running or self.mode != "CONT":
+                self.continuity_light()
             self.status.set(f"{self.mode} · {'running' if self.running else 'stopped'} · piezo {'muted' if d['muted'] else 'enabled'}" + (" · DEMO" if self.demo else ""))
             if not self.running:
                 self.readout.set("Stopped / disarmed — readings are stale")
         elif kind == "meter":
             self.readout.set(f"{voltage(d['adc_mv'], self.gain_value()):.3f} V" + ("  [ADC overrange]" if d['adc_mv'] >= 3050 else ""))
         elif kind == "continuity":
-            self.readout.set("CONTINUITY — " + ("BEEP / CLOSED" if d["closed"] else "OPEN") + " (approximate)")
+            changed = d["closed"] != self.cont_closed
+            self.cont_rx = time.monotonic()
+            self.continuity_light(d["closed"])
+            self.readout.set("CONTINUITY — " + ("CLOSED" if d["closed"] else "OPEN") + " (approximate)")
+            self.log(self.readout.get() + f" · sense={d.get('mv', '?')} mV", key=None if changed else "continuity")
         elif kind == "pwm":
             if d["valid"] and d["period_us"] > 0:
                 self.readout.set(f"{1e6/d['period_us']:.1f} Hz   {100*d['high_us']/d['period_us']:.1f}%   HIGH {d['high_us']} µs")
@@ -287,6 +410,15 @@ class App:
             self.status.set("USB disconnected: " + d.get("message", ""))
         elif kind == "error":
             self.status.set(d.get("message", "Device error"))
+            self.log("Device error: " + d.get("message", "unknown"))
+        if kind in ("meter", "pwm", "capture"):
+            summary = self.readout.get()
+            if kind == "capture":
+                vs = d["values"]
+                summary += f" · raw min={min(vs)} max={max(vs)}"
+                if d["mode"] == "SCOPE":
+                    summary += f" · probe min={voltage(min(vs), self.gain_value()):.3f} V max={voltage(max(vs), self.gain_value()):.3f} V"
+            self.log(summary, key=kind)
 
     def draw(self):
         c = self.canvas; c.delete("all")
@@ -375,9 +507,14 @@ class App:
                 self.record({"type":"pwm", "valid":True, "period_us":1000, "high_us":500})
             else:
                 self.record({"type":"continuity", "closed":int(now)%2==0})
+        if self.cont_closed is not None and (not self.running or self.mode != "CONT" or now-self.cont_rx > 1):
+            self.continuity_light()
+        self.beep()
         self.root.after(500, self.tick)
 
     def close(self):
+        self.stop_audio()
+        self.audio_dir.cleanup()
         self.link.close()
         self.root.destroy()
 

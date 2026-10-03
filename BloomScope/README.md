@@ -1,4 +1,4 @@
-# BloomScope app 0.1.1 / firmware 0.1.0
+# BloomScope app 0.1.2 / firmware 0.1.0
 
 A breadboard USB bench doctor for the Architect's ESP32-S3 SuperMini with damaged battery inputs. USB powers the board; the battery socket stays unused. This is a separate firmware/app pair, not a HAPPY JARZ controller patch.
 
@@ -75,6 +75,10 @@ Digital path per channel: **3.3 V target GPIO → 1 kΩ → bench input**, with 
 
 This checks for a low-resistance path; it is not calibrated conductance or resistance measurement.
 
+**No physical buzzer is needed.** The app shows a large green CLOSED light, amber OPEN, and gray IDLE when stopped, disconnected, or continuity samples go stale. Optional **Headphone beep** plays a quiet short tone repeatedly while continuity is closed, through the default audio output. Set that output to the monitor/headphones you normally use. The checkbox starts off; demo stays silent. The Pi installer includes paplay/aplay; Windows uses its built-in sound API. Stop/disarm silences app audio. Board piezo mute is independent of the headphone checkbox; leave GPIO11 unconnected when skipping the module.
+
+The timestamped readout log keeps the latest 500 entries. Measurement/capture summaries are logged at most once per second; continuity changes log immediately. **Copy log** copies the session header and readings for pasting into chat; **Save log** writes text. Keep the app open until pasted on Linux. Scope/logic CSV still exports every point from the latest burst; the text log contains summaries. Header includes app/firmware versions, demo status, port and current calibration gain.
+
 Dedicated path: **GPIO12 → 10 kΩ → continuity probe/node**. From that node, **1 kΩ → GPIO2**, with clamps at GPIO2. The other probe is **GND**. Do not connect this node to the voltage-divider input. The 10 kΩ resistor limits the nominal test current to about 0.33 mA. A reading below 35 mV beeps; nominally this corresponds to around 100 Ω, but ADC low-end error makes the actual threshold approximate.
 
 Disconnect target USB, battery, and every other supply; discharge capacitors. Then click **Arm continuity** and confirm that power is removed. OPEN should stay quiet; touching the continuity and GND probes should beep. Use Mute to silence it. Stop/disarm, switching away from continuity, or a missing host heartbeat disables the excitation pin and piezo. The 3-second timeout is a software safeguard, not galvanic isolation. The low-current test can still make semiconductor junctions conduct, so in-circuit results may differ from isolated parts.
@@ -91,7 +95,7 @@ Disconnect target USB, battery, and every other supply; discharge capacitors. Th
 
 Scope and logic have gaps between bursts while records are sent. Touch and commands are handled between bursts; PWM edges are timestamped by an interrupt. Wi-Fi/Bluetooth are not used. USB transport is newline-delimited JSON at 115200 nominal baud. Each capture carries `t_us` and `values`; scope values are ADC millivolts, logic values are a four-bit mask. App CSV records demo status, actual time, values and channel states. Stopped captures remain available for export, but the readout explicitly marks stopped readings stale.
 
-Firmware version is 0.1.0; app version is 0.1.1 (USB auto-open). Behavior changes must bump the affected component's release label; protocol-breaking changes must bump `protocol`. App `--demo` is a preview, not hardware validation.
+Firmware version is 0.1.0; app version is 0.1.2 (continuity light, headphone sound and copyable log). Behavior changes must bump the affected component's release label; protocol-breaking changes must bump `protocol`. App `--demo` is a preview, not hardware validation.
 
 ## Validation before relying on it
 

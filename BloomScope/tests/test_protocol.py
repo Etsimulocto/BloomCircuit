@@ -35,8 +35,11 @@ class ProtocolTests(unittest.TestCase):
         class DummyReadout:
             def set(self, text):
                 self.text = text
+            def get(self):
+                return self.text
         app = object.__new__(module.App)
         app.readout = DummyReadout()
+        app.log = lambda *args, **kwargs: None
         app.record({"type":"pwm", "valid":False, "period_us":0, "state":0})
         self.assertIn("No recent pulses", app.readout.text)
 
