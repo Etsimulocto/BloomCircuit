@@ -16,21 +16,24 @@ COLOR_PRESETS={
 
 class EqApp:
     def __init__(self,root):
-        self.root=root; root.title('HAPPY JARZ / CLUB BOX EQ Tuner'); root.geometry('980x900')
+        self.root=root; root.title('HAPPY JARZ / CLUB BOX EQ Tuner'); root.geometry('1000x940')
         self.q=queue.Queue(); self.running=True; self.ser=None; self.lock=threading.Lock(); self.ignore=False
-        self.gain=tk.DoubleVar(value=4.0); self.gate=tk.DoubleVar(value=8.0); self.bright=tk.DoubleVar(value=96)
+        self.gain=tk.DoubleVar(value=4.0); self.gatemax=tk.DoubleVar(value=100.0); self.bright=tk.DoubleVar(value=96)
         self.edges=[tk.DoubleVar(value=v) for v in (40,90,180,350,700,1200,2000,3000,3900)]
-        names=list(COLOR_PRESETS.keys())
         defaults=['Red','Orange','Amber','Lime','Green','Cyan','Blue','Violet']
         self.colors=[tk.StringVar(value=defaults[i]) for i in range(8)]
         self.energy_vars=[tk.StringVar(value=f'B{i+1}: 0.0') for i in range(8)]
-        self.status=tk.StringVar(value='Connecting...'); self.summary=tk.StringVar(value='Waiting for EQ data...')
+        self.status=tk.StringVar(value='Connecting...')
+        self.summary=tk.StringVar(value='Waiting for EQ data...')
+        self.knob_var=tk.StringVar(value='Noise knob: raw 0   0.0%   gate 0.0')
 
         top=ttk.Frame(root,padding=10); top.pack(fill='x')
-        ttk.Label(top,textvariable=self.status).pack(side='left'); ttk.Button(top,text='RGB Test',command=lambda:self.send('TEST RGB')).pack(side='right')
+        ttk.Label(top,textvariable=self.status).pack(side='left')
+        ttk.Button(top,text='RGB Test',command=lambda:self.send('TEST RGB')).pack(side='right')
 
         meter=ttk.LabelFrame(root,text='Live EQ',padding=10); meter.pack(fill='x',padx=10,pady=(0,8))
         ttk.Label(meter,textvariable=self.summary,font=('TkDefaultFont',16,'bold')).pack(anchor='w')
+        ttk.Label(meter,textvariable=self.knob_var,font=('TkDefaultFont',13,'bold')).pack(anchor='w',pady=(2,6))
         bars=ttk.Frame(meter); bars.pack(fill='x',pady=5)
         self.band_bars=[]
         for i in range(8):
@@ -40,8 +43,9 @@ class EqApp:
 
         controls=ttk.LabelFrame(root,text='EQ Response',padding=10); controls.pack(fill='x',padx=10,pady=(0,8))
         self.add_slider(controls,'Gain',self.gain,0.1,30.0,0.1,lambda:self.send(f'SET GAIN {self.gain.get():.2f}'))
-        self.add_slider(controls,'Noise gate',self.gate,0,100,1,lambda:self.send(f'SET GATE {self.gate.get():.1f}'))
+        self.add_slider(controls,'Knob max gate',self.gatemax,5,500,1,lambda:self.send(f'SET GATEMAX {self.gatemax.get():.1f}'))
         self.add_slider(controls,'Max brightness',self.bright,4,255,1,lambda:self.send(f'SET BRIGHT {int(self.bright.get())}'))
+        ttk.Label(controls,text='GPIO10 physical knob is the live noise floor. Knob Max Gate sets what a full turn equals.',wraplength=920).pack(anchor='w',pady=(4,0))
 
         eq=ttk.LabelFrame(root,text='Band edges + colors',padding=10); eq.pack(fill='x',padx=10,pady=(0,8))
         hdr=ttk.Frame(eq); hdr.pack(fill='x')
@@ -49,16 +53,17 @@ class EqApp:
         for i in range(8):
             row=ttk.Frame(eq); row.pack(fill='x',pady=2)
             ttk.Label(row,text=str(i+1),width=7).pack(side='left')
-            low=ttk.Spinbox(row,from_=20,to=3950,textvariable=self.edges[i],width=10); low.pack(side='left')
-            high=ttk.Spinbox(row,from_=20,to=3950,textvariable=self.edges[i+1],width=10); high.pack(side='left')
-            cb=ttk.Combobox(row,textvariable=self.colors[i],values=list(COLOR_PRESETS.keys()),state='readonly',width=12); cb.pack(side='left')
+            ttk.Spinbox(row,from_=20,to=3950,textvariable=self.edges[i],width=10).pack(side='left')
+            ttk.Spinbox(row,from_=20,to=3950,textvariable=self.edges[i+1],width=10).pack(side='left')
+            ttk.Combobox(row,textvariable=self.colors[i],values=list(COLOR_PRESETS.keys()),state='readonly',width=12).pack(side='left')
             ttk.Button(row,text='Apply',command=lambda i=i:self.apply_band(i)).pack(side='left',padx=5)
         ttk.Button(eq,text='Apply all edges/colors',command=self.apply_all).pack(anchor='w',pady=(6,0))
 
         ttk.Label(root,text=f'CSV log: {LOG_PATH}',padding=(10,0,10,4)).pack(anchor='w')
         self.log=tk.Text(root,height=14,wrap='none'); self.log.pack(fill='both',expand=True,padx=10,pady=(0,10)); self.log.configure(state='disabled')
         if not os.path.exists(LOG_PATH):
-            with open(LOG_PATH,'w',newline='') as f: csv.writer(f).writerow(['timestamp','center','p2p','clip','dominant','energy']+[f'b{i+1}' for i in range(8)])
+            with open(LOG_PATH,'w',newline='') as f:
+                csv.writer(f).writerow(['timestamp','center','p2p','clip','dominant','energy','knob_raw','knob_percent','gate']+[f'b{i+1}' for i in range(8)])
         threading.Thread(target=self.reader,daemon=True).start(); root.after(50,self.process); root.protocol('WM_DELETE_WINDOW',self.close)
 
     def add_slider(self,parent,label,var,lo,hi,res,cb):
@@ -78,6 +83,7 @@ class EqApp:
     def apply_band(self,i):
         self.send(f'SET EDGE {i} {self.edges[i].get():.0f}'); self.send(f'SET EDGE {i+1} {self.edges[i+1].get():.0f}')
         r,g,b=COLOR_PRESETS[self.colors[i].get()]; self.send(f'SET COLOR {i+1} {r},{g},{b}')
+
     def apply_all(self):
         for i,v in enumerate(self.edges): self.send(f'SET EDGE {i} {v.get():.0f}')
         for i in range(8):
@@ -120,26 +126,33 @@ class EqApp:
 
     def update_eq(self,d):
         try:
-            center=int(d['CENTER']); p2p=int(d['P2P']); clip=int(d['CLIP']); dom=int(d['DOM']); en=float(d['ENERGY']); vals=[float(d.get(f'B{i+1}',0)) for i in range(8)]
+            center=int(d['CENTER']); p2p=int(d['P2P']); clip=int(d['CLIP']); dom=int(d['DOM']); en=float(d['ENERGY'])
+            knob=int(d.get('KNOB',0)); knobpct=float(d.get('KNOBPCT',0)); gate=float(d.get('GATE',0))
+            vals=[float(d.get(f'B{i+1}',0)) for i in range(8)]
         except Exception:return
         self.summary.set(f'CENTER {center}   P2P {p2p}   DOMINANT BAND {dom}   ENERGY {en:.1f}   CLIP {clip}')
+        self.knob_var.set(f'Noise knob: raw {knob}   {knobpct:.1f}%   gate {gate:.1f}')
         peak=max(max(vals),1.0)
         for i,v in enumerate(vals): self.energy_vars[i].set(f'B{i+1}: {v:.1f}'); self.band_bars[i]['value']=min(100,100*v/peak)
-        stamp=time.strftime('%H:%M:%S'); self.append(f'{stamp} DOM={dom} P2P={p2p} ENERGY={en:.1f}  '+' '.join(f'B{i+1}={vals[i]:.1f}' for i in range(8)))
-        with open(LOG_PATH,'a',newline='') as f: csv.writer(f).writerow([time.strftime('%Y-%m-%d %H:%M:%S'),center,p2p,clip,dom,en,*vals])
+        stamp=time.strftime('%H:%M:%S'); self.append(f'{stamp} DOM={dom} P2P={p2p} ENERGY={en:.1f} KNOB={knob} ({knobpct:.1f}%) GATE={gate:.1f}  '+' '.join(f'B{i+1}={vals[i]:.1f}' for i in range(8)))
+        with open(LOG_PATH,'a',newline='') as f:
+            csv.writer(f).writerow([time.strftime('%Y-%m-%d %H:%M:%S'),center,p2p,clip,dom,en,knob,knobpct,gate,*vals])
 
     def apply_cfg(self,d):
         self.ignore=True
         try:
             if 'GAIN' in d:self.gain.set(float(d['GAIN']))
-            if 'GATE' in d:self.gate.set(float(d['GATE']))
+            if 'GATEMAX' in d:self.gatemax.set(float(d['GATEMAX']))
             if 'BRIGHT' in d:self.bright.set(float(d['BRIGHT']))
             for i in range(9):
                 if f'E{i}' in d:self.edges[i].set(float(d[f'E{i}']))
         finally:self.ignore=False
 
     def append(self,s):
-        self.log.configure(state='normal'); self.log.insert('end',s+'\n'); self.log.see('end'); self.log.configure(state='disabled')
+        self.log.configure(state='normal'); self.log.insert('end',s+'\n'); self.log.see('end')
+        if int(self.log.index('end-1c').split('.')[0])>500:self.log.delete('1.0','100.0')
+        self.log.configure(state='disabled')
+
     def close(self):
         self.running=False
         try:self.send('STREAM 0')
