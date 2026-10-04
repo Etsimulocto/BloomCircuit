@@ -4,81 +4,195 @@
 
 BloomCircuit is a browser-based physical wiring-map editor for maker projects. It is built around **physical wiring documentation**, a **2.54 mm snap grid**, and **laser-ready SVG export** rather than PCB routing or SPICE simulation.
 
-The repository also contains the current **HAPPY JARZ controller/firmware stack**, built around an ESP32-S3 SuperMini, six capacitive-touch controls, two APA106 lamps, a 128x64 I2C OLED, USB control, a desktop controller, plug-to-launch service tooling, logs, and safe GitHub fast-forward updates.
+The repository also contains the HAPPY JARZ controller/firmware work. On branch `happyjarz-controller-v0.1`, the active bench build is now the **HAPPY JARZ / CLUB BOX line-in EQ controller** described below.
 
-## HAPPY JARZ current prototype
+## HAPPY JARZ / CLUB BOX — current active bench build
 
-See [`happyjarz-controller/README.md`](happyjarz-controller/README.md) for the controller/service workflow and [`happyjarz-controller/firmware/README.md`](happyjarz-controller/firmware/README.md) for the ESP32 firmware layer.
+See [`happyjarz-controller/README.md`](happyjarz-controller/README.md) for the current controller/app workflow and [`happyjarz-controller/firmware/README.md`](happyjarz-controller/firmware/README.md) for the firmware/hardware layer.
 
-Current proven hardware:
+Current proven bench hardware:
 
 - ESP32-S3 SuperMini
-- GPIO7 -> 220 ohm -> APA106 #1 DIN
-- APA106 #1 DOUT -> APA106 #2 DIN
-- APA106 VCC -> **5V**
-- common GND
-- GPIO4 = UP touch
-- GPIO5 = DOWN touch
-- GPIO9 = LEFT touch
-- GPIO10 = RIGHT touch
-- GPIO1 = A touch
-- GPIO2 = B touch
-- OLED SDA -> GPIO8
-- OLED SCL -> GPIO6
-- OLED VCC -> 3.3V
-- OLED address `0x3C`
+- GPIO7 -> 220 ohm -> APA106 data
+- current bench test uses one APA106 bulb
+- future target: 16 APA106 bulbs in one daisy chain
+- GPIO9 = mono AC-coupled line input
+- GPIO10 = physical noise-floor / threshold potentiometer
+- all grounds common
+- current one-bulb bench test may run the bulb from 3.3V, but the finished 16-bulb array must use an adequate external LED supply with common ground
 
-The tested APA106 lamps accept the ESP32-S3's 3.3V data signal while powered from 5V, so the current working prototype does **not** require the earlier planned SN74AHCT125 level-shifter stage. The proven custom RMT timing and RGB byte order should be treated as a known-good hardware layer.
+Current line-in wiring:
 
-Current HAPPY JARZ firmware is staged from `happyjarz_integrated_v0_5.ino` and patched by the normal Pi flasher. Current behavior includes:
+```text
+TRS TIP ---- (-) 10uF (+) ----+---- GPIO9
+                               |
+                              10k
+                               |
+                              3.3V
 
-- independent Light 1 / Light 2 color control
-- a **50% hard brightness ceiling** based on bench testing
-- expanded sensory/holiday/color pattern library
-- HOME controls: A/B colors, UP/DOWN patterns, RIGHT menu
-- OLED HOME/menu/status pages
-- 10-second idle screensaver entry
-- SAYINGS marquee screensaver with a large built-in positive/funny saying bank
-- persistent editable business/custom sayings with BUILTIN / CUSTOM / MIXED modes
-- procedural SPIRAL and TRIPPY art screensavers
-- LEFT/RIGHT saver switching, B exit, UP/DOWN art speed, A reseed / "new universe"
-- procedural seeds mixed from live board state such as uptime, timing jitter, temperature, Wi-Fi RSSI, touch readings, brightness and RGB state
-- USB control/status for saver preview, reseed, speed and live saver status
+GPIO9 -------------------------+
+                               |
+                              10k
+                               |
+                              GND
 
-The pattern library currently includes:
-
-`SOLID`, `FADE`, `PULSE`, `RAINBOW`, `RANDOM`, `HUE_FADE`, `DUAL_HUE`, `BREATH`, `DRIFT`, `AURORA`, `OCEAN`, `LAVENDER`, `SUNSET`, `CHRISTMAS`, `HALLOWEEN`, `VALENTINE`, `EASTER`, `FOURTH`, `THANKSGIVING`, `CANDY`, `GALAXY`, `FIRE`, `ICE`, `FOREST`, `NEON`, `TWINKLE`, `SPARKLE`, `COLOR_SWAP`, `COMET`, `FIREFLY`, `BUBBLEGUM`, `OFF`.
-
-The desktop controller is currently layered through `happyjarz_controller_v0_3_2.py`. It provides:
-
-- light color/brightness/pattern control
-- Wi-Fi scan/setup and status
-- USB host-time sync
-- touch/input diagnostics
-- current OLED/screensaver controls
-- SAYINGS / SPIRAL / TRIPPY preview controls
-- live saver status
-- persistent 8-slot custom marquee editor for banks, clinics, shops, offices, events, gifts, and similar installations
-
-The PC/Pi service layer can:
-
-- detect a HAPPY JARZ over USB
-- open the current controller app when a Jar is plugged in
-- reconnect after unplug/replug
-- keep diagnostic logs
-- auto-check the tracked GitHub branch on startup and every 6 hours
-- fast-forward only when safe, without overwriting local edits
-- support remote compatibility/content/controller patches for deployed units
-
-### Current Pi flash/update workflow
-
-```bash
-cd ~/BloomCircuit
-git pull --ff-only
-bash happyjarz-controller/tools/flash_happyjarz_v0_5.sh
+TRS SLEEVE -------------------- GND
+TRS RING ---------------------- unused for current mono test
 ```
 
-The flasher stops the controller/watcher, stages the integrated v0.5 firmware, applies the current touch/OLED/menu/pattern/screensaver/custom-sayings/procedural-art patches, compiles with Arduino CLI, uploads, and restarts the watcher.
+Physical threshold knob:
+
+```text
+outer leg -> GND
+wiper     -> GPIO10
+outer leg -> 3.3V
+```
+
+The physical knob is the **only threshold/noise-floor control**. The app does not expose a second threshold slider.
+
+### Proven APA106 transport
+
+The current bulbs use the custom ESP32-S3 RMT path and a proven physical **RGB** byte order.
+
+Known-good timing:
+
+- 10 MHz clock
+- bit 0 ~= 4 ticks HIGH / 14 ticks LOW
+- bit 1 ~= 14 ticks HIGH / 4 ticks LOW
+- ~100 us LOW reset/latch
+
+Do not casually replace this driver with a generic NeoPixel/FastLED path while tuning higher-level behavior.
+
+### Audio / EQ behavior
+
+The active firmware is:
+
+```text
+happyjarz-controller/firmware/happyjarz_sound_reactive_v0_1.ino
+```
+
+It uses an 8-band Goertzel analyzer at 8 kHz / 256 samples.
+
+Default band edges:
+
+```text
+40, 90, 180, 350, 700, 1200, 2000, 3000, 3900 Hz
+```
+
+Default colors:
+
+```text
+1 Red
+2 Orange
+3 Amber
+4 Lime
+5 Green
+6 Cyan
+7 Blue
+8 Violet
+```
+
+Modes:
+
+- **Single bulb bench** — the dominant EQ band controls the current bulb
+- **16 bulbs** — two bulbs per EQ band
+
+The physical GPIO10 knob controls the live gate over its full useful range. Gain controls how strongly accepted audio drives light intensity; Max Brightness sets the output ceiling.
+
+### Reset behavior
+
+The app/firmware `RESET` command restores the original working defaults:
+
+- Gain = 4.0
+- Max Brightness = 255
+- Single-bulb bench mode
+- original 8 frequency ranges
+- original 8 colors
+- live physical-knob threshold state is reread
+- stale app EQ/bulb display state is cleared and refreshed
+
+### Current Raspberry Pi app
+
+Current tuner:
+
+```text
+happyjarz-controller/tools/happyjarz_meter.py
+```
+
+It provides:
+
+- live 8-band graphic EQ
+- center / peak-to-peak / dominant band / energy telemetry
+- physical knob raw value, percent and calculated gate
+- gain and max-brightness controls
+- editable band edges and colors
+- single-bulb / 16-bulb mode selection
+- 16-bulb live preview
+- RGB, All 16 and Chase 16 tests
+- Reset to known-good defaults
+- CSV logging to `~/happyjarz_eq_log.csv`
+
+### Plug-to-open behavior
+
+The Pi auto-launch watcher is:
+
+```text
+happyjarz-controller/tools/happyjarz_autolaunch.py
+```
+
+Installer:
+
+```text
+happyjarz-controller/tools/install_happyjarz_autolaunch.sh
+```
+
+Expected behavior:
+
+- plug the ESP32 in -> wait for a stable serial device -> app opens
+- unplug the ESP32 -> app closes cleanly
+- manually close the app while still plugged in -> it stays closed
+- unplug/replug -> app may open again
+- the watcher must not launch the app while `arduino-cli` or `esptool` is flashing
+
+The watcher intentionally waits for the serial device to remain stable and checks for flashing tools before launching, preventing the controller app from stealing `/dev/ttyACM0` during upload.
+
+### Current direct flash workflow
+
+Device:
+
+```text
+/dev/ttyACM0
+```
+
+FQBN:
+
+```text
+esp32:esp32:esp32s3:CDCOnBoot=cdc
+```
+
+Typical flash command:
+
+```bash
+cd ~/BloomCircuit && \
+pkill -f happyjarz_meter.py 2>/dev/null || true; \
+pkill -f happyjarz_autolaunch.py 2>/dev/null || true; \
+git pull && \
+cp happyjarz-controller/firmware/happyjarz_sound_reactive_v0_1.ino ~/hjflash/happyjarz_sound_reactive_v0_1/happyjarz_sound_reactive_v0_1.ino && \
+arduino-cli compile --fqbn esp32:esp32:esp32s3:CDCOnBoot=cdc ~/hjflash/happyjarz_sound_reactive_v0_1 && \
+arduino-cli upload -p /dev/ttyACM0 --fqbn esp32:esp32:esp32s3:CDCOnBoot=cdc ~/hjflash/happyjarz_sound_reactive_v0_1
+```
+
+If Git refuses a pull because only the auto-launch files have local edits and those local edits are not wanted, restore only those specific files before pulling:
+
+```bash
+git restore happyjarz-controller/tools/happyjarz_autolaunch.py happyjarz-controller/tools/install_happyjarz_autolaunch.sh
+```
+
+## Legacy / integrated HAPPY JARZ work
+
+Older controller files in this repository document a different integrated Jar prototype with six capacitive-touch controls, OLED menus, Wi-Fi, battery telemetry, screensavers, sayings, and two APA106 lamps. Those files remain useful reference material, but they are **not the active CLUB BOX line-in wiring map on `happyjarz-controller-v0.1`**.
+
+Do not mix the old integrated touch/OLED GPIO assignments with the current line-in controller without deliberately remapping the hardware.
 
 ## Raspberry Pi offline BloomCircuit app
 
@@ -99,24 +213,6 @@ bloomcircuit
 ```
 
 The launcher uses Python's built-in local HTTP server and Chromium app mode. HTML, CSS, JavaScript, component data, embedded component images, project saves, and SVG export stay local.
-
-## HAPPY JARZ Pi service install
-
-From the controller folder:
-
-```bash
-cd ~/BloomCircuit/happyjarz-controller
-bash install_pi_autostart.sh
-```
-
-This installs the lightweight USB watcher. The full controller GUI remains closed until a HAPPY JARZ is detected.
-
-Service logs:
-
-```text
-~/.happyjarz/plug_watch.log
-~/.happyjarz/controller_launch.log
-```
 
 ## Electrical boards
 
