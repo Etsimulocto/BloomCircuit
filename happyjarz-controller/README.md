@@ -1,10 +1,22 @@
 # HAPPY JARZ Controller
 
-## Active branch build: CLUB BOX line-in EQ controller
+## Active branch build: BloomPulse / CLUB BOX line-in EQ controller
 
-On branch `happyjarz-controller-v0.1`, the current active bench build is the **HAPPY JARZ / CLUB BOX audio-reactive controller**.
+On branch `happyjarz-controller-v0.1`, the active bench build is **BloomPulse**, the HAPPY JARZ / CLUB BOX audio-reactive light controller.
 
 This is separate from the older integrated two-light/touch/OLED Jar controller still preserved in the repository for reference.
+
+## Proven bench state — October 4, 2026
+
+The current bench build is now proven through the full Pi -> ESP32 -> APA106 path:
+
+- Single-bulb bench mode reacts to live audio.
+- 16-bulb mode logic is working; with one physical bench bulb connected, the corresponding band output lights correctly.
+- Muting the audio source stops the reactive output.
+- Unplugging the 3.5 mm audio input stops the reactive output.
+- With no audio source connected, ADC noise no longer makes the EQ behave as if music is playing.
+- The Raspberry Pi tuner remains open through brief USB/serial hiccups and only closes after the controller has actually been absent for about 3 seconds.
+- Auto-launch, manual launch, live EQ telemetry, physical threshold knob, Reset, and RGB testing are all part of the current working path.
 
 ## Current hardware map
 
@@ -79,6 +91,7 @@ Analyzer:
 - 8-band Goertzel
 - 8 kHz sample rate
 - 256 samples per block
+- three probe frequencies per band; strongest becomes that band's energy
 
 Default edges:
 
@@ -104,13 +117,25 @@ Current modes:
 - **Single bulb bench** — dominant band drives the first bulb
 - **16 bulbs** — two bulbs per EQ band
 
-The physical knob maps across the full useful live gate range. Gain controls how hard accepted audio drives brightness. Max Brightness sets the output ceiling.
+The physical knob maps across the live gate range. Gain controls how hard accepted audio drives brightness. Max Brightness sets the output ceiling.
+
+### Silence detection
+
+A disconnected or muted input can still contain ADC noise, so BloomPulse does not use peak-to-peak alone as a music detector.
+
+The current firmware tracks average waveform movement as `ACT` and uses a small hysteresis window:
+
+- sufficiently low activity is treated as real silence
+- the input must rise above a slightly higher activity level before reactive output wakes again
+- when silent, band energy is cleared and the LED output is forced off
+
+Telemetry exposes `ACT` and `SILENT` so the real idle floor can be inspected without guessing.
 
 ## Reset contract
 
 `RESET` means restore the whole known-good visualizer state.
 
-It must restore:
+It restores:
 
 - Gain = 4.0
 - Max Brightness = 255
@@ -123,7 +148,7 @@ It must restore:
 
 Reset must not leave a stale fixed bulb color or stale app dropdown/range state.
 
-## Current Raspberry Pi tuner
+## Raspberry Pi tuner
 
 App:
 
@@ -146,7 +171,7 @@ sudo apt install -y python3-serial python3-tk
 Current app features:
 
 - live 8-band graphic EQ
-- center / P2P / dominant band / energy / clipping telemetry
+- center / P2P / activity / silent-state / dominant band / energy / clipping telemetry
 - physical knob raw / percent / gate display
 - Gain
 - Max Brightness
@@ -179,12 +204,29 @@ tools/install_happyjarz_autolaunch.sh
 Expected behavior:
 
 - ESP32 appears and stays stable -> tuner opens
-- ESP32 is unplugged -> tuner closes cleanly
+- brief USB/serial hiccup -> tuner stays open and reports reconnecting
+- ESP32 remains absent for about 3 seconds -> tuner closes cleanly
 - user manually closes tuner while ESP32 remains connected -> tuner stays closed
 - unplug/replug -> watcher rearms and may open it again
 - watcher refuses to launch while `arduino-cli` or `esptool` is active
 
-The stability delay and flashing-process check exist specifically to prevent the app from stealing `/dev/ttyACM0` during uploads.
+The launch stability delay and disconnect grace period exist specifically to prevent false opens/closes during flashing or USB settling.
+
+## Raspberry Pi menu app
+
+BloomPulse can also be installed in the Raspberry Pi menu:
+
+```bash
+cd ~/BloomCircuit
+chmod +x happyjarz-controller/tools/install_bloompulse_pi_app.sh
+./happyjarz-controller/tools/install_bloompulse_pi_app.sh
+```
+
+Then open:
+
+```text
+Raspberry Pi menu -> Sound & Video -> BloomPulse
+```
 
 ## Current direct flash workflow
 
@@ -209,16 +251,9 @@ pkill -f happyjarz_autolaunch.py 2>/dev/null || true; \
 git pull && \
 cp happyjarz-controller/firmware/happyjarz_sound_reactive_v0_1.ino ~/hjflash/happyjarz_sound_reactive_v0_1/happyjarz_sound_reactive_v0_1.ino && \
 arduino-cli compile --fqbn esp32:esp32:esp32s3:CDCOnBoot=cdc ~/hjflash/happyjarz_sound_reactive_v0_1 && \
-arduino-cli upload -p /dev/ttyACM0 --fqbn esp32:esp32:esp32s3:CDCOnBoot=cdc ~/hjflash/happyjarz_sound_reactive_v0_1
+arduino-cli upload -p /dev/ttyACM0 --fqbn esp32:esp32:esp32s3:CDCOnBoot=cdc ~/hjflash/happyjarz_sound_reactive_v0_1 && \
+./happyjarz-controller/tools/install_happyjarz_autolaunch.sh
 ```
-
-If Git blocks a pull because the two auto-launch files were locally edited and those edits are disposable:
-
-```bash
-git restore tools/happyjarz_autolaunch.py tools/install_happyjarz_autolaunch.sh
-```
-
-Run from `~/BloomCircuit/happyjarz-controller` for the short paths above, or use the full repository-relative paths from the repo root.
 
 ## Power note for 16 bulbs
 
@@ -230,11 +265,11 @@ The finished 16-bulb array must **not** be powered from the ESP32 3.3V rail. Use
 
 Preserve proven low-level layers.
 
-If RGB Test works but reactive behavior is wrong, debug line input, knob, EQ, telemetry, and app state before changing the RMT driver.
+If RGB Test works but reactive behavior is wrong, debug line input, silence/activity detection, knob, EQ, telemetry, and app state before changing the RMT driver.
 
-If GPIO10 reads near 0 when grounded and near 4095 at 3.3V, the ADC pin is working; verify pot wiring/ground rails before changing firmware.
+If the graphic EQ moves with no audio connected, inspect `ACT` / `SILENT` and the ADC input path before changing frequency analysis or LED timing.
 
-If `/dev/ttyACM0` is busy during flashing, close the tuner/watcher first and verify the auto-launch watcher is the current delayed/flasher-aware version.
+If `/dev/ttyACM0` is busy during flashing, close the tuner/watcher first and verify the auto-launch watcher is the delayed/flasher-aware version.
 
 ## Legacy integrated controller material
 
@@ -247,6 +282,6 @@ Older files in this folder document a different HAPPY JARZ prototype with:
 - battery/power telemetry
 - sayings and procedural saver modes
 
-Those files are intentionally retained as historical/reference material. Their GPIO assignments are **not** the current CLUB BOX line-in wiring map and should not be mixed into this branch without deliberate remapping.
+Those files are intentionally retained as historical/reference material. Their GPIO assignments are **not** the current BloomPulse line-in wiring map and should not be mixed into this branch without deliberate remapping.
 
 **Rule: preserve the proven hardware/protocol layer; tune behavior above it.**
