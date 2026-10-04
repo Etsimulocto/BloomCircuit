@@ -1,280 +1,153 @@
 #!/usr/bin/env python3
-import csv
-import os
-import queue
-import threading
-import time
-import tkinter as tk
+import csv, os, queue, threading, time, tkinter as tk
 from tkinter import ttk
-
 try:
     import serial
 except ImportError:
     serial = None
 
-PORT = "/dev/ttyACM0"
-BAUD = 115200
-LOG_PATH = os.path.expanduser("~/happyjarz_linein_log.csv")
+PORT='/dev/ttyACM0'; BAUD=115200
+LOG_PATH=os.path.expanduser('~/happyjarz_eq_log.csv')
+COLOR_PRESETS={
+    'Red':(255,0,0),'Orange':(255,70,0),'Amber':(255,180,0),'Lime':(80,255,0),
+    'Green':(0,255,90),'Cyan':(0,180,255),'Blue':(40,40,255),'Violet':(180,0,255),
+    'White':(255,255,255),'Pink':(255,30,120)
+}
 
+class EqApp:
+    def __init__(self,root):
+        self.root=root; root.title('HAPPY JARZ / CLUB BOX EQ Tuner'); root.geometry('980x900')
+        self.q=queue.Queue(); self.running=True; self.ser=None; self.lock=threading.Lock(); self.ignore=False
+        self.gain=tk.DoubleVar(value=4.0); self.gate=tk.DoubleVar(value=8.0); self.bright=tk.DoubleVar(value=96)
+        self.edges=[tk.DoubleVar(value=v) for v in (40,90,180,350,700,1200,2000,3000,3900)]
+        names=list(COLOR_PRESETS.keys())
+        defaults=['Red','Orange','Amber','Lime','Green','Cyan','Blue','Violet']
+        self.colors=[tk.StringVar(value=defaults[i]) for i in range(8)]
+        self.energy_vars=[tk.StringVar(value=f'B{i+1}: 0.0') for i in range(8)]
+        self.status=tk.StringVar(value='Connecting...'); self.summary=tk.StringVar(value='Waiting for EQ data...')
 
-class LineInApp:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("HAPPY JARZ / CLUB BOX Line-In Bench")
-        self.root.geometry("900x800")
+        top=ttk.Frame(root,padding=10); top.pack(fill='x')
+        ttk.Label(top,textvariable=self.status).pack(side='left'); ttk.Button(top,text='RGB Test',command=lambda:self.send('TEST RGB')).pack(side='right')
 
-        self.q = queue.Queue()
-        self.running = True
-        self.ser = None
-        self.serial_lock = threading.Lock()
-        self.max_p2p = 0
-        self.samples_seen = 0
+        meter=ttk.LabelFrame(root,text='Live EQ',padding=10); meter.pack(fill='x',padx=10,pady=(0,8))
+        ttk.Label(meter,textvariable=self.summary,font=('TkDefaultFont',16,'bold')).pack(anchor='w')
+        bars=ttk.Frame(meter); bars.pack(fill='x',pady=5)
+        self.band_bars=[]
+        for i in range(8):
+            col=ttk.Frame(bars); col.pack(side='left',fill='both',expand=True,padx=2)
+            ttk.Label(col,textvariable=self.energy_vars[i]).pack()
+            pb=ttk.Progressbar(col,orient='vertical',length=120,maximum=100); pb.pack(); self.band_bars.append(pb)
 
-        top = ttk.Frame(root, padding=10)
-        top.pack(fill="x")
-        self.status = tk.StringVar(value="Connecting...")
-        ttk.Label(top, textvariable=self.status).pack(side="left")
-        ttk.Button(top, text="Clear Peak", command=self.clear_peak).pack(side="right")
+        controls=ttk.LabelFrame(root,text='EQ Response',padding=10); controls.pack(fill='x',padx=10,pady=(0,8))
+        self.add_slider(controls,'Gain',self.gain,0.1,30.0,0.1,lambda:self.send(f'SET GAIN {self.gain.get():.2f}'))
+        self.add_slider(controls,'Noise gate',self.gate,0,100,1,lambda:self.send(f'SET GATE {self.gate.get():.1f}'))
+        self.add_slider(controls,'Max brightness',self.bright,4,255,1,lambda:self.send(f'SET BRIGHT {int(self.bright.get())}'))
 
-        meter = ttk.LabelFrame(root, text="GPIO9 Line-In", padding=10)
-        meter.pack(fill="x", padx=10, pady=(0, 8))
+        eq=ttk.LabelFrame(root,text='Band edges + colors',padding=10); eq.pack(fill='x',padx=10,pady=(0,8))
+        hdr=ttk.Frame(eq); hdr.pack(fill='x')
+        for txt,w in [('Band',7),('Low Hz',10),('High Hz',10),('Color',12)]: ttk.Label(hdr,text=txt,width=w).pack(side='left')
+        for i in range(8):
+            row=ttk.Frame(eq); row.pack(fill='x',pady=2)
+            ttk.Label(row,text=str(i+1),width=7).pack(side='left')
+            low=ttk.Spinbox(row,from_=20,to=3950,textvariable=self.edges[i],width=10); low.pack(side='left')
+            high=ttk.Spinbox(row,from_=20,to=3950,textvariable=self.edges[i+1],width=10); high.pack(side='left')
+            cb=ttk.Combobox(row,textvariable=self.colors[i],values=list(COLOR_PRESETS.keys()),state='readonly',width=12); cb.pack(side='left')
+            ttk.Button(row,text='Apply',command=lambda i=i:self.apply_band(i)).pack(side='left',padx=5)
+        ttk.Button(eq,text='Apply all edges/colors',command=self.apply_all).pack(anchor='w',pady=(6,0))
 
-        self.center_var = tk.StringVar(value="CENTER 0")
-        self.range_var = tk.StringVar(value="MIN 0   MAX 0")
-        self.p2p_var = tk.StringVar(value="P2P 0   PEAK 0")
-        self.headroom_var = tk.StringVar(value="LOW HR 0   HIGH HR 0")
-        self.clip_var = tk.StringVar(value="CLIP: no")
-        self.test_var = tk.StringVar(value="Waiting for samples...")
-
-        ttk.Label(meter, textvariable=self.center_var, font=("TkDefaultFont", 20, "bold")).pack(anchor="w")
-        ttk.Label(meter, textvariable=self.range_var, font=("TkDefaultFont", 13)).pack(anchor="w")
-        ttk.Label(meter, textvariable=self.p2p_var, font=("TkDefaultFont", 13)).pack(anchor="w")
-        ttk.Label(meter, textvariable=self.headroom_var, font=("TkDefaultFont", 12)).pack(anchor="w")
-        ttk.Label(meter, textvariable=self.clip_var, font=("TkDefaultFont", 13, "bold")).pack(anchor="w", pady=(3, 3))
-        ttk.Label(meter, textvariable=self.test_var, font=("TkDefaultFont", 11)).pack(anchor="w", pady=(0, 6))
-
-        self.bar = ttk.Progressbar(meter, orient="horizontal", mode="determinate", maximum=4095)
-        self.bar.pack(fill="x")
-
-        tests = ttk.LabelFrame(root, text="Bench Tests", padding=10)
-        tests.pack(fill="x", padx=10, pady=(0, 8))
-
-        row1 = ttk.Frame(tests)
-        row1.pack(fill="x", pady=3)
-        ttk.Button(row1, text="Read Once", command=lambda: self.write_line("GET")).pack(side="left")
-        ttk.Button(row1, text="RGB Test", command=lambda: self.write_line("TEST RGB")).pack(side="left", padx=6)
-        ttk.Button(row1, text="16-Pixel Chase", command=lambda: self.write_line("TEST CHASE")).pack(side="left", padx=6)
-        ttk.Button(row1, text="All 16 On", command=lambda: self.write_line("TEST ALL")).pack(side="left", padx=6)
-        ttk.Button(row1, text="LEDs Off", command=lambda: self.write_line("TEST OFF")).pack(side="left", padx=6)
-
-        row2 = ttk.Frame(tests)
-        row2.pack(fill="x", pady=(8, 2))
-        ttk.Label(row2, text="LED brightness").pack(side="left")
-        self.bright_var = tk.DoubleVar(value=48)
-        self.bright_scale = tk.Scale(row2, from_=4, to=128, resolution=1,
-                                     orient="horizontal", variable=self.bright_var,
-                                     length=440, command=self.schedule_brightness)
-        self.bright_scale.pack(side="left", padx=8, fill="x", expand=True)
-
-        notes = ttk.LabelFrame(root, text="What We Want", padding=10)
-        notes.pack(fill="x", padx=10, pady=(0, 8))
-        ttk.Label(notes, text=(
-            "No audio: CENTER should be stable roughly around the middle of the ADC range. "
-            "Music playing: P2P should rise clearly into the hundreds. "
-            "A few dozen counts is too small for useful FFT/EQ. "
-            "If CLIP becomes YES or either headroom falls near zero, turn the source down."
-        ), wraplength=840).pack(anchor="w")
-
-        ttk.Label(root, text=f"CSV log: {LOG_PATH}", padding=(10, 0, 10, 4)).pack(anchor="w")
-
-        self.log = tk.Text(root, height=18, wrap="none")
-        self.log.pack(fill="both", expand=True, padx=10, pady=(0, 10))
-        self.log.configure(state="disabled")
-
+        ttk.Label(root,text=f'CSV log: {LOG_PATH}',padding=(10,0,10,4)).pack(anchor='w')
+        self.log=tk.Text(root,height=14,wrap='none'); self.log.pack(fill='both',expand=True,padx=10,pady=(0,10)); self.log.configure(state='disabled')
         if not os.path.exists(LOG_PATH):
-            with open(LOG_PATH, "w", newline="") as f:
-                csv.writer(f).writerow([
-                    "timestamp", "center", "minimum", "maximum", "p2p",
-                    "low_headroom", "high_headroom", "clip", "brightness", "led_count"
-                ])
+            with open(LOG_PATH,'w',newline='') as f: csv.writer(f).writerow(['timestamp','center','p2p','clip','dominant','energy']+[f'b{i+1}' for i in range(8)])
+        threading.Thread(target=self.reader,daemon=True).start(); root.after(50,self.process); root.protocol('WM_DELETE_WINDOW',self.close)
 
-        threading.Thread(target=self.reader_thread, daemon=True).start()
-        self.root.after(50, self.process_queue)
-        self.root.protocol("WM_DELETE_WINDOW", self.close)
+    def add_slider(self,parent,label,var,lo,hi,res,cb):
+        row=ttk.Frame(parent); row.pack(fill='x',pady=2); ttk.Label(row,text=label,width=16).pack(side='left')
+        sc=tk.Scale(row,from_=lo,to=hi,resolution=res,orient='horizontal',variable=var,length=640); sc.pack(side='left',fill='x',expand=True)
+        def sched(_=None):
+            if self.ignore:return
+            if getattr(sc,'aid',None): self.root.after_cancel(sc.aid)
+            sc.aid=self.root.after(120,cb)
+        sc.configure(command=sched)
 
-    def clear_peak(self):
-        self.max_p2p = 0
-        self.p2p_var.set("P2P 0   PEAK 0")
-
-    def schedule_brightness(self, _value=None):
-        if getattr(self, "_bright_after", None):
-            self.root.after_cancel(self._bright_after)
-        self._bright_after = self.root.after(120, self.send_brightness)
-
-    def send_brightness(self):
-        self.write_line(f"SET BRIGHT {int(self.bright_var.get())}")
-
-    def write_line(self, text):
-        with self.serial_lock:
+    def send(self,s):
+        with self.lock:
             if self.ser and self.ser.is_open:
-                self.ser.write((text.strip() + "\n").encode("ascii"))
-                self.ser.flush()
+                self.ser.write((s+'\n').encode()); self.ser.flush()
+
+    def apply_band(self,i):
+        self.send(f'SET EDGE {i} {self.edges[i].get():.0f}'); self.send(f'SET EDGE {i+1} {self.edges[i+1].get():.0f}')
+        r,g,b=COLOR_PRESETS[self.colors[i].get()]; self.send(f'SET COLOR {i+1} {r},{g},{b}')
+    def apply_all(self):
+        for i,v in enumerate(self.edges): self.send(f'SET EDGE {i} {v.get():.0f}')
+        for i in range(8):
+            r,g,b=COLOR_PRESETS[self.colors[i].get()]; self.send(f'SET COLOR {i+1} {r},{g},{b}')
 
     @staticmethod
-    def parse_kv(line):
-        vals = {}
-        for part in line.strip().split("|")[2:]:
-            if "=" in part:
-                k, v = part.split("=", 1)
-                vals[k] = v
-        return vals
+    def kv(line):
+        d={}
+        for p in line.split('|')[2:]:
+            if '=' in p:
+                k,v=p.split('=',1); d[k]=v
+        return d
 
-    def reader_thread(self):
-        if serial is None:
-            self.q.put(("status", "python3-serial is not installed"))
-            return
-
+    def reader(self):
+        if serial is None: self.q.put(('status','python3-serial not installed')); return
         while self.running:
             try:
-                ser = serial.Serial()
-                ser.port = PORT
-                ser.baudrate = BAUD
-                ser.timeout = 0.25
-                ser.write_timeout = 0.25
-                ser.dtr = False
-                ser.rts = False
-                ser.open()
-                ser.dtr = False
-                ser.rts = False
-                self.ser = ser
-
-                self.q.put(("status", f"Connected: {PORT} @ {BAUD} (DTR/RTS OFF)"))
-                time.sleep(0.15)
-                self.write_line("STREAM 1")
-                self.write_line("GET")
-
-                while self.running and ser.is_open:
-                    raw = ser.readline()
-                    if not raw:
-                        continue
-                    line = raw.decode("utf-8", errors="replace").strip()
-                    if not line.startswith("HJ|"):
-                        continue
-
-                    if line.startswith("HJ|LINE|"):
-                        vals = self.parse_kv(line)
-                        try:
-                            self.q.put((
-                                "line",
-                                int(vals["CENTER"]),
-                                int(vals["MIN"]),
-                                int(vals["MAX"]),
-                                int(vals["P2P"]),
-                                int(vals.get("LOWHR", vals["MIN"])),
-                                int(vals.get("HIGHHR", 4095 - int(vals["MAX"]))),
-                                int(vals["CLIP"]),
-                                int(vals.get("BRIGHT", 48)),
-                                int(vals.get("LEDS", 16)),
-                            ))
-                        except (KeyError, ValueError):
-                            pass
-                    elif line.startswith("HJ|ACK|"):
-                        self.q.put(("ack", line))
-
+                s=serial.Serial(PORT,BAUD,timeout=.25,write_timeout=.25); s.dtr=False; s.rts=False; self.ser=s
+                self.q.put(('status',f'Connected: {PORT} @ {BAUD}')); time.sleep(.15); self.send('STREAM 1'); self.send('GET')
+                while self.running and s.is_open:
+                    raw=s.readline()
+                    if not raw: continue
+                    line=raw.decode(errors='replace').strip()
+                    if line.startswith('HJ|EQ|'): self.q.put(('eq',self.kv(line)))
+                    elif line.startswith('HJ|EQCFG|'): self.q.put(('cfg',self.kv(line)))
+                    elif line.startswith('HJ|ACK|'): self.q.put(('log',line))
             except Exception as e:
-                self.q.put(("status", f"Disconnected: {e} — retrying..."))
-                try:
-                    if self.ser:
-                        self.ser.close()
-                except Exception:
-                    pass
-                self.ser = None
-                time.sleep(1.0)
+                self.q.put(('status',f'Disconnected: {e} — retrying...')); self.ser=None; time.sleep(1)
 
-    def process_queue(self):
+    def process(self):
         try:
             while True:
-                item = self.q.get_nowait()
-                if item[0] == "status":
-                    self.status.set(item[1])
-                elif item[0] == "line":
-                    self.update_line(*item[1:])
-                elif item[0] == "ack":
-                    self.append_log(item[1])
-        except queue.Empty:
-            pass
+                t,*rest=self.q.get_nowait()
+                if t=='status': self.status.set(rest[0])
+                elif t=='eq': self.update_eq(rest[0])
+                elif t=='cfg': self.apply_cfg(rest[0])
+                elif t=='log': self.append(rest[0])
+        except queue.Empty: pass
+        if self.running:self.root.after(50,self.process)
 
-        if self.running:
-            self.root.after(50, self.process_queue)
+    def update_eq(self,d):
+        try:
+            center=int(d['CENTER']); p2p=int(d['P2P']); clip=int(d['CLIP']); dom=int(d['DOM']); en=float(d['ENERGY']); vals=[float(d.get(f'B{i+1}',0)) for i in range(8)]
+        except Exception:return
+        self.summary.set(f'CENTER {center}   P2P {p2p}   DOMINANT BAND {dom}   ENERGY {en:.1f}   CLIP {clip}')
+        peak=max(max(vals),1.0)
+        for i,v in enumerate(vals): self.energy_vars[i].set(f'B{i+1}: {v:.1f}'); self.band_bars[i]['value']=min(100,100*v/peak)
+        stamp=time.strftime('%H:%M:%S'); self.append(f'{stamp} DOM={dom} P2P={p2p} ENERGY={en:.1f}  '+' '.join(f'B{i+1}={vals[i]:.1f}' for i in range(8)))
+        with open(LOG_PATH,'a',newline='') as f: csv.writer(f).writerow([time.strftime('%Y-%m-%d %H:%M:%S'),center,p2p,clip,dom,en,*vals])
 
-    def evaluate(self, center, p2p, low_hr, high_hr, clip):
-        if clip:
-            return "CLIPPING: turn source volume down."
-        if center < 1200 or center > 2900:
-            return "CHECK BIAS: center is too far from mid-range."
-        if min(low_hr, high_hr) < 250:
-            return "HOT: getting close to an ADC rail."
-        if p2p < 20:
-            return "QUIET: mostly bias/noise, little audio detected."
-        if p2p < 100:
-            return "TOO SMALL FOR FFT: audio is present, but swing is weak."
-        if p2p < 500:
-            return "GOOD: usable line-in swing for testing."
-        if p2p < 1800:
-            return "VERY GOOD: strong signal with useful FFT headroom."
-        return "HOT BUT CLEAN: strong signal; keep an eye on headroom."
+    def apply_cfg(self,d):
+        self.ignore=True
+        try:
+            if 'GAIN' in d:self.gain.set(float(d['GAIN']))
+            if 'GATE' in d:self.gate.set(float(d['GATE']))
+            if 'BRIGHT' in d:self.bright.set(float(d['BRIGHT']))
+            for i in range(9):
+                if f'E{i}' in d:self.edges[i].set(float(d[f'E{i}']))
+        finally:self.ignore=False
 
-    def update_line(self, center, minimum, maximum, p2p, low_hr, high_hr, clip, bright, leds):
-        self.samples_seen += 1
-        self.max_p2p = max(self.max_p2p, p2p)
-
-        self.center_var.set(f"CENTER {center}")
-        self.range_var.set(f"MIN {minimum}   MAX {maximum}")
-        self.p2p_var.set(f"P2P {p2p}   PEAK {self.max_p2p}")
-        self.headroom_var.set(f"LOW HR {low_hr}   HIGH HR {high_hr}")
-        self.clip_var.set("CLIP: YES — TURN SOURCE DOWN" if clip else "CLIP: no")
-        self.test_var.set(self.evaluate(center, p2p, low_hr, high_hr, clip))
-        self.bar["value"] = min(p2p, 4095)
-
-        if int(self.bright_var.get()) != bright:
-            self.bright_var.set(bright)
-
-        stamp = time.strftime("%H:%M:%S")
-        self.append_log(
-            f"{stamp} CENTER={center:4d} MIN={minimum:4d} MAX={maximum:4d} "
-            f"P2P={p2p:4d} LHR={low_hr:4d} HHR={high_hr:4d} CLIP={clip} LEDS={leds}"
-        )
-
-        with open(LOG_PATH, "a", newline="") as f:
-            csv.writer(f).writerow([
-                time.strftime("%Y-%m-%d %H:%M:%S"), center, minimum, maximum,
-                p2p, low_hr, high_hr, clip, bright, leds
-            ])
-
-    def append_log(self, text):
-        self.log.configure(state="normal")
-        self.log.insert("end", text + "\n")
-        self.log.see("end")
-        if int(self.log.index("end-1c").split(".")[0]) > 500:
-            self.log.delete("1.0", "100.0")
-        self.log.configure(state="disabled")
-
+    def append(self,s):
+        self.log.configure(state='normal'); self.log.insert('end',s+'\n'); self.log.see('end'); self.log.configure(state='disabled')
     def close(self):
-        self.running = False
+        self.running=False
+        try:self.send('STREAM 0')
+        except:pass
         try:
-            self.write_line("STREAM 0")
-            time.sleep(0.05)
-        except Exception:
-            pass
-        try:
-            if self.ser:
-                self.ser.close()
-        except Exception:
-            pass
+            if self.ser:self.ser.close()
+        except:pass
         self.root.destroy()
 
-
-if __name__ == "__main__":
-    root = tk.Tk()
-    LineInApp(root)
-    root.mainloop()
+if __name__=='__main__':
+    root=tk.Tk(); EqApp(root); root.mainloop()
