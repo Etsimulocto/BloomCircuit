@@ -1,4 +1,4 @@
-// HAPPY JARZ / CLUB BOX — tunable 8-band line-in EQ visualizer v3.7
+// HAPPY JARZ / CLUB BOX — tunable 8-band line-in EQ visualizer v3.8
 //
 // Current bench setup: ONE APA106 on GPIO7, mono line-in on GPIO9.
 // GPIO10 is a physical noise-floor potentiometer:
@@ -27,7 +27,7 @@ struct Rgb { uint8_t r, g, b; };
 static bool streamEnabled = false;
 static String commandBuffer;
 static unsigned long lastTelemetry = 0;
-static uint8_t maxBrightness = 96;
+static uint8_t maxBrightness = 255;
 static float noiseGate = 0.0f;
 static float knobGateMax = 100.0f;
 static float eqGain = 4.0f;
@@ -108,10 +108,14 @@ static void showDominant() {
     writeRgb(0, 0, 0);
     return;
   }
+
+  // Stronger low-level response for weak phone/Pi line outputs.
+  // Gate decides what is ignored; gain + soft compression decide visible punch.
   float x = (dominantEnergy - noiseGate) * eqGain;
-  float level = x / (x + 80.0f);
-  float cap = (float)maxBrightness / 255.0f;
-  level *= cap;
+  float compressed = x / (x + 18.0f);
+  float level = sqrtf(constrain(compressed, 0.0f, 1.0f));
+  level *= (float)maxBrightness / 255.0f;
+
   const Rgb &c = bandColor[dominantBand];
   writeRgb(scale8(c.r, level), scale8(c.g, level), scale8(c.b, level));
 }
@@ -202,7 +206,7 @@ static void handleCommand(String cmd) {
   if (cmd == "STREAM 0") { streamEnabled = false; return; }
   if (cmd == "GET") { printConfig(); return; }
   if (cmd == "TEST RGB") {
-    writeRgb(80,0,0); delay(250); writeRgb(0,80,0); delay(250); writeRgb(0,0,80); delay(250); writeRgb(0,0,0); return;
+    writeRgb(255,0,0); delay(250); writeRgb(0,255,0); delay(250); writeRgb(0,0,255); delay(250); writeRgb(0,0,0); return;
   }
   if (cmd.startsWith("SET GAIN ")) { float v=cmd.substring(9).toFloat(); if(v>=0.1f&&v<=30.0f) eqGain=v; printConfig(); return; }
   if (cmd.startsWith("SET GATEMAX ")) { float v=cmd.substring(12).toFloat(); if(v>=5.0f&&v<=500.0f) knobGateMax=v; printConfig(); return; }
@@ -246,7 +250,7 @@ void setup() {
   analogReadResolution(12);
   if (!initApa106Rmt()) while(true) delay(1000);
   updateNoiseKnob();
-  writeRgb(80,0,0); delay(180); writeRgb(0,80,0); delay(180); writeRgb(0,0,80); delay(180); writeRgb(0,0,0);
+  writeRgb(255,0,0); delay(180); writeRgb(0,255,0); delay(180); writeRgb(0,0,255); delay(180); writeRgb(0,0,0);
 }
 
 void loop() {
