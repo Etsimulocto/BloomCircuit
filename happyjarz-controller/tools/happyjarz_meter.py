@@ -21,7 +21,7 @@ class LineInApp:
     def __init__(self, root):
         self.root = root
         self.root.title("HAPPY JARZ / CLUB BOX Line-In Bench")
-        self.root.geometry("860x760")
+        self.root.geometry("900x800")
 
         self.q = queue.Queue()
         self.running = True
@@ -42,12 +42,14 @@ class LineInApp:
         self.center_var = tk.StringVar(value="CENTER 0")
         self.range_var = tk.StringVar(value="MIN 0   MAX 0")
         self.p2p_var = tk.StringVar(value="P2P 0   PEAK 0")
+        self.headroom_var = tk.StringVar(value="LOW HR 0   HIGH HR 0")
         self.clip_var = tk.StringVar(value="CLIP: no")
         self.test_var = tk.StringVar(value="Waiting for samples...")
 
         ttk.Label(meter, textvariable=self.center_var, font=("TkDefaultFont", 20, "bold")).pack(anchor="w")
         ttk.Label(meter, textvariable=self.range_var, font=("TkDefaultFont", 13)).pack(anchor="w")
         ttk.Label(meter, textvariable=self.p2p_var, font=("TkDefaultFont", 13)).pack(anchor="w")
+        ttk.Label(meter, textvariable=self.headroom_var, font=("TkDefaultFont", 12)).pack(anchor="w")
         ttk.Label(meter, textvariable=self.clip_var, font=("TkDefaultFont", 13, "bold")).pack(anchor="w", pady=(3, 3))
         ttk.Label(meter, textvariable=self.test_var, font=("TkDefaultFont", 11)).pack(anchor="w", pady=(0, 6))
 
@@ -71,16 +73,17 @@ class LineInApp:
         self.bright_var = tk.DoubleVar(value=48)
         self.bright_scale = tk.Scale(row2, from_=4, to=128, resolution=1,
                                      orient="horizontal", variable=self.bright_var,
-                                     length=420, command=self.schedule_brightness)
+                                     length=440, command=self.schedule_brightness)
         self.bright_scale.pack(side="left", padx=8, fill="x", expand=True)
 
-        notes = ttk.LabelFrame(root, text="Automatic Checks", padding=10)
+        notes = ttk.LabelFrame(root, text="What We Want", padding=10)
         notes.pack(fill="x", padx=10, pady=(0, 8))
         ttk.Label(notes, text=(
-            "With no audio playing, CENTER should sit roughly near mid-scale (~2048). "
-            "P2P should be small. Play audio at LOW source volume first; P2P should rise. "
-            "If CLIP becomes YES, turn the source down."
-        ), wraplength=810).pack(anchor="w")
+            "No audio: CENTER should be stable roughly around the middle of the ADC range. "
+            "Music playing: P2P should rise clearly into the hundreds. "
+            "A few dozen counts is too small for useful FFT/EQ. "
+            "If CLIP becomes YES or either headroom falls near zero, turn the source down."
+        ), wraplength=840).pack(anchor="w")
 
         ttk.Label(root, text=f"CSV log: {LOG_PATH}", padding=(10, 0, 10, 4)).pack(anchor="w")
 
@@ -91,7 +94,8 @@ class LineInApp:
         if not os.path.exists(LOG_PATH):
             with open(LOG_PATH, "w", newline="") as f:
                 csv.writer(f).writerow([
-                    "timestamp", "center", "minimum", "maximum", "p2p", "clip", "brightness", "led_count"
+                    "timestamp", "center", "minimum", "maximum", "p2p",
+                    "low_headroom", "high_headroom", "clip", "brightness", "led_count"
                 ])
 
         threading.Thread(target=self.reader_thread, daemon=True).start()
@@ -160,17 +164,18 @@ class LineInApp:
                     if line.startswith("HJ|LINE|"):
                         vals = self.parse_kv(line)
                         try:
-                            item = (
+                            self.q.put((
                                 "line",
                                 int(vals["CENTER"]),
                                 int(vals["MIN"]),
                                 int(vals["MAX"]),
                                 int(vals["P2P"]),
+                                int(vals.get("LOWHR", vals["MIN"])),
+                                int(vals.get("HIGHHR", 4095 - int(vals["MAX"]))),
                                 int(vals["CLIP"]),
                                 int(vals.get("BRIGHT", 48)),
                                 int(vals.get("LEDS", 16)),
-                            )
-                            self.q.put(item)
+                            ))
                         except (KeyError, ValueError):
                             pass
                     elif line.startswith("HJ|ACK|"):
@@ -202,29 +207,33 @@ class LineInApp:
         if self.running:
             self.root.after(50, self.process_queue)
 
-    def evaluate(self, center, p2p, clip):
-        center_ok = 1500 <= center <= 2600
+    def evaluate(self, center, p2p, low_hr, high_hr, clip):
         if clip:
-            return "FAIL: input is clipping — lower source volume."
-        if not center_ok:
-            return "CHECK BIAS: center is far from ~1.65V / ADC mid-scale."
-        if p2p < 12:
-            return "QUIET: bias looks okay; little/no audio signal detected."
-        if p2p < 80:
-            return "SIGNAL: small line-level audio detected."
-        if p2p < 1200:
-            return "GOOD: healthy audio swing with plenty of headroom."
-        return "HOT: strong signal; okay if CLIP stays NO, but keep volume modest."
+            return "CLIPPING: turn source volume down."
+        if center < 1200 or center > 2900:
+            return "CHECK BIAS: center is too far from mid-range."
+        if min(low_hr, high_hr) < 250:
+            return "HOT: getting close to an ADC rail."
+        if p2p < 20:
+            return "QUIET: mostly bias/noise, little audio detected."
+        if p2p < 100:
+            return "TOO SMALL FOR FFT: audio is present, but swing is weak."
+        if p2p < 500:
+            return "GOOD: usable line-in swing for testing."
+        if p2p < 1800:
+            return "VERY GOOD: strong signal with useful FFT headroom."
+        return "HOT BUT CLEAN: strong signal; keep an eye on headroom."
 
-    def update_line(self, center, minimum, maximum, p2p, clip, bright, leds):
+    def update_line(self, center, minimum, maximum, p2p, low_hr, high_hr, clip, bright, leds):
         self.samples_seen += 1
         self.max_p2p = max(self.max_p2p, p2p)
 
         self.center_var.set(f"CENTER {center}")
         self.range_var.set(f"MIN {minimum}   MAX {maximum}")
         self.p2p_var.set(f"P2P {p2p}   PEAK {self.max_p2p}")
+        self.headroom_var.set(f"LOW HR {low_hr}   HIGH HR {high_hr}")
         self.clip_var.set("CLIP: YES — TURN SOURCE DOWN" if clip else "CLIP: no")
-        self.test_var.set(self.evaluate(center, p2p, clip))
+        self.test_var.set(self.evaluate(center, p2p, low_hr, high_hr, clip))
         self.bar["value"] = min(p2p, 4095)
 
         if int(self.bright_var.get()) != bright:
@@ -233,13 +242,13 @@ class LineInApp:
         stamp = time.strftime("%H:%M:%S")
         self.append_log(
             f"{stamp} CENTER={center:4d} MIN={minimum:4d} MAX={maximum:4d} "
-            f"P2P={p2p:4d} CLIP={clip} LEDS={leds}"
+            f"P2P={p2p:4d} LHR={low_hr:4d} HHR={high_hr:4d} CLIP={clip} LEDS={leds}"
         )
 
         with open(LOG_PATH, "a", newline="") as f:
             csv.writer(f).writerow([
                 time.strftime("%Y-%m-%d %H:%M:%S"), center, minimum, maximum,
-                p2p, clip, bright, leds
+                p2p, low_hr, high_hr, clip, bright, leds
             ])
 
     def append_log(self, text):
