@@ -1,16 +1,19 @@
-// HAPPY JARZ / CLUB BOX — 16-pixel line-in bench diagnostic v3.4
+// HAPPY JARZ / CLUB BOX — 16-pixel direct line-in bench diagnostic v3.5
 //
 // PURPOSE
-//   Validate a mono 1/8-inch line input on GPIO9 before adding FFT/EQ.
+//   Validate mono 1/8-inch line input on GPIO9 before FFT/EQ.
 //   Drive/test a 16-pixel APA106 RGB chain using the proven custom RMT timing.
 //   Telemetry is OFF unless the Pi app explicitly enables it.
 //
-// LINE INPUT
-//   TRS TIP -> 10k -> 10uF coupling cap -> GPIO9 bias node
+// LINE INPUT — REBUILT BENCH CIRCUIT
+//   TRS TIP -> 10uF coupling capacitor -> GPIO9 bias node
+//   capacitor negative/striped side -> TRS TIP
+//   capacitor positive side -> GPIO9 bias node
 //   GPIO9 bias node -> 10k -> 3V3
 //   GPIO9 bias node -> 10k -> GND
 //   TRS SLEEVE -> common GND
-//   TRS RING unused for the first mono test
+//   TRS RING unused for mono test
+//   No extra series 10k on TIP in this bench revision.
 //
 // LED OUTPUT
 //   GPIO7 -> 220 ohm -> APA106 DIN
@@ -18,7 +21,7 @@
 //   Proven physical byte order: RGB
 //
 // IMPORTANT
-//   16 LEDs must NOT be powered from an ESP32 3V3 pin in the finished array.
+//   16 LEDs must NOT be powered from ESP32 3V3 in the finished array.
 //   Use an adequate external LED supply with common ground.
 
 #include <Arduino.h>
@@ -27,7 +30,7 @@
 static constexpr uint8_t LED_DATA_PIN = 7;
 static constexpr uint8_t LINE_IN_PIN = 9;
 static constexpr uint8_t LED_COUNT = 16;
-static constexpr uint32_t SAMPLE_WINDOW_US = 10000;
+static constexpr uint32_t SAMPLE_WINDOW_US = 20000;
 static constexpr unsigned long TELEMETRY_MS = 100;
 
 struct Rgb { uint8_t r, g, b; };
@@ -42,6 +45,8 @@ struct LineStats {
   uint16_t maximum;
   uint16_t center;
   uint16_t p2p;
+  uint16_t lowHeadroom;
+  uint16_t highHeadroom;
   bool clipped;
 };
 
@@ -52,9 +57,7 @@ static uint8_t scaleChannel(uint8_t value) {
 static bool initApa106Rmt() {
   pinMode(LED_DATA_PIN, OUTPUT);
   digitalWrite(LED_DATA_PIN, LOW);
-  if (!rmtInit(LED_DATA_PIN, RMT_TX_MODE, RMT_MEM_NUM_BLOCKS_1, 10000000)) {
-    return false;
-  }
+  if (!rmtInit(LED_DATA_PIN, RMT_TX_MODE, RMT_MEM_NUM_BLOCKS_1, 10000000)) return false;
   rmtSetEOT(LED_DATA_PIN, 0);
   return true;
 }
@@ -99,9 +102,9 @@ static void allColor(uint8_t r, uint8_t g, uint8_t b) {
 }
 
 static void rgbTest() {
-  allColor(255, 0, 0); delay(350);
-  allColor(0, 255, 0); delay(350);
-  allColor(0, 0, 255); delay(350);
+  allColor(255, 0, 0); delay(300);
+  allColor(0, 255, 0); delay(300);
+  allColor(0, 0, 255); delay(300);
   allOff();
 }
 
@@ -109,7 +112,6 @@ static void chaseTest() {
   Rgb pixels[LED_COUNT] = {};
   for (uint8_t i = 0; i < LED_COUNT; ++i) {
     for (uint8_t j = 0; j < LED_COUNT; ++j) pixels[j] = {0, 0, 0};
-    // rainbow-ish progression makes position easy to see
     switch (i % 6) {
       case 0: pixels[i] = {255, 0, 0}; break;
       case 1: pixels[i] = {255, 100, 0}; break;
@@ -119,7 +121,7 @@ static void chaseTest() {
       default: pixels[i] = {180, 0, 255}; break;
     }
     writePixels(pixels);
-    delay(120);
+    delay(100);
   }
   allOff();
 }
@@ -141,18 +143,21 @@ static LineStats sampleLine() {
 
   uint16_t center = count ? (uint16_t)(sum / count) : 0;
   uint16_t p2p = maximum - minimum;
-  // leave headroom from ADC rails; clipping near either edge is suspicious
-  bool clipped = (minimum <= 40 || maximum >= 4055);
-  return {minimum, maximum, center, p2p, clipped};
+  uint16_t lowHeadroom = minimum;
+  uint16_t highHeadroom = 4095 - maximum;
+  bool clipped = (minimum <= 25 || maximum >= 4070);
+  return {minimum, maximum, center, p2p, lowHeadroom, highHeadroom, clipped};
 }
 
 static void printStats(const LineStats &s) {
   if (!Serial) return;
-  Serial.printf("HJ|LINE|CENTER=%u|MIN=%u|MAX=%u|P2P=%u|CLIP=%u|BRIGHT=%u|LEDS=%u\n",
+  Serial.printf("HJ|LINE|CENTER=%u|MIN=%u|MAX=%u|P2P=%u|LOWHR=%u|HIGHHR=%u|CLIP=%u|BRIGHT=%u|LEDS=%u\n",
                 (unsigned)s.center,
                 (unsigned)s.minimum,
                 (unsigned)s.maximum,
                 (unsigned)s.p2p,
+                (unsigned)s.lowHeadroom,
+                (unsigned)s.highHeadroom,
                 s.clipped ? 1U : 0U,
                 (unsigned)brightness,
                 (unsigned)LED_COUNT);
@@ -162,43 +167,13 @@ static void handleCommand(String cmd) {
   cmd.trim();
   if (!cmd.length()) return;
 
-  if (cmd == "STREAM 1") {
-    streamEnabled = true;
-    Serial.println("HJ|ACK|STREAM=1");
-    return;
-  }
-  if (cmd == "STREAM 0") {
-    streamEnabled = false;
-    Serial.println("HJ|ACK|STREAM=0");
-    return;
-  }
-  if (cmd == "GET") {
-    LineStats s = sampleLine();
-    printStats(s);
-    return;
-  }
-  if (cmd == "TEST RGB") {
-    Serial.println("HJ|ACK|TEST=RGB");
-    rgbTest();
-    return;
-  }
-  if (cmd == "TEST CHASE") {
-    Serial.println("HJ|ACK|TEST=CHASE");
-    chaseTest();
-    return;
-  }
-  if (cmd == "TEST ALL") {
-    Serial.println("HJ|ACK|TEST=ALL");
-    allColor(255, 255, 255);
-    delay(700);
-    allOff();
-    return;
-  }
-  if (cmd == "TEST OFF") {
-    allOff();
-    Serial.println("HJ|ACK|TEST=OFF");
-    return;
-  }
+  if (cmd == "STREAM 1") { streamEnabled = true; Serial.println("HJ|ACK|STREAM=1"); return; }
+  if (cmd == "STREAM 0") { streamEnabled = false; Serial.println("HJ|ACK|STREAM=0"); return; }
+  if (cmd == "GET") { printStats(sampleLine()); return; }
+  if (cmd == "TEST RGB") { Serial.println("HJ|ACK|TEST=RGB"); rgbTest(); return; }
+  if (cmd == "TEST CHASE") { Serial.println("HJ|ACK|TEST=CHASE"); chaseTest(); return; }
+  if (cmd == "TEST ALL") { Serial.println("HJ|ACK|TEST=ALL"); allColor(255,255,255); delay(600); allOff(); return; }
+  if (cmd == "TEST OFF") { allOff(); Serial.println("HJ|ACK|TEST=OFF"); return; }
   if (cmd.startsWith("SET BRIGHT ")) {
     int v = cmd.substring(11).toInt();
     if (v >= 4 && v <= 128) brightness = (uint8_t)v;
@@ -226,11 +201,8 @@ void setup() {
   pinMode(LINE_IN_PIN, INPUT);
   analogReadResolution(12);
 
-  if (!initApa106Rmt()) {
-    while (true) delay(1000);
-  }
+  if (!initApa106Rmt()) while (true) delay(1000);
 
-  // Short startup proof using all 16 configured pixels.
   rgbTest();
   lastTelemetry = millis();
 }
@@ -242,8 +214,6 @@ void loop() {
   if (streamEnabled && now - lastTelemetry >= TELEMETRY_MS) {
     lastTelemetry = now;
     LineStats s = sampleLine();
-    if (Serial.availableForWrite() >= 80) {
-      printStats(s);
-    }
+    if (Serial.availableForWrite() >= 96) printStats(s);
   }
 }
