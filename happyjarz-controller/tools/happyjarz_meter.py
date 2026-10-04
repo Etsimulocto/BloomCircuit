@@ -16,9 +16,9 @@ COLOR_PRESETS={
 
 class EqApp:
     def __init__(self,root):
-        self.root=root; root.title('HAPPY JARZ / CLUB BOX EQ Tuner'); root.geometry('1000x920')
+        self.root=root; root.title('HAPPY JARZ / CLUB BOX EQ Tuner'); root.geometry('1040x980')
         self.q=queue.Queue(); self.running=True; self.ser=None; self.lock=threading.Lock(); self.ignore=False
-        self.gain=tk.DoubleVar(value=4.0); self.bright=tk.DoubleVar(value=255)
+        self.gain=tk.DoubleVar(value=4.0); self.bright=tk.DoubleVar(value=255); self.mode=tk.IntVar(value=1)
         self.edges=[tk.DoubleVar(value=v) for v in (40,90,180,350,700,1200,2000,3000,3900)]
         defaults=['Red','Orange','Amber','Lime','Green','Cyan','Blue','Violet']
         self.colors=[tk.StringVar(value=defaults[i]) for i in range(8)]
@@ -26,6 +26,8 @@ class EqApp:
         self.status=tk.StringVar(value='Connecting...')
         self.summary=tk.StringVar(value='Waiting for EQ data...')
         self.knob_var=tk.StringVar(value='Noise knob: raw 0   0.0%   gate 0.0')
+        self.last_vals=[0.0]*8
+        self.last_gate=0.0
 
         top=ttk.Frame(root,padding=10); top.pack(fill='x')
         ttk.Label(top,textvariable=self.status).pack(side='left')
@@ -41,12 +43,28 @@ class EqApp:
         for i in range(8):
             col=ttk.Frame(bars); col.pack(side='left',fill='both',expand=True,padx=2)
             ttk.Label(col,textvariable=self.energy_vars[i]).pack()
-            pb=ttk.Progressbar(col,orient='vertical',length=120,maximum=100); pb.pack(); self.band_bars.append(pb)
+            pb=ttk.Progressbar(col,orient='vertical',length=105,maximum=100); pb.pack(); self.band_bars.append(pb)
 
         controls=ttk.LabelFrame(root,text='EQ Response',padding=10); controls.pack(fill='x',padx=10,pady=(0,8))
         self.add_slider(controls,'Gain',self.gain,0.1,30.0,0.1,lambda:self.send(f'SET GAIN {self.gain.get():.2f}'))
         self.add_slider(controls,'Max brightness',self.bright,4,255,1,lambda:self.send(f'SET BRIGHT {int(self.bright.get())}'))
-        ttk.Label(controls,text='Threshold is no longer adjustable here. Turn the physical knob only.',wraplength=920).pack(anchor='w',pady=(4,0))
+
+        bulbs=ttk.LabelFrame(root,text='16 Bulbs',padding=10); bulbs.pack(fill='x',padx=10,pady=(0,8))
+        modes=ttk.Frame(bulbs); modes.pack(fill='x',pady=(0,6))
+        ttk.Radiobutton(modes,text='Single bulb bench',variable=self.mode,value=1,command=lambda:self.send('SET MODE 1')).pack(side='left')
+        ttk.Radiobutton(modes,text='16 bulbs — 2 per EQ band',variable=self.mode,value=16,command=lambda:self.send('SET MODE 16')).pack(side='left',padx=10)
+        ttk.Button(modes,text='Chase 16',command=lambda:self.send('TEST CHASE16')).pack(side='right')
+        ttk.Button(modes,text='All 16',command=lambda:self.send('TEST ALL16')).pack(side='right',padx=6)
+
+        preview=ttk.Frame(bulbs); preview.pack(fill='x')
+        self.bulb_canvas=[]
+        for i in range(16):
+            cell=ttk.Frame(preview); cell.pack(side='left',expand=True,padx=2)
+            cv=tk.Canvas(cell,width=42,height=42,highlightthickness=0)
+            cv.pack(); oval=cv.create_oval(5,5,37,37,fill='#101010',outline='#777')
+            ttk.Label(cell,text=f'{i+1}\nB{i//2+1}',justify='center').pack()
+            self.bulb_canvas.append((cv,oval))
+        ttk.Label(bulbs,text='In 16-bulb mode: bulbs 1–2 = Band 1, 3–4 = Band 2 ... 15–16 = Band 8. Preview follows live EQ energy.',wraplength=980).pack(anchor='w',pady=(6,0))
 
         eq=ttk.LabelFrame(root,text='Band edges + colors',padding=10); eq.pack(fill='x',padx=10,pady=(0,8))
         hdr=ttk.Frame(eq); hdr.pack(fill='x')
@@ -61,10 +79,10 @@ class EqApp:
         ttk.Button(eq,text='Apply all edges/colors',command=self.apply_all).pack(anchor='w',pady=(6,0))
 
         ttk.Label(root,text=f'CSV log: {LOG_PATH}',padding=(10,0,10,4)).pack(anchor='w')
-        self.log=tk.Text(root,height=13,wrap='none'); self.log.pack(fill='both',expand=True,padx=10,pady=(0,10)); self.log.configure(state='disabled')
+        self.log=tk.Text(root,height=8,wrap='none'); self.log.pack(fill='both',expand=True,padx=10,pady=(0,10)); self.log.configure(state='disabled')
         if not os.path.exists(LOG_PATH):
             with open(LOG_PATH,'w',newline='') as f:
-                csv.writer(f).writerow(['timestamp','center','p2p','clip','dominant','energy','knob_raw','knob_percent','gate']+[f'b{i+1}' for i in range(8)])
+                csv.writer(f).writerow(['timestamp','center','p2p','clip','dominant','energy','knob_raw','knob_percent','gate','mode']+[f'b{i+1}' for i in range(8)])
         threading.Thread(target=self.reader,daemon=True).start(); root.after(50,self.process); root.protocol('WM_DELETE_WINDOW',self.close)
 
     def add_slider(self,parent,label,var,lo,hi,res,cb):
@@ -79,7 +97,10 @@ class EqApp:
     def send(self,s):
         with self.lock:
             if self.ser and self.ser.is_open:
-                self.ser.write((s+'\n').encode()); self.ser.flush()
+                try:
+                    self.ser.write((s+'\n').encode()); self.ser.flush()
+                except Exception:
+                    pass
 
     def apply_band(self,i):
         self.send(f'SET EDGE {i} {self.edges[i].get():.0f}'); self.send(f'SET EDGE {i+1} {self.edges[i+1].get():.0f}')
@@ -99,20 +120,30 @@ class EqApp:
         return d
 
     def reader(self):
-        if serial is None: self.q.put(('status','python3-serial not installed')); return
-        while self.running:
-            try:
-                s=serial.Serial(PORT,BAUD,timeout=.25,write_timeout=.25); s.dtr=False; s.rts=False; self.ser=s
-                self.q.put(('status',f'Connected: {PORT} @ {BAUD}')); time.sleep(.15); self.send('STREAM 1'); self.send('GET')
-                while self.running and s.is_open:
+        if serial is None:
+            self.q.put(('status','python3-serial not installed')); return
+        try:
+            s=serial.Serial()
+            s.port=PORT; s.baudrate=BAUD; s.timeout=.25; s.write_timeout=.25; s.dtr=False; s.rts=False
+            s.open(); s.dtr=False; s.rts=False; self.ser=s
+            self.q.put(('status',f'Connected: {PORT} @ {BAUD}'))
+            time.sleep(.15); self.send('STREAM 1'); self.send('GET')
+            while self.running and s.is_open:
+                if not os.path.exists(PORT):
+                    self.q.put(('device_gone',)); return
+                try:
                     raw=s.readline()
-                    if not raw: continue
-                    line=raw.decode(errors='replace').strip()
-                    if line.startswith('HJ|EQ|'): self.q.put(('eq',self.kv(line)))
-                    elif line.startswith('HJ|EQCFG|'): self.q.put(('cfg',self.kv(line)))
-                    elif line.startswith('HJ|ACK|'): self.q.put(('log',line))
-            except Exception as e:
-                self.q.put(('status',f'Disconnected: {e} — retrying...')); self.ser=None; time.sleep(1)
+                except Exception:
+                    self.q.put(('device_gone',)); return
+                if not raw: continue
+                line=raw.decode(errors='replace').strip()
+                if line.startswith('HJ|EQ|'): self.q.put(('eq',self.kv(line)))
+                elif line.startswith('HJ|EQCFG|'): self.q.put(('cfg',self.kv(line)))
+                elif line.startswith('HJ|ACK|'): self.q.put(('log',line))
+        except Exception as e:
+            if self.running:
+                if not os.path.exists(PORT): self.q.put(('device_gone',))
+                else: self.q.put(('status',f'Could not open controller: {e}'))
 
     def process(self):
         try:
@@ -122,28 +153,46 @@ class EqApp:
                 elif t=='eq': self.update_eq(rest[0])
                 elif t=='cfg': self.apply_cfg(rest[0])
                 elif t=='log': self.append(rest[0])
+                elif t=='device_gone':
+                    self.status.set('Controller unplugged — closing...')
+                    self.root.after(250,self.close)
+                    return
         except queue.Empty: pass
         if self.running:self.root.after(50,self.process)
+
+    def update_bulbs(self,vals,gate):
+        peak=max(max(vals),gate+1.0,1.0)
+        for i in range(16):
+            band=i//2; e=vals[band]
+            name=self.colors[band].get(); r,g,b=COLOR_PRESETS.get(name,(255,255,255))
+            if e<=gate: level=0.0
+            else: level=min(1.0,(e-gate)/max(1.0,peak-gate))
+            level=level**0.5
+            rr=int(r*level); gg=int(g*level); bb=int(b*level)
+            self.bulb_canvas[i][0].itemconfigure(self.bulb_canvas[i][1],fill=f'#{rr:02x}{gg:02x}{bb:02x}')
 
     def update_eq(self,d):
         try:
             center=int(d['CENTER']); p2p=int(d['P2P']); clip=int(d['CLIP']); dom=int(d['DOM']); en=float(d['ENERGY'])
-            knob=int(d.get('KNOB',0)); knobpct=float(d.get('KNOBPCT',0)); gate=float(d.get('GATE',0))
+            knob=int(d.get('KNOB',0)); knobpct=float(d.get('KNOBPCT',0)); gate=float(d.get('GATE',0)); mode=int(d.get('MODE',1))
             vals=[float(d.get(f'B{i+1}',0)) for i in range(8)]
         except Exception:return
+        self.mode.set(mode); self.last_vals=vals; self.last_gate=gate
         self.summary.set(f'CENTER {center}   P2P {p2p}   DOMINANT BAND {dom}   ENERGY {en:.1f}   CLIP {clip}')
         self.knob_var.set(f'Noise knob: raw {knob}   {knobpct:.1f}%   gate {gate:.1f}')
         peak=max(max(vals),1.0)
         for i,v in enumerate(vals): self.energy_vars[i].set(f'B{i+1}: {v:.1f}'); self.band_bars[i]['value']=min(100,100*v/peak)
-        stamp=time.strftime('%H:%M:%S'); self.append(f'{stamp} DOM={dom} P2P={p2p} ENERGY={en:.1f} KNOB={knob} ({knobpct:.1f}%) GATE={gate:.1f}  '+' '.join(f'B{i+1}={vals[i]:.1f}' for i in range(8)))
+        self.update_bulbs(vals,gate)
+        stamp=time.strftime('%H:%M:%S'); self.append(f'{stamp} MODE={mode} DOM={dom} P2P={p2p} ENERGY={en:.1f} KNOB={knob} ({knobpct:.1f}%) GATE={gate:.1f}')
         with open(LOG_PATH,'a',newline='') as f:
-            csv.writer(f).writerow([time.strftime('%Y-%m-%d %H:%M:%S'),center,p2p,clip,dom,en,knob,knobpct,gate,*vals])
+            csv.writer(f).writerow([time.strftime('%Y-%m-%d %H:%M:%S'),center,p2p,clip,dom,en,knob,knobpct,gate,mode,*vals])
 
     def apply_cfg(self,d):
         self.ignore=True
         try:
             if 'GAIN' in d:self.gain.set(float(d['GAIN']))
             if 'BRIGHT' in d:self.bright.set(float(d['BRIGHT']))
+            if 'MODE' in d:self.mode.set(int(d['MODE']))
             for i in range(9):
                 if f'E{i}' in d:self.edges[i].set(float(d[f'E{i}']))
             for i in range(8):
@@ -152,25 +201,29 @@ class EqApp:
                     try:
                         rgb=tuple(int(x) for x in d[key].split(','))
                         for name,val in COLOR_PRESETS.items():
-                            if val==rgb:
-                                self.colors[i].set(name); break
-                    except Exception:
-                        pass
+                            if val==rgb: self.colors[i].set(name); break
+                    except Exception: pass
         finally:self.ignore=False
+        self.update_bulbs(self.last_vals,self.last_gate)
 
     def append(self,s):
         self.log.configure(state='normal'); self.log.insert('end',s+'\n'); self.log.see('end')
-        if int(self.log.index('end-1c').split('.')[0])>500:self.log.delete('1.0','100.0')
+        if int(self.log.index('end-1c').split('.')[0])>300:self.log.delete('1.0','80.0')
         self.log.configure(state='disabled')
 
     def close(self):
+        if not self.running:
+            try:self.root.destroy()
+            except:pass
+            return
         self.running=False
         try:self.send('STREAM 0')
         except:pass
         try:
             if self.ser:self.ser.close()
         except:pass
-        self.root.destroy()
+        try:self.root.destroy()
+        except:pass
 
 if __name__=='__main__':
     root=tk.Tk(); EqApp(root); root.mainloop()
