@@ -34,19 +34,28 @@ String gpioTest(int pin){
 }
 
 void touchTest(int pin){
-  if(!touchCap(pin)){ emitKV("MANUAL","NA|pin="+pin+"|op=TOUCH|reason=not_touch_capable"); return; }
+  if(!touchCap(pin)){
+    emitKV("MANUAL",String("NA|pin=")+pin+"|op=TOUCH|reason=not_touch_capable");
+    return;
+  }
   uint32_t mn=0xFFFFFFFF,mx=0; uint64_t sum=0;
-  for(int i=0;i<16;i++){ uint32_t v=touchRead(pin); mn=min(mn,v); mx=max(mx,v); sum+=v; delay(5); }
+  for(int i=0;i<16;i++){
+    uint32_t v=touchRead(pin);
+    mn=min(mn,v); mx=max(mx,v); sum+=v; delay(5);
+  }
   uint32_t avg=sum/16;
   String state=(avg==0 || avg==0xFFFFFFFF)?"SUSPECT":"PASS";
   emitKV("MANUAL",state+"|pin="+pin+"|op=TOUCH|avg="+avg+"|min="+mn+"|max="+mx);
 }
 
 void adcTest(int pin){
-  if(!adcCap(pin)){ emitKV("MANUAL","NA|pin="+pin+"|op=ADC|reason=not_adc_capable"); return; }
+  if(!adcCap(pin)){
+    emitKV("MANUAL",String("NA|pin=")+pin+"|op=ADC|reason=not_adc_capable");
+    return;
+  }
   pinMode(pin,INPUT);
   int raw=analogRead(pin);
-  emitKV("MANUAL","PASS|pin="+pin+"|op=ADC|raw="+raw);
+  emitKV("MANUAL",String("PASS|pin=")+pin+"|op=ADC|raw="+raw);
 }
 
 void runAll(){
@@ -82,30 +91,46 @@ void runAll(){
 }
 
 void manual(char op,int pin){
-  if(!allowed(pin)){ emitKV("MANUAL","NA|pin="+pin+"|reason=not_exposed_profile_gpio"); return; }
+  if(!allowed(pin)){
+    emitKV("MANUAL",String("NA|pin=")+pin+"|reason=not_exposed_profile_gpio");
+    return;
+  }
   switch(op){
-    case 'T': gpioTest(pin); break;
+    case 'T':
+      gpioTest(pin);
+      break;
     case 'I':
       pinMode(pin,INPUT); delay(2);
-      emitKV("MANUAL","PASS|pin="+pin+"|op=READ|value="+digitalRead(pin)); break;
+      emitKV("MANUAL",String("PASS|pin=")+pin+"|op=READ|value="+digitalRead(pin));
+      break;
     case 'U':
       pinMode(pin,INPUT_PULLUP); delay(3);
-      emitKV("MANUAL",String(digitalRead(pin)==HIGH?"PASS":"FAIL")+"|pin="+pin+"|op=PULLUP|value="+digitalRead(pin)); break;
+      emitKV("MANUAL",String(digitalRead(pin)==HIGH?"PASS":"FAIL")+"|pin="+pin+"|op=PULLUP|value="+digitalRead(pin));
+      break;
     case 'D':
       pinMode(pin,INPUT_PULLDOWN); delay(3);
-      emitKV("MANUAL",String(digitalRead(pin)==LOW?"PASS":"FAIL")+"|pin="+pin+"|op=PULLDOWN|value="+digitalRead(pin)); break;
+      emitKV("MANUAL",String(digitalRead(pin)==LOW?"PASS":"FAIL")+"|pin="+pin+"|op=PULLDOWN|value="+digitalRead(pin));
+      break;
     case 'H':
       pinMode(pin,OUTPUT); digitalWrite(pin,HIGH); delay(2);
-      emitKV("MANUAL","PASS|pin="+pin+"|op=DRIVE_HIGH|logic=3V3|external_verify_required=1"); break;
+      emitKV("MANUAL",String("PASS|pin=")+pin+"|op=DRIVE_HIGH|logic=3V3|external_verify_required=1");
+      break;
     case 'L':
       pinMode(pin,OUTPUT); digitalWrite(pin,LOW); delay(2);
-      emitKV("MANUAL","PASS|pin="+pin+"|op=DRIVE_LOW|logic=0V|external_verify_required=1"); break;
+      emitKV("MANUAL",String("PASS|pin=")+pin+"|op=DRIVE_LOW|logic=0V|external_verify_required=1");
+      break;
     case 'Z':
       pinMode(pin,INPUT);
-      emitKV("MANUAL","PASS|pin="+pin+"|op=RELEASE|mode=HIGH_Z"); break;
-    case 'A': adcTest(pin); break;
-    case 'C': touchTest(pin); break;
-    default: emitKV("MANUAL","NA|pin="+pin+"|reason=unknown_command");
+      emitKV("MANUAL",String("PASS|pin=")+pin+"|op=RELEASE|mode=HIGH_Z");
+      break;
+    case 'A':
+      adcTest(pin);
+      break;
+    case 'C':
+      touchTest(pin);
+      break;
+    default:
+      emitKV("MANUAL",String("NA|pin=")+pin+"|reason=unknown_command");
   }
 }
 
@@ -119,7 +144,10 @@ void loop(){
   if(Serial.available()){
     String line=Serial.readStringUntil('\n');
     line.trim();
-    if(line=="R"){ runAll(); return; }
+    if(line=="R"){
+      runAll();
+      return;
+    }
     if(line.length()>=3 && line.charAt(1)==' '){
       char op=line.charAt(0);
       int pin=line.substring(2).toInt();
