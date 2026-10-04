@@ -1,280 +1,281 @@
-# HAPPY JARZ ESP32 Firmware
+# HAPPY JARZ / CLUB BOX ESP32 Firmware
 
-**Current firmware release:** **v0.6.0**
+## Active branch firmware
 
-**Compatibility staging base:** `happyjarz_integrated_v0_5.ino` + standard patch pipeline
-
-The filename of the integrated base sketch is now intentionally separated from the firmware release number. The authoritative firmware version is:
+On branch `happyjarz-controller-v0.1`, the active bench firmware is:
 
 ```text
-happyjarz-controller/firmware/VERSION
+happyjarz_sound_reactive_v0_1.ino
 ```
 
-The flash pipeline injects that value into `HJ_FW_VERSION` after the current patch stack is applied and refuses to upload if the staged firmware does not report the same version.
+This is the current **line-in, physical-threshold-knob, 8-band EQ visualizer** firmware. Older integrated HAPPY JARZ firmware files remain in the repository as reference for the separate touch/OLED/Wi-Fi prototype.
 
-See [`../VERSIONING.md`](../VERSIONING.md) for the mandatory version-bump rules.
+## Preserve the known-good APA106 layer
 
-## Preserve the known-good hardware layer
+The proven APA106 path uses the Arduino ESP32 HAL RMT API:
 
-The proven APA106 driver uses the Arduino ESP32 HAL RMT path and should not be casually replaced while adding UI or protocol features.
+```cpp
+#include "esp32-hal-rmt.h"
+rmtInit(...)
+rmtSetEOT(...)
+rmtWrite(...)
+```
 
-Known-good timing:
+Known-good transport:
 
 - ESP32-S3 SuperMini
-- GPIO7 for APA106 data
+- GPIO7 data
+- 220 ohm series resistor on data
 - 10 MHz RMT clock
-- bit 0 ~= 4 ticks high / 14 ticks low
-- bit 1 ~= 14 high / 4 low
-- ~100 us reset/latch
-- two APA106 lamps daisy chained
-- proven byte order: **RGB**
+- bit 0 ~= 4 ticks HIGH / 14 LOW
+- bit 1 ~= 14 HIGH / 4 LOW
+- ~100 us LOW reset/latch
+- physical byte order: **RGB**
 
-Generic NeoPixel/FastLED attempts were not the proven path for this hardware.
+Generic NeoPixel/FastLED attempts were not the proven path for these bulbs. Do not replace the low-level transport while debugging EQ/app behavior unless the LED transport itself is proven broken.
 
-## Current wiring
-
-### APA106 lamps
-
-- GPIO7 -> 220 ohm -> APA106 #1 DIN
-- APA106 #1 DOUT -> APA106 #2 DIN
-- both lamp VCC pins -> 5V
-- common GND
-
-The tested lamps accept the ESP32-S3's 3.3V GPIO data while powered from 5V. Never feed 5V into an ESP32 GPIO.
-
-### Capacitive touch
-
-Current six-control map:
-
-- GPIO4 = UP
-- GPIO5 = DOWN
-- GPIO9 = LEFT
-- GPIO10 = RIGHT
-- GPIO1 = A
-- GPIO2 = B
-
-HOME behavior:
-
-- A advances Light 1 through the palette
-- B advances Light 2 through the palette
-- UP advances the pattern
-- DOWN moves to the previous pattern
-- RIGHT enters the OLED menu
-- LEFT currently has no HOME action
-
-The proven touch path uses direct `touchRead()`, roughly +20% thresholding, ~60 ms qualification, baseline drift and one action per touch/release cycle. Do not reintroduce the abandoned hysteresis/cooldown/release experiment that caused same-button repeat failures.
-
-### OLED
-
-Current 4-wire I2C OLED:
-
-- VCC -> 3.3V
-- GND -> GND
-- SDA -> GPIO8
-- SCL -> GPIO6
-- I2C address `0x3C`
-- U8g2 renderer
-- 128x64 layout
-
-The current HOME path uses the battery/power footer whether the clock is synced or not. The early-build `ALARM OFF` footer is no longer a valid current HOME screen.
-
-## Fuel Gauge / power status
-
-Current sensing path:
-
-- GPIO3 = onboard battery/supply ADC path
-- divider ratio = `2.0`
-- provisional `BATTERY_CAL_FACTOR = 1.370`
-- percentage is voltage-estimated, not coulomb counted
-
-October 2, 2026 bench reference:
+## Current pins
 
 ```text
-V 4.16
-BAT 98%
-PWR BAT
+GPIO7  = APA106 data
+GPIO9  = mono line input
+GPIO10 = physical threshold/noise-floor potentiometer
 ```
 
-HOME cycles power information about every **2.5 seconds**.
+## Line input
 
-Battery-only:
+Current mono line-input circuit:
 
 ```text
-A MENU  BAT xx%
-A MENU  V x.xx
-A MENU  PWR BAT
+TRS TIP ---- (-) 10uF (+) ----+---- GPIO9
+                               |
+                              10k
+                               |
+                              3.3V
+
+GPIO9 -------------------------+
+                               |
+                              10k
+                               |
+                              GND
+
+TRS SLEEVE -------------------- GND
+TRS RING ---------------------- unused
 ```
 
-USB present:
+Important:
+
+- electrolytic negative/striped side faces the audio source
+- ESP32 side of the capacitor is biased around mid-supply
+- do not feed 3.3V into the source/jack
+- all grounds must actually be common; a floating/blank breadboard rail can produce nonsense ADC values
+
+The current Pi/monitor headphone output was observed to be relatively quiet, so stronger normal sources may produce larger line-input swings.
+
+## Physical threshold knob
+
+Current wiring:
 
 ```text
-A MENU  BAT --%
-A MENU  PWR USB
-A MENU  CHG ?
+outer leg -> GND
+wiper     -> GPIO10
+outer leg -> 3.3V
 ```
 
-`CHG ?` is intentional. The onboard charger IC's charging/full signal is not currently wired to an ESP32 GPIO. USB CDC presence must not be interpreted as proof of charging or full state.
+The firmware reads GPIO10 as the **only threshold/noise-floor control**.
 
-Serial diagnostic:
+Expected direct ADC checks:
 
 ```text
-GET POWER
+GPIO10 -> GND   ~= 0
+GPIO10 -> 3.3V  ~= 4095
 ```
 
-## Brightness ceiling
+If direction is backwards, swap the two outer pot legs. Keep the wiper on GPIO10.
 
-The current product build uses a **50% hard maximum LED brightness**.
+## EQ analyzer
 
-Bench testing showed that abrupt higher-brightness white loads could collapse toward blue while 50% was already bright enough for the sensory use case. The firmware and desktop controller therefore agree on 50% as the normal ceiling.
+Current analyzer:
 
-## Pattern library
+- Goertzel, no extra DSP dependency
+- 8 bands
+- 8 kHz sample rate
+- 256 samples per block
+- three probe frequencies per band; strongest result becomes that band's energy
 
-Current patterns:
-
-`SOLID`, `FADE`, `PULSE`, `RAINBOW`, `RANDOM`, `HUE_FADE`, `DUAL_HUE`, `BREATH`, `DRIFT`, `AURORA`, `OCEAN`, `LAVENDER`, `SUNSET`, `CHRISTMAS`, `HALLOWEEN`, `VALENTINE`, `EASTER`, `FOURTH`, `THANKSGIVING`, `CANDY`, `GALAXY`, `FIRE`, `ICE`, `FOREST`, `NEON`, `TWINKLE`, `SPARKLE`, `COLOR_SWAP`, `COMET`, `FIREFLY`, `BUBBLEGUM`, `OFF`.
-
-Many generated modes use continuous/intermediate RGB values rather than only the small physical-button color palette.
-
-## OLED screensavers
-
-Screensaver mode starts after **30 seconds of inactivity**.
-
-Current modes:
-
-- **SAYINGS** — scrolling built-in/custom marquee
-- **SPIRAL** — procedural spiral generator
-- **TRIPPY** — procedural geometry engine
-- **PARTICLES** — procedural particle-universe saver
-
-Controls:
-
-- LEFT / RIGHT = previous / next saver
-- B = exit
-- SPIRAL/TRIPPY/PARTICLES: UP/DOWN = speed
-- SPIRAL/TRIPPY/PARTICLES: A = reseed / new universe
-
-Custom sayings:
-
-- 8 persistent slots
-- up to 96 characters each
-- `BUILTIN`, `CUSTOM`, or `MIXED`
-- stored in ESP32 Preferences
-
-Useful saver commands:
+Default edges:
 
 ```text
-GET SAVER STATUS
-SAVER ENTER
-SAVER EXIT
-SAVER NEXT
-SAVER PREV
-SAVER RESEED
-SAVER SPEED UP
-SAVER SPEED DOWN
-SET SAVER MODE SAYINGS|SPIRAL|TRIPPY|PARTICLES
+40, 90, 180, 350, 700, 1200, 2000, 3000, 3900 Hz
 ```
 
-Custom-sayings commands:
+Default colors:
 
 ```text
-GET CUSTOM SAYINGS
-SET CUSTOM SAYING <1-8> <text>
-CLEAR CUSTOM SAYINGS
-SET SAYING SOURCE BUILTIN|CUSTOM|MIXED
+1  255,0,0      Red
+2  255,70,0     Orange
+3  255,180,0    Amber
+4  80,255,0     Lime
+5  0,255,90     Green
+6  0,180,255    Cyan
+7  40,40,255    Blue
+8  180,0,255    Violet
 ```
 
-## USB identity and release version
+## Output modes
 
-At 115200 baud the firmware responds to `HELLO` with an `HJ|IDENTITY|...` line used by the Pi/PC watcher.
+### Mode 1 — single bulb bench
 
-For the current release, identity must report:
+The dominant EQ band controls the current bulb color and energy controls brightness.
+
+### Mode 16 — sixteen bulbs
+
+Two bulbs are assigned to each band:
 
 ```text
-fw=0.6.0
+1-2   Band 1
+3-4   Band 2
+5-6   Band 3
+7-8   Band 4
+9-10  Band 5
+11-12 Band 6
+13-14 Band 7
+15-16 Band 8
 ```
 
-The base sketch may still contain an older implementation version before staging. That is expected. The standard flasher injects the authoritative value from `firmware/VERSION` as the final release-version step before verification.
+Each band can light independently from its own energy.
 
-If `HJ|IDENTITY` does not match `firmware/VERSION`, treat the device as a stale/wrong build.
+## Brightness response
 
-## Current Pi compile/upload path
+The threshold knob decides what audio energy is ignored. Accepted energy is then shaped by EQ gain and a soft compression curve so quieter sources can still produce visible, punchy output.
 
-First refresh the split controller snapshot:
+The threshold knob spans the full useful gate range directly in firmware. There is no software threshold slider in the current tuner.
 
-```bash
-cd ~/BloomCircuit
-git checkout main
-git pull
-bash ./tools/split_pi_apps.sh
-```
+## Reset contract
 
-Then flash from that refreshed copy:
+`RESET` must restore the known-good baseline:
 
-```bash
-bash ~/HappyJarzController/tools/flash_happyjarz_v0_5.sh
-```
+- Gain = 4.0
+- Max Brightness = 255
+- output mode = 1
+- original band edges
+- original colors
+- physical knob filter/state reset and reread
+- stale band-energy state cleared
+- LED output cleared, then normal reactive behavior resumes
 
-The legacy helper filename remains for compatibility; it does **not** mean the release is still v0.5.
+Reset must not leave the bulb stuck on a stale color.
 
-The helper stages the compatibility base and applies the current layers, including:
+## Serial telemetry
 
-- compatibility / Wi-Fi / USB host-time integration
-- proven touch behavior
-- OLED pages/menu
-- HOME/menu control isolation
-- expanded sensory pattern library
-- screensavers
-- expanded marquee sayings
-- persistent custom sayings
-- procedural SPIRAL/TRIPPY controls
-- particle-universe saver
-- saver serial protocol/status
-- Fuel Gauge POWER menu + GPIO3 ADC + `GET POWER`
-- final HOME power cycle + 30-second idle timeout
-- release-version injection from `firmware/VERSION`
-
-Before compiling or uploading, the verifier confirms the final staged sketch contains the required current features and the expected firmware release number.
-
-Expected output for this release:
+Streaming is **off by default**. The tuner enables it with:
 
 ```text
-HAPPY JARZ staged firmware verification: PASS
-  firmware version 0.6.0
+STREAM 1
 ```
 
-If that PASS does not appear, **do not flash**.
+and disables it on close with:
 
-Tested Arduino CLI FQBN:
+```text
+STREAM 0
+```
+
+Current live EQ telemetry includes fields such as:
+
+```text
+CENTER
+P2P
+CLIP
+DOM
+ENERGY
+KNOB
+KNOBPCT
+GATE
+MODE
+B1 ... B8
+```
+
+The app depends on this stream for the graphic EQ and 16-bulb preview.
+
+## Current commands
+
+Core commands include:
+
+```text
+STREAM 1
+STREAM 0
+GET
+RESET
+TEST RGB
+TEST ALL16
+TEST CHASE16
+SET MODE 1
+SET MODE 16
+SET GAIN <value>
+SET BRIGHT <value>
+SET EDGE <index> <hz>
+SET COLOR <band> <r,g,b>
+```
+
+## Compile/upload
+
+Current Arduino CLI FQBN:
 
 ```text
 esp32:esp32:esp32s3:CDCOnBoot=cdc
 ```
 
-The helper auto-detects `/dev/ttyACM*` or `/dev/ttyUSB*`, stops the desktop controller/watcher before compile/upload, and restarts the watcher after a successful upload.
+Current direct Pi workflow stages the sketch into:
 
-## Version bump rule
+```text
+~/hjflash/happyjarz_sound_reactive_v0_1/
+```
 
-Firmware behavior changes require a firmware version bump before merge. This includes changes to:
+Typical compile/upload:
 
-- touch behavior
-- OLED/menu behavior
-- battery/power handling
-- LED patterns/brightness
-- screensavers
-- serial protocol
-- startup/shutdown behavior
-- hardware pins/calibration
+```bash
+cp ~/BloomCircuit/happyjarz-controller/firmware/happyjarz_sound_reactive_v0_1.ino \
+  ~/hjflash/happyjarz_sound_reactive_v0_1/happyjarz_sound_reactive_v0_1.ino
 
-Do not keep rebuilding different firmware under the same release number.
+arduino-cli compile \
+  --fqbn esp32:esp32:esp32s3:CDCOnBoot=cdc \
+  ~/hjflash/happyjarz_sound_reactive_v0_1
+
+arduino-cli upload \
+  -p /dev/ttyACM0 \
+  --fqbn esp32:esp32:esp32s3:CDCOnBoot=cdc \
+  ~/hjflash/happyjarz_sound_reactive_v0_1
+```
+
+Before flashing, close/stop the tuner and plug watcher so the serial port is free. The current watcher also checks for `arduino-cli` / `esptool` and waits for a stable port before auto-launching.
+
+## Power note
+
+The current **single physical bench bulb** has been proven on the ESP32 3.3V rail for testing.
+
+Do **not** power the finished 16-bulb array from the ESP32 3.3V rail. Use an adequate external LED supply with common ground to the ESP32.
 
 ## Diagnostics / failure boundary
 
 Preserve known-good layers.
 
-If USB/controller behavior is wrong but local touch, LEDs and OLED still work, debug watcher/controller/protocol deployment first.
+If `TEST RGB` works but music reaction does not:
 
-If local LEDs/touch/OLED fail, debug firmware/hardware before changing the desktop application.
+- inspect GPIO9 center/P2P
+- inspect band energies
+- inspect GPIO10 knob raw/gate
+- verify actual breadboard ground continuity
+- verify source volume
+- verify the app has enabled streaming
 
-Useful diagnostics include RGB tests, touch/input tests, status requests, `GET POWER`, saver status, Wi-Fi status/scan and service logs.
+If the graphic EQ stops while the LED still reacts, debug serial telemetry/app streaming before touching the RMT driver.
 
-**Every feature should carry its own diagnostic path.**
+If the LED is stuck on a color after a test/reset, clear output/state in the behavior layer before changing the proven RGB/RMT transport.
+
+## Legacy firmware material
+
+Older files in this directory document a different integrated HAPPY JARZ build with touch controls, OLED, Wi-Fi, battery/power telemetry, patterns, sayings and procedural screensavers.
+
+Those files are intentionally retained as reference. Their GPIO map is not the current CLUB BOX line-in map.
+
+**Preserve the proven low-level hardware layer; tune behavior above it.**
