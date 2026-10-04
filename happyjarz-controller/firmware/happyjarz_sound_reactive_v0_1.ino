@@ -1,10 +1,9 @@
-// HAPPY JARZ — stabilized raw-peak 8-band sound color meter v2.1
+// HAPPY JARZ — stabilized raw-peak 8-band sound color meter v2.2
 //
 // PURPOSE
-//   Keep the proven raw microphone path and 25 FPS APA106 update ceiling.
-//   Keep the sensitive v2.0 thresholds, but prevent rapid color chatter by
-//   requiring neighboring-band changes to persist briefly before switching.
-//   A true clap/red event still jumps to red immediately.
+//   Preserve the proven raw microphone path and 25 FPS APA106 update ceiling.
+//   Upward sound peaks change color immediately. Downward changes must persist
+//   briefly so normal speech does not chatter between neighboring colors.
 //
 // HARDWARE
 //   ESP32-S3 SuperMini
@@ -28,11 +27,8 @@ static constexpr uint8_t MIC_PIN = 8;
 static constexpr uint8_t LED_COUNT = 2;
 static constexpr unsigned long LED_FRAME_MS = 40;
 
-// Temporal hysteresis at 25 FPS:
-//   rise:  2 consecutive frames (~80 ms)
-//   fall:  4 consecutive frames (~160 ms)
-//   red:   immediate
-static constexpr uint8_t RISE_CONFIRM_FRAMES = 2;
+// Falling color must persist for four frames (~160 ms).
+// Rising color is immediate so short speech peaks are visible.
 static constexpr uint8_t FALL_CONFIRM_FRAMES = 4;
 
 struct Rgb { uint8_t r, g, b; };
@@ -122,10 +118,10 @@ static uint8_t rawToBand(float raw) {
 }
 
 static void updateStableBand(uint8_t targetBand) {
-  // Clap / strong transient: show red immediately.
-  if (targetBand == 7) {
-    currentBand = 7;
-    pendingBand = 7;
+  // Peak-meter behavior: any upward movement is shown immediately.
+  if (targetBand > currentBand) {
+    currentBand = targetBand;
+    pendingBand = currentBand;
     pendingCount = 0;
     return;
   }
@@ -136,6 +132,7 @@ static void updateStableBand(uint8_t targetBand) {
     return;
   }
 
+  // Downward movement must remain lower for several frames before falling.
   if (targetBand != pendingBand) {
     pendingBand = targetBand;
     pendingCount = 1;
@@ -143,11 +140,7 @@ static void updateStableBand(uint8_t targetBand) {
     ++pendingCount;
   }
 
-  uint8_t needed = (targetBand > currentBand)
-                     ? RISE_CONFIRM_FRAMES
-                     : FALL_CONFIRM_FRAMES;
-
-  if (pendingCount >= needed) {
+  if (pendingCount >= FALL_CONFIRM_FRAMES) {
     currentBand = targetBand;
     pendingCount = 0;
   }
