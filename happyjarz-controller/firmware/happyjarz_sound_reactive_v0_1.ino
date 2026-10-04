@@ -1,14 +1,17 @@
-// HAPPY JARZ — RGB single-LED sound color meter v3.2
+// HAPPY JARZ — RGB single-LED sound color meter v3.3
 //
 // PROVEN ON BENCH
 //   raw byte 1 = RED
 //   raw byte 2 = GREEN
 //   raw byte 3 = BLUE
 //
+// MIC INPUTS
+//   HW-484 A0 -> GPIO8 for analog volume envelope
+//   HW-484 D0 -> GPIO6 for comparator diagnostics
+//   D0 is diagnostic only in this build; it does NOT control the colors yet.
+//
 // LIVE TRIM
 //   Pi app can adjust FLOOR, PEAK, CURVE, HOLD and BRIGHTNESS live.
-//   CURVE shapes the response between floor and peak so a wide mic range
-//   (for example floor ~30 and clap 1300+) still gives useful speech colors.
 //   Telemetry is OFF unless app sends STREAM 1.
 //   SAVE stores current trim values in ESP32 NVS.
 
@@ -19,6 +22,7 @@
 
 static constexpr uint8_t LED_DATA_PIN = 7;
 static constexpr uint8_t MIC_PIN = 8;
+static constexpr uint8_t MIC_D0_PIN = 6;
 static constexpr uint8_t LED_COUNT = 1;
 static constexpr unsigned long COLOR_BUCKET_MS = 120;
 
@@ -31,11 +35,12 @@ static float bucketPeak = 0.0f;
 static uint8_t currentBand = 0;
 static bool streamEnabled = false;
 static String commandBuffer;
+static bool bucketD0LowSeen = false;
+static bool bucketD0HighSeen = false;
 
-// Bench-friendly defaults. User can tune and SAVE from Pi app.
 static float floorRaw = 30.0f;
 static float peakRaw = 1400.0f;
-static float curve = 0.50f;       // <1 boosts mids/lows; 1 = linear; >1 compresses mids
+static float curve = 0.50f;
 static uint16_t peakHoldMs = 240;
 static uint8_t brightness = 72;
 
@@ -101,6 +106,10 @@ static float readSoundEnvelope() {
     int sample = analogRead(MIC_PIN);
     if (sample < minimum) minimum = sample;
     if (sample > maximum) maximum = sample;
+
+    int d0 = digitalRead(MIC_D0_PIN);
+    if (d0 == LOW) bucketD0LowSeen = true;
+    else bucketD0HighSeen = true;
   }
   return (float)(maximum - minimum);
 }
@@ -115,7 +124,6 @@ static uint8_t rawToBand(float raw) {
   if (normalized < 0.0f) normalized = 0.0f;
   if (normalized > 1.0f) normalized = 1.0f;
 
-  // Response shaping. With a huge dynamic range, curve < 1 expands speech.
   float shaped = powf(normalized, curve);
   uint8_t band = 1 + (uint8_t)(shaped * 6.0f);
   if (band > 6) band = 6;
@@ -225,6 +233,7 @@ static void serviceSerial() {
 void setup() {
   Serial.begin(115200);
   pinMode(MIC_PIN, INPUT);
+  pinMode(MIC_D0_PIN, INPUT);
   analogReadResolution(12);
   loadConfig();
 
@@ -238,6 +247,8 @@ void setup() {
   bucketPeak = 0.0f;
   bucketStart = millis();
   lastRiseTime = 0;
+  bucketD0LowSeen = false;
+  bucketD0HighSeen = false;
   showBand(currentBand);
 }
 
@@ -255,10 +266,19 @@ void loop() {
     updateBandFromBucket(targetBand, now);
     showBand(currentBand);
 
-    if (streamEnabled && Serial.availableForWrite() >= 48) {
-      Serial.printf("HJ|METER|RAW=%.0f|TARGET=%u|BAND=%u\n",
-                    measuredPeak, (unsigned)(targetBand + 1), (unsigned)(currentBand + 1));
+    int d0Now = digitalRead(MIC_D0_PIN);
+    if (streamEnabled && Serial.availableForWrite() >= 64) {
+      Serial.printf("HJ|METER|RAW=%.0f|TARGET=%u|BAND=%u|D0=%d|D0LOW=%u|D0HIGH=%u\n",
+                    measuredPeak,
+                    (unsigned)(targetBand + 1),
+                    (unsigned)(currentBand + 1),
+                    d0Now,
+                    bucketD0LowSeen ? 1U : 0U,
+                    bucketD0HighSeen ? 1U : 0U);
     }
+
     bucketPeak = 0.0f;
+    bucketD0LowSeen = false;
+    bucketD0HighSeen = false;
   }
 }
