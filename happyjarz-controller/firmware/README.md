@@ -1,4 +1,4 @@
-# HAPPY JARZ / CLUB BOX ESP32 Firmware
+# HAPPY JARZ / BloomPulse ESP32 Firmware
 
 ## Active branch firmware
 
@@ -8,7 +8,18 @@ On branch `happyjarz-controller-v0.1`, the active bench firmware is:
 happyjarz_sound_reactive_v0_1.ino
 ```
 
-This is the current **line-in, physical-threshold-knob, 8-band EQ visualizer** firmware. Older integrated HAPPY JARZ firmware files remain in the repository as reference for the separate touch/OLED/Wi-Fi prototype.
+This is the current **line-in, physical-threshold-knob, 8-band EQ visualizer** firmware for BloomPulse. Older integrated HAPPY JARZ firmware files remain in the repository as reference for the separate touch/OLED/Wi-Fi prototype.
+
+## Proven bench state — October 4, 2026
+
+The current firmware has been proven on the Pi + ESP32-S3 + APA106 bench path:
+
+- live audio drives the EQ and bulb output
+- mute stops reactive output
+- unplugging the audio cable stops reactive output
+- a disconnected input no longer behaves like music because ADC noise is filtered by the silence/activity detector
+- 16-bulb mode logic is working with the current one-bulb bench hardware
+- low-level APA106 RGB/RMT transport remains stable
 
 ## Preserve the known-good APA106 layer
 
@@ -70,8 +81,6 @@ Important:
 - do not feed 3.3V into the source/jack
 - all grounds must actually be common; a floating/blank breadboard rail can produce nonsense ADC values
 
-The current Pi/monitor headphone output was observed to be relatively quiet, so stronger normal sources may produce larger line-input swings.
-
 ## Physical threshold knob
 
 Current wiring:
@@ -122,6 +131,20 @@ Default colors:
 8  180,0,255    Violet
 ```
 
+## Silence / activity detector
+
+Peak-to-peak alone is not a reliable silence detector on the ESP32 ADC because one random spike can make a quiet input look active.
+
+The current firmware therefore tracks average waveform movement as `ACT` and applies hysteresis:
+
+- low average movement = `SILENT=1`
+- the signal must rise above a slightly higher activity threshold before the analyzer wakes again
+- while silent, all band energies are cleared and LED output is forced off
+
+This is the reason a muted or physically unplugged audio input now stays dark even though the ADC itself still has a small amount of noise.
+
+`P2P` is still reported for diagnostics, but it is no longer the only decision used to determine whether music is present.
+
 ## Output modes
 
 ### Mode 1 — single bulb bench
@@ -147,13 +170,13 @@ Each band can light independently from its own energy.
 
 ## Brightness response
 
-The threshold knob decides what audio energy is ignored. Accepted energy is then shaped by EQ gain and a soft compression curve so quieter sources can still produce visible, punchy output.
+The threshold knob decides what accepted audio energy is ignored. Accepted energy is then shaped by EQ gain and a soft compression curve so quieter sources can still produce visible, punchy output.
 
-The threshold knob spans the full useful gate range directly in firmware. There is no software threshold slider in the current tuner.
+The threshold knob spans the useful gate range directly in firmware. There is no software threshold slider in the current tuner.
 
 ## Reset contract
 
-`RESET` must restore the known-good baseline:
+`RESET` restores the known-good baseline:
 
 - Gain = 4.0
 - Max Brightness = 255
@@ -162,6 +185,7 @@ The threshold knob spans the full useful gate range directly in firmware. There 
 - original colors
 - physical knob filter/state reset and reread
 - stale band-energy state cleared
+- silence state reset
 - LED output cleared, then normal reactive behavior resumes
 
 Reset must not leave the bulb stuck on a stale color.
@@ -180,11 +204,13 @@ and disables it on close with:
 STREAM 0
 ```
 
-Current live EQ telemetry includes fields such as:
+Current live EQ telemetry includes:
 
 ```text
 CENTER
 P2P
+ACT
+SILENT
 CLIP
 DOM
 ENERGY
@@ -247,7 +273,7 @@ arduino-cli upload \
   ~/hjflash/happyjarz_sound_reactive_v0_1
 ```
 
-Before flashing, close/stop the tuner and plug watcher so the serial port is free. The current watcher also checks for `arduino-cli` / `esptool` and waits for a stable port before auto-launching.
+Before flashing, close/stop the tuner and plug watcher so the serial port is free. Restart the watcher after upload.
 
 ## Power note
 
@@ -262,11 +288,14 @@ Preserve known-good layers.
 If `TEST RGB` works but music reaction does not:
 
 - inspect GPIO9 center/P2P
+- inspect `ACT` and `SILENT`
 - inspect band energies
 - inspect GPIO10 knob raw/gate
 - verify actual breadboard ground continuity
 - verify source volume
 - verify the app has enabled streaming
+
+If the EQ moves with no source connected, debug the ADC input/activity floor before touching the Goertzel bands or RMT layer.
 
 If the graphic EQ stops while the LED still reacts, debug serial telemetry/app streaming before touching the RMT driver.
 
@@ -276,6 +305,6 @@ If the LED is stuck on a color after a test/reset, clear output/state in the beh
 
 Older files in this directory document a different integrated HAPPY JARZ build with touch controls, OLED, Wi-Fi, battery/power telemetry, patterns, sayings and procedural screensavers.
 
-Those files are intentionally retained as reference. Their GPIO map is not the current CLUB BOX line-in map.
+Those files are intentionally retained as reference. Their GPIO map is not the current BloomPulse line-in map.
 
 **Preserve the proven low-level hardware layer; tune behavior above it.**
