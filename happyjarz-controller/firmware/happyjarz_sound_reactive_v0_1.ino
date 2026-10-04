@@ -1,9 +1,10 @@
-// HAPPY JARZ — standalone raw-peak 8-band sound color meter v2.0
+// HAPPY JARZ — stabilized raw-peak 8-band sound color meter v2.1
 //
 // PURPOSE
-//   Preserve the proven APA106 RMT driver and 25 FPS LED ceiling.
-//   Keep the raw microphone path untouched and make the color thresholds
-//   much more sensitive so normal speech traverses the palette.
+//   Keep the proven raw microphone path and 25 FPS APA106 update ceiling.
+//   Keep the sensitive v2.0 thresholds, but prevent rapid color chatter by
+//   requiring neighboring-band changes to persist briefly before switching.
+//   A true clap/red event still jumps to red immediately.
 //
 // HARDWARE
 //   ESP32-S3 SuperMini
@@ -27,10 +28,20 @@ static constexpr uint8_t MIC_PIN = 8;
 static constexpr uint8_t LED_COUNT = 2;
 static constexpr unsigned long LED_FRAME_MS = 40;
 
+// Temporal hysteresis at 25 FPS:
+//   rise:  2 consecutive frames (~80 ms)
+//   fall:  4 consecutive frames (~160 ms)
+//   red:   immediate
+static constexpr uint8_t RISE_CONFIRM_FRAMES = 2;
+static constexpr uint8_t FALL_CONFIRM_FRAMES = 4;
+
 struct Rgb { uint8_t r, g, b; };
 
 static unsigned long lastLedFrame = 0;
 static float framePeak = 0.0f;
+static uint8_t currentBand = 0;
+static uint8_t pendingBand = 0;
+static uint8_t pendingCount = 0;
 
 static const Rgb BAND_COLORS[8] = {
   {0,   0,  72},  // raw 0-6    blue
@@ -110,6 +121,38 @@ static uint8_t rawToBand(float raw) {
   return 7;
 }
 
+static void updateStableBand(uint8_t targetBand) {
+  // Clap / strong transient: show red immediately.
+  if (targetBand == 7) {
+    currentBand = 7;
+    pendingBand = 7;
+    pendingCount = 0;
+    return;
+  }
+
+  if (targetBand == currentBand) {
+    pendingBand = currentBand;
+    pendingCount = 0;
+    return;
+  }
+
+  if (targetBand != pendingBand) {
+    pendingBand = targetBand;
+    pendingCount = 1;
+  } else if (pendingCount < 255) {
+    ++pendingCount;
+  }
+
+  uint8_t needed = (targetBand > currentBand)
+                     ? RISE_CONFIRM_FRAMES
+                     : FALL_CONFIRM_FRAMES;
+
+  if (pendingCount >= needed) {
+    currentBand = targetBand;
+    pendingCount = 0;
+  }
+}
+
 void setup() {
   pinMode(MIC_PIN, INPUT);
   analogReadResolution(12);
@@ -124,7 +167,10 @@ void setup() {
     delay(120);
   }
 
-  showBand(0);
+  currentBand = 0;
+  pendingBand = 0;
+  pendingCount = 0;
+  showBand(currentBand);
   framePeak = 0.0f;
   lastLedFrame = millis();
 }
@@ -139,8 +185,9 @@ void loop() {
   if (now - lastLedFrame >= LED_FRAME_MS) {
     lastLedFrame = now;
 
-    uint8_t band = rawToBand(framePeak);
-    showBand(band);
+    uint8_t targetBand = rawToBand(framePeak);
+    updateStableBand(targetBand);
+    showBand(currentBand);
 
     framePeak = 0.0f;
   }
