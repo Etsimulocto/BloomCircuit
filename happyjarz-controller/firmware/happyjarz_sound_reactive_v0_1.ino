@@ -1,14 +1,14 @@
-// HAPPY JARZ — 8-band sound color meter v1.6
+// HAPPY JARZ — standalone 8-band sound color meter v1.7
 //
 // PURPOSE
-//   Keep the proven v1.4 microphone + 25 FPS APA106 update path.
-//   Map the real mic control range into eight discrete color bands.
+//   Run continuously with NO serial-monitor dependence.
+//   The HW-484 samples continuously and the APA106 pair updates at 25 FPS.
+//   Eight discrete colors map the expanded 0..60 display range.
 //
 // IMPORTANT
-//   The HW-484 is NOT acoustically calibrated in true dB SPL.
-//   Actual normal speech on this physical mic is roughly 0..30 above floor.
-//   For the display only, control is multiplied by 2 and capped at 60 so
-//   ordinary speech can traverse the full eight-color 0..60 display scale.
+//   The HW-484 is not calibrated in true acoustic dB SPL.
+//   Normal speech on this mic is roughly 0..30 above the calibrated floor.
+//   Display level = control * 2, capped at 60.
 //
 // HARDWARE
 //   ESP32-S3 SuperMini
@@ -39,18 +39,17 @@ static constexpr float DISPLAY_GAIN = 2.0f;
 
 struct Rgb { uint8_t r, g, b; };
 
-static unsigned long frameCounter = 0;
 static unsigned long lastLedFrame = 0;
 
 static const Rgb BAND_COLORS[8] = {
-  {0,   0,  72},  //  0.0 -  7.4  blue
-  {0,  32,  72},  //  7.5 - 14.9  cyan-blue
-  {0,  64,  48},  // 15.0 - 22.4  cyan-green
-  {0,  72,   0},  // 22.5 - 29.9  green
-  {48, 72,   0},  // 30.0 - 37.4  yellow-green
-  {72, 48,   0},  // 37.5 - 44.9  yellow-orange
-  {72, 20,   0},  // 45.0 - 52.4  orange
-  {72,  0,   0}   // 52.5 - 60.0  red
+  {0,   0,  72},
+  {0,  32,  72},
+  {0,  64,  48},
+  {0,  72,   0},
+  {48, 72,   0},
+  {72, 48,   0},
+  {72, 20,   0},
+  {72,  0,   0}
 };
 
 static bool initApa106Rmt() {
@@ -110,7 +109,6 @@ static float readSoundEnvelope() {
 }
 
 static void calibrateMicrophone() {
-  Serial.println("HJ|METER|calibrating|quiet_room=1");
   showBand(0);
 
   constexpr int CAL_SAMPLES = 100;
@@ -125,9 +123,6 @@ static void calibrateMicrophone() {
 
   float average = sum / (float)CAL_SAMPLES;
   noiseFloor = constrain(max(average + FLOOR_MARGIN, peak * 0.85f), 6.0f, 18.0f);
-
-  Serial.printf("HJ|METER|cal_done|AVG=%.1f|PEAK=%.0f|FLOOR=%.1f\n",
-                average, peak, noiseFloor);
 }
 
 static uint8_t displayToBand(float displayLevel) {
@@ -138,28 +133,21 @@ static uint8_t displayToBand(float displayLevel) {
 }
 
 void setup() {
-  Serial.begin(115200);
-  delay(500);
-
-  Serial.println();
-  Serial.println("HJ|METER|boot|fw=1.6|mode=8_BANDS_EXPANDED|scale=0_60|gain=2|packet=GRB|mic=GPIO8|led=GPIO7");
-
   pinMode(MIC_PIN, INPUT);
   analogReadResolution(12);
 
   if (!initApa106Rmt()) {
-    Serial.println("HJ|ERROR|rmt_init_failed");
     while (true) delay(1000);
   }
 
+  // Slow visual startup sweep so we know the LED chain initialized.
   for (uint8_t band = 0; band < 8; ++band) {
     showBand(band);
-    delay(180);
+    delay(120);
   }
 
   calibrateMicrophone();
   lastLedFrame = millis();
-  Serial.println("HJ|METER|ready|bands=8|display_gain=2|band_source=DIRECT_CONTROL|led_fps=25");
 }
 
 void loop() {
@@ -175,14 +163,5 @@ void loop() {
   if (now - lastLedFrame >= LED_FRAME_MS) {
     lastLedFrame = now;
     showBand(band);
-    ++frameCounter;
-  }
-
-  static unsigned long lastPrint = 0;
-  if (millis() - lastPrint >= 100) {
-    lastPrint = millis();
-    Serial.printf("HJ|METER|RAW=%.0f|ABOVE=%.1f|CONTROL=%.1f|DISPLAY=%.1f|BAND=%u|FRAME=%lu|FLOOR=%.1f\n",
-                  rawLevel, above, control, displayLevel,
-                  (unsigned)(band + 1), frameCounter, noiseFloor);
   }
 }
