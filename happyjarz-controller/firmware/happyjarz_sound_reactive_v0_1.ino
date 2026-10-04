@@ -1,10 +1,9 @@
-// HAPPY JARZ — standalone raw-peak 8-band sound color meter v1.9
+// HAPPY JARZ — standalone raw-peak 8-band sound color meter v2.0
 //
 // PURPOSE
 //   Preserve the proven APA106 RMT driver and 25 FPS LED ceiling.
-//   Remove all microphone floor subtraction, gain, hold, smoothing, and caps.
-//   The LED color uses the loudest raw 10 ms envelope observed during each
-//   40 ms LED frame window so short claps/transients are not missed.
+//   Keep the raw microphone path untouched and make the color thresholds
+//   much more sensitive so normal speech traverses the palette.
 //
 // HARDWARE
 //   ESP32-S3 SuperMini
@@ -34,14 +33,14 @@ static unsigned long lastLedFrame = 0;
 static float framePeak = 0.0f;
 
 static const Rgb BAND_COLORS[8] = {
-  {0,   0,  72},  // raw 0-8    blue
-  {0,  32,  72},  // raw 9-14   cyan-blue
-  {0,  64,  48},  // raw 15-20  cyan-green
-  {0,  72,   0},  // raw 21-27  green
-  {48, 72,   0},  // raw 28-35  yellow-green
-  {72, 48,   0},  // raw 36-45  yellow
-  {72, 20,   0},  // raw 46-60  orange
-  {72,  0,   0}   // raw 61+    red
+  {0,   0,  72},  // raw 0-6    blue
+  {0,  32,  72},  // raw 7-8    cyan-blue
+  {0,  64,  48},  // raw 9-10   cyan-green
+  {0,  72,   0},  // raw 11-13  green
+  {48, 72,   0},  // raw 14-16  yellow-green
+  {72, 48,   0},  // raw 17-20  yellow
+  {72, 20,   0},  // raw 21-26  orange
+  {72,  0,   0}   // raw 27+    red
 };
 
 static bool initApa106Rmt() {
@@ -101,13 +100,13 @@ static float readSoundEnvelope() {
 }
 
 static uint8_t rawToBand(float raw) {
-  if (raw <= 8.0f)  return 0;
-  if (raw <= 14.0f) return 1;
-  if (raw <= 20.0f) return 2;
-  if (raw <= 27.0f) return 3;
-  if (raw <= 35.0f) return 4;
-  if (raw <= 45.0f) return 5;
-  if (raw <= 60.0f) return 6;
+  if (raw <= 6.0f)  return 0;
+  if (raw <= 8.0f)  return 1;
+  if (raw <= 10.0f) return 2;
+  if (raw <= 13.0f) return 3;
+  if (raw <= 16.0f) return 4;
+  if (raw <= 20.0f) return 5;
+  if (raw <= 26.0f) return 6;
   return 7;
 }
 
@@ -143,7 +142,6 @@ void loop() {
     uint8_t band = rawToBand(framePeak);
     showBand(band);
 
-    // Start collecting the next 40 ms frame peak.
     framePeak = 0.0f;
   }
 }
