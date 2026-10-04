@@ -1,16 +1,15 @@
-// HAPPY JARZ — sound-reactive isolation test v1.1
+// HAPPY JARZ — sound-reactive isolation test v1.2
 //
 // PURPOSE
-//   Verify the real APA106 behavior from the earlier HAPPY JARZ notes:
-//   - GRB packet order
-//   - blue-only runtime
-//   - inverted brightness response for this bench test because the physical
-//     bulb was observed to DIM when the commanded blue byte increased.
+//   Re-test the proven HAPPY JARZ hardware arrangement after restoring the
+//   GPIO7 series resistor and local LED supply capacitor.
+//   Runtime is BLUE ONLY, GRB packet order, normal sound->brightness direction.
 //
 // HARDWARE
 //   ESP32-S3 SuperMini
 //   HW-484 v0.2 mic: A0 -> GPIO8
-//   APA106 chain: GPIO7 -> 220R -> LED1 DIN -> LED2 DIN
+//   APA106 chain: GPIO7 -> 220 ohm -> LED1 DIN -> LED2 DIN
+//   LED supply has local decoupling capacitor across VCC/GND
 //
 // KNOWN-GOOD APA106 RMT TIMING — PRESERVED
 //   RMT clock: 10 MHz
@@ -30,10 +29,8 @@ static constexpr float FLOOR_MARGIN = 1.5f;
 static constexpr float HOLD_DECAY = 0.86f;
 static constexpr float MAX_CONTROL_ABOVE = 60.0f;
 
-// Bench-safe blue-only limits.
-// IMPORTANT: response is inverted on purpose for this physical batch test.
-static constexpr uint8_t BLUE_QUIET = 72;
-static constexpr uint8_t BLUE_LOUD = 12;
+static constexpr uint8_t BLUE_IDLE = 8;
+static constexpr uint8_t BLUE_MAX = 90;
 
 struct Rgb { uint8_t r, g, b; };
 
@@ -56,7 +53,7 @@ static void writeFrame(const Rgb frame[LED_COUNT]) {
   size_t n = 0;
 
   for (uint8_t led = 0; led < LED_COUNT; ++led) {
-    // HAPPY JARZ APA106 notes: physical batch uses GRB byte order.
+    // Physical HAPPY JARZ APA106 batch: GRB packet order.
     uint8_t bytes[3] = { frame[led].g, frame[led].r, frame[led].b };
 
     for (uint8_t c = 0; c < 3; ++c) {
@@ -101,7 +98,7 @@ static float readSoundEnvelope() {
 
 static void calibrateMicrophone() {
   Serial.println("HJ|ISO|calibrating|quiet_room=1");
-  showBlue(30, 30);
+  showBlue(20, 20);
 
   constexpr int CAL_SAMPLES = 100;
   float sum = 0.0f;
@@ -128,7 +125,7 @@ void setup() {
   delay(500);
 
   Serial.println();
-  Serial.println("HJ|ISO|boot|fw=1.1|mode=BLUE_ONLY_GRB_INVERTED|mic=GPIO8|led=GPIO7");
+  Serial.println("HJ|ISO|boot|fw=1.2|mode=BLUE_ONLY_GRB_NORMAL|mic=GPIO8|led=GPIO7");
 
   pinMode(MIC_PIN, INPUT);
   analogReadResolution(12);
@@ -138,14 +135,14 @@ void setup() {
     while (true) delay(1000);
   }
 
-  // Blue-only stepped startup test. No white/red/green commanded.
+  // Blue-only stepped startup test.
   showBlue(15, 15); delay(250);
   showBlue(35, 35); delay(250);
   showBlue(55, 55); delay(250);
   showBlue(0, 0);   delay(250);
 
   calibrateMicrophone();
-  Serial.println("HJ|ISO|ready|packet=GRB|runtime=BLUE_ONLY|response=INVERTED");
+  Serial.println("HJ|ISO|ready|packet=GRB|runtime=BLUE_ONLY|response=NORMAL");
 }
 
 void loop() {
@@ -166,9 +163,8 @@ void loop() {
   float k = (target > visualLevel) ? 0.20f : 0.05f;
   visualLevel += (target - visualLevel) * k;
 
-  // INVERTED bench mapping: quiet = higher byte, louder = lower byte.
-  uint8_t b1 = BLUE_QUIET - (uint8_t)(visualLevel * (BLUE_QUIET - BLUE_LOUD));
-  uint8_t b2 = BLUE_QUIET - (uint8_t)(visualLevel * 0.70f * (BLUE_QUIET - BLUE_LOUD));
+  uint8_t b1 = BLUE_IDLE + (uint8_t)(visualLevel * (BLUE_MAX - BLUE_IDLE));
+  uint8_t b2 = BLUE_IDLE + (uint8_t)(visualLevel * 0.70f * (BLUE_MAX - BLUE_IDLE));
 
   showBlue(b1, b2);
   ++frameCounter;
