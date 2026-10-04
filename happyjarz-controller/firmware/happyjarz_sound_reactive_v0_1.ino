@@ -1,14 +1,13 @@
-// HAPPY JARZ — standalone 8-band sound color meter v1.7
+// HAPPY JARZ — standalone direct-threshold sound color meter v1.8
 //
 // PURPOSE
-//   Run continuously with NO serial-monitor dependence.
-//   The HW-484 samples continuously and the APA106 pair updates at 25 FPS.
-//   Eight discrete colors map the expanded 0..60 display range.
+//   Keep the proven 25 FPS APA106 update path, but remove gain/smoothing/hold.
+//   Sound response is now direct:
+//     raw peak-to-peak -> subtract calibrated floor -> fixed thresholds -> color
 //
 // IMPORTANT
 //   The HW-484 is not calibrated in true acoustic dB SPL.
-//   Normal speech on this mic is roughly 0..30 above the calibrated floor.
-//   Display level = control * 2, capped at 60.
+//   These are direct envelope-above-floor thresholds chosen from observed bench values.
 //
 // HARDWARE
 //   ESP32-S3 SuperMini
@@ -34,22 +33,20 @@ static constexpr unsigned long LED_FRAME_MS = 40;
 
 static float noiseFloor = 12.0f;
 static constexpr float FLOOR_MARGIN = 1.5f;
-static constexpr float MAX_CONTROL_ABOVE = 60.0f;
-static constexpr float DISPLAY_GAIN = 2.0f;
 
 struct Rgb { uint8_t r, g, b; };
 
 static unsigned long lastLedFrame = 0;
 
 static const Rgb BAND_COLORS[8] = {
-  {0,   0,  72},
-  {0,  32,  72},
-  {0,  64,  48},
-  {0,  72,   0},
-  {48, 72,   0},
-  {72, 48,   0},
-  {72, 20,   0},
-  {72,  0,   0}
+  {0,   0,  72},  // 0-5 blue
+  {0,  32,  72},  // 6-10 cyan-blue
+  {0,  64,  48},  // 11-15 cyan-green
+  {0,  72,   0},  // 16-20 green
+  {48, 72,   0},  // 21-25 yellow-green
+  {72, 48,   0},  // 26-30 yellow
+  {72, 20,   0},  // 31-40 orange
+  {72,  0,   0}   // 41+ red
 };
 
 static bool initApa106Rmt() {
@@ -125,11 +122,15 @@ static void calibrateMicrophone() {
   noiseFloor = constrain(max(average + FLOOR_MARGIN, peak * 0.85f), 6.0f, 18.0f);
 }
 
-static uint8_t displayToBand(float displayLevel) {
-  displayLevel = constrain(displayLevel, 0.0f, 60.0f);
-  uint8_t band = (uint8_t)(displayLevel / 7.5f);
-  if (band > 7) band = 7;
-  return band;
+static uint8_t levelToBand(float level) {
+  if (level <= 5.0f)  return 0;
+  if (level <= 10.0f) return 1;
+  if (level <= 15.0f) return 2;
+  if (level <= 20.0f) return 3;
+  if (level <= 25.0f) return 4;
+  if (level <= 30.0f) return 5;
+  if (level <= 40.0f) return 6;
+  return 7;
 }
 
 void setup() {
@@ -140,7 +141,7 @@ void setup() {
     while (true) delay(1000);
   }
 
-  // Slow visual startup sweep so we know the LED chain initialized.
+  // Slow visual startup sweep to confirm LED chain initialized.
   for (uint8_t band = 0; band < 8; ++band) {
     showBand(band);
     delay(120);
@@ -155,9 +156,7 @@ void loop() {
   float above = rawLevel - noiseFloor;
   if (above < 0.0f) above = 0.0f;
 
-  float control = min(above, MAX_CONTROL_ABOVE);
-  float displayLevel = min(control * DISPLAY_GAIN, 60.0f);
-  uint8_t band = displayToBand(displayLevel);
+  uint8_t band = levelToBand(above);
 
   unsigned long now = millis();
   if (now - lastLedFrame >= LED_FRAME_MS) {
