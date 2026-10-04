@@ -1,4 +1,4 @@
-// HAPPY JARZ — sound-reactive light show v0.1
+// HAPPY JARZ — sound-reactive light show v0.2
 // BloomCore standalone hardware test.
 //
 // PURPOSE
@@ -18,21 +18,21 @@
 //   GPIO7 -> 220R -> APA106 #1 DIN
 //   APA106 #1 DOUT -> APA106 #2 DIN
 //
-// KNOWN-GOOD APA106 LAYER
+// KNOWN-GOOD APA106 LAYER — DO NOT CHANGE WHILE TUNING SOUND
 //   RMT clock: 10 MHz
 //   0 bit: 4 ticks HIGH / 14 ticks LOW
 //   1 bit: 14 ticks HIGH / 4 ticks LOW
 //   latch/reset: 100 us LOW
 //
-// BEHAVIOR
-//   Quiet room  -> faint moving color
-//   Voice/music -> brightness + hue motion scale with sound amplitude
-//   Clap/shout  -> short burst effect
+// v0.2 SOUND CHANGES
+//   - Auto-calibrates room noise at boot.
+//   - Much lower full-scale sound target for normal speech.
+//   - Fast attack / slower release so words visibly punch the lights.
+//   - Square-root response expands quiet/medium speech instead of requiring yelling.
+//   - Burst threshold lowered for claps, taps, and sharp syllables.
 //
 // DIAGNOSTICS
-//   Serial 115200 prints RAW, LEVEL, ENERGY every ~100 ms.
-//   Tune NOISE_FLOOR / LOUD_LEVEL / BURST_AMOUNT only after observing
-//   real bench values.
+//   Serial 115200 prints RAW, LEVEL, ENERGY, FLOOR, FULL every ~100 ms.
 
 #include <Arduino.h>
 #include "esp32-hal-rmt.h"
@@ -44,10 +44,13 @@ static constexpr uint8_t LED_COUNT = 2;
 // -----------------------------
 // Sound tuning
 // -----------------------------
-static float NOISE_FLOOR = 25.0f;
-static float LOUD_LEVEL = 700.0f;
-static float SMOOTHING = 0.78f;
-static float BURST_AMOUNT = 120.0f;
+// These become the starting points; calibration updates FLOOR/FULL at boot.
+static float noiseFloor = 18.0f;
+static float fullScale = 220.0f;
+static constexpr float MIN_FULL_SCALE = 180.0f;
+static constexpr float ATTACK_SMOOTHING = 0.42f;
+static constexpr float RELEASE_SMOOTHING = 0.82f;
+static constexpr float BURST_AMOUNT = 55.0f;
 
 // -----------------------------
 // Runtime state
@@ -133,7 +136,7 @@ static Rgb scaleColor(Rgb c, float amount) {
 // -----------------------------
 static float readSoundEnvelope() {
   // Peak-to-peak ADC swing over ~10 ms. This ignores DC bias and measures
-  // the useful sound amplitude from the analog microphone output.
+  // sound amplitude from the analog microphone output.
   constexpr uint32_t SAMPLE_WINDOW_US = 10000;
 
   uint32_t start = micros();
@@ -160,12 +163,47 @@ static void startupTest() {
   delay(200);
 }
 
+static void calibrateMicrophone() {
+  Serial.println("HJ|SOUND|calibrating|hands_off=1|quiet_room=1");
+
+  // Blue while listening to ambient room noise.
+  show({0, 0, 40}, {0, 0, 40});
+
+  constexpr int CAL_SAMPLES = 100;
+  float sum = 0.0f;
+  float peak = 0.0f;
+
+  for (int i = 0; i < CAL_SAMPLES; ++i) {
+    float v = readSoundEnvelope();
+    sum += v;
+    if (v > peak) peak = v;
+  }
+
+  float average = sum / (float)CAL_SAMPLES;
+
+  // Give the room a little headroom above its average noise.
+  // Clamp prevents one accidental startup sound from making the mic deaf.
+  noiseFloor = constrain((average * 1.25f) + 6.0f, 10.0f, 80.0f);
+
+  // Normal speech should reach a substantial fraction of full output.
+  // On the first bench test, quiet was ~10-50 RAW and loud events were 2000+.
+  fullScale = max(MIN_FULL_SCALE, noiseFloor * 5.0f);
+
+  Serial.printf("HJ|SOUND|cal_done|AVG=%.1f|PEAK=%.0f|FLOOR=%.1f|FULL=%.1f\n",
+                average, peak, noiseFloor, fullScale);
+
+  // Green flash = calibration complete.
+  show({0, 80, 0}, {0, 80, 0});
+  delay(250);
+  show({0, 0, 0}, {0, 0, 0});
+}
+
 void setup() {
   Serial.begin(115200);
   delay(500);
 
   Serial.println();
-  Serial.println("HJ|SOUND|boot|fw=0.1|mic=GPIO8|led=GPIO7");
+  Serial.println("HJ|SOUND|boot|fw=0.2|mic=GPIO8|led=GPIO7");
 
   pinMode(MIC_PIN, INPUT);
   analogReadResolution(12);
@@ -176,37 +214,43 @@ void setup() {
   }
 
   startupTest();
-  Serial.println("HJ|SOUND|ready|make_some_noise=1");
+  calibrateMicrophone();
+
+  Serial.println("HJ|SOUND|ready|normal_voice_should_react=1");
 }
 
 void loop() {
   float rawLevel = readSoundEnvelope();
-  float adjusted = rawLevel - NOISE_FLOOR;
+  float adjusted = rawLevel - noiseFloor;
   if (adjusted < 0.0f) adjusted = 0.0f;
 
-  soundLevel = (soundLevel * SMOOTHING) +
-               (adjusted * (1.0f - SMOOTHING));
+  // Fast attack: react immediately to a word/beat.
+  // Slow release: visually decay instead of blinking off between syllables.
+  float smoothing = (adjusted > soundLevel) ? ATTACK_SMOOTHING : RELEASE_SMOOTHING;
+  soundLevel = (soundLevel * smoothing) +
+               (adjusted * (1.0f - smoothing));
 
-  float energy = constrain(soundLevel / LOUD_LEVEL, 0.0f, 1.0f);
+  float linearEnergy = constrain(soundLevel / fullScale, 0.0f, 1.0f);
+
+  // Expand the lower half of the microphone range so normal speech is useful.
+  float energy = sqrtf(linearEnergy);
 
   // Sudden transient = clap/shout/beat burst.
   float suddenRise = soundLevel - previousLevel;
   if (suddenRise > BURST_AMOUNT) {
-    burstUntil = millis() + 80;
+    burstUntil = millis() + 90;
     hue = (hue + 190) % 1536;
   }
   previousLevel = soundLevel;
 
   // Louder sound moves through color space faster.
-  hue = (hue + 1 + (uint16_t)(energy * 28.0f)) % 1536;
+  hue = (hue + 1 + (uint16_t)(energy * 34.0f)) % 1536;
 
   Rgb c1 = colorWheel(hue);
   Rgb c2 = colorWheel((hue + 500) % 1536);
 
-  // Tiny idle glow, strongly increasing with sound.
-  float brightness = 0.025f + (energy * 0.975f);
-  brightness *= brightness;
-
+  // Small idle glow. Normal speech now gets a strong visible response.
+  float brightness = 0.015f + (energy * 0.985f);
   c1 = scaleColor(c1, brightness);
   c2 = scaleColor(c2, brightness);
 
@@ -220,7 +264,7 @@ void loop() {
   static unsigned long lastPrint = 0;
   if (millis() - lastPrint >= 100) {
     lastPrint = millis();
-    Serial.printf("HJ|SOUND|RAW=%.0f|LEVEL=%.1f|ENERGY=%.2f\n",
-                  rawLevel, soundLevel, energy);
+    Serial.printf("HJ|SOUND|RAW=%.0f|LEVEL=%.1f|ENERGY=%.2f|FLOOR=%.1f|FULL=%.1f\n",
+                  rawLevel, soundLevel, energy, noiseFloor, fullScale);
   }
 }
