@@ -1,10 +1,10 @@
-// HAPPY JARZ — sound-reactive light show v0.5
+// HAPPY JARZ — sound-reactive light show v0.6
 // BloomCore standalone hardware test.
 //
 // PURPOSE
-//   Make the HW-484 response stable over time by driving the visual bands from
-//   the real peak-to-peak microphone envelope above the calibrated room floor.
-//   Preserve the known-good HAPPY JARZ APA106 RMT lighting layer on GPIO7.
+//   Stable HW-484 sound response using the real measured microphone range while
+//   rejecting brief ESP32 ADC/envelope spikes that can otherwise pin the visual
+//   peak-hold at full output.
 //
 // HARDWARE
 //   Controller: ESP32-S3 SuperMini
@@ -25,20 +25,21 @@
 //   1 bit: 14 ticks HIGH / 4 ticks LOW
 //   latch/reset: 100 us LOW
 //
-// v0.5 SOUND RESPONSE
-//   Real bench data:
-//     quiet floor ~10-13 RAW
-//     whisper / soft speech ~15-25 RAW
-//     ordinary speech ~25-40 RAW
-//     loud clap ~50-60 RAW
+// REAL BENCH RANGE
+//   quiet floor: roughly 6-12 RAW
+//   whisper/soft voice: roughly 15-25 RAW
+//   ordinary voice: roughly 25-40 RAW
+//   loud clap: roughly 50-60 RAW
 //
-//   v0.4 classified the smoothed LEVEL after floor subtraction. That could
-//   shrink a real 50-60 RAW clap into a much smaller control value and make the
-//   light response seem to fade away. v0.5 instead uses RAW-above-floor with a
-//   short peak hold and controlled decay.
+// v0.6 FIX
+//   v0.5 exposed short unprinted ADC/envelope spikes in the hundreds/thousands.
+//   Those spikes could enter HOLD even though the next printed RAW value looked
+//   normal. The diagnostic RAW remains untouched, but the LIGHT CONTROL path is
+//   clamped to a sane maximum above the measured floor. A real clap still reaches
+//   PEAK; nonsense spikes can no longer pin the show at full energy.
 //
 // DIAGNOSTICS
-//   Serial 115200 prints RAW, ABOVE, HOLD, ENERGY, BAND, FLOOR every ~100 ms.
+//   Serial 115200 prints RAW, ABOVE, CONTROL, HOLD, ENERGY, BAND, FLOOR.
 
 #include <Arduino.h>
 #include "esp32-hal-rmt.h"
@@ -52,7 +53,8 @@ static constexpr uint8_t LED_COUNT = 2;
 // -----------------------------
 static float noiseFloor = 12.0f;
 static constexpr float FLOOR_MARGIN = 1.5f;
-static constexpr float HOLD_DECAY = 0.88f;
+static constexpr float HOLD_DECAY = 0.86f;
+static constexpr float MAX_CONTROL_ABOVE = 60.0f; // measured clap range tops out around here
 static constexpr float IDLE_MAX = 2.0f;
 static constexpr float WHISPER_MAX = 10.0f;
 static constexpr float VOICE_MAX = 22.0f;
@@ -66,7 +68,7 @@ static constexpr float BURST_RISE = 18.0f;
 struct Rgb { uint8_t r, g, b; };
 
 static float heldLevel = 0.0f;
-static float previousAbove = 0.0f;
+static float previousControl = 0.0f;
 static uint16_t hue = 0;
 static unsigned long burstUntil = 0;
 
@@ -179,8 +181,6 @@ static void calibrateMicrophone() {
   }
 
   float average = sum / (float)CAL_SAMPLES;
-
-  // Fixed after boot: do not let later sound teach the detector to ignore sound.
   noiseFloor = constrain(max(average + FLOOR_MARGIN, peak * 0.85f), 6.0f, 18.0f);
 
   Serial.printf("HJ|SOUND|cal_done|AVG=%.1f|PEAK=%.0f|FLOOR=%.1f\n",
@@ -215,7 +215,7 @@ static float mapDynamics(float level, const char **bandOut) {
   }
 
   *bandOut = "PEAK";
-  float t = constrain((level - LOUD_MAX) / 20.0f, 0.0f, 1.0f);
+  float t = constrain((level - LOUD_MAX) / (MAX_CONTROL_ABOVE - LOUD_MAX), 0.0f, 1.0f);
   return 0.85f + t * 0.15f;
 }
 
@@ -224,7 +224,7 @@ void setup() {
   delay(500);
 
   Serial.println();
-  Serial.println("HJ|SOUND|boot|fw=0.5|mic=GPIO8|led=GPIO7");
+  Serial.println("HJ|SOUND|boot|fw=0.6|mic=GPIO8|led=GPIO7");
 
   pinMode(MIC_PIN, INPUT);
   analogReadResolution(12);
@@ -236,7 +236,7 @@ void setup() {
 
   startupTest();
   calibrateMicrophone();
-  Serial.println("HJ|SOUND|ready|raw_peak_hold=1|bands=IDLE,WHISPER,VOICE,LOUD,PEAK");
+  Serial.println("HJ|SOUND|ready|spike_guard=1|bands=IDLE,WHISPER,VOICE,LOUD,PEAK");
 }
 
 void loop() {
@@ -244,9 +244,13 @@ void loop() {
   float above = rawLevel - noiseFloor;
   if (above < 0.0f) above = 0.0f;
 
-  // Instant attack, short visual memory. Crucially, there is no moving baseline.
-  if (above > heldLevel) {
-    heldLevel = above;
+  // Preserve raw ABOVE for diagnostics, but never let a single ADC/envelope
+  // glitch inject hundreds/thousands into the visual state.
+  float control = min(above, MAX_CONTROL_ABOVE);
+
+  // Instant attack, quick musical decay.
+  if (control > heldLevel) {
+    heldLevel = control;
   } else {
     heldLevel *= HOLD_DECAY;
     if (heldLevel < 0.15f) heldLevel = 0.0f;
@@ -255,21 +259,19 @@ void loop() {
   const char *band = "IDLE";
   float energy = constrain(mapDynamics(heldLevel, &band), 0.0f, 1.0f);
 
-  float suddenRise = above - previousAbove;
-  if (above >= CLAP_ABOVE || suddenRise >= BURST_RISE) {
-    burstUntil = millis() + 110;
+  float suddenRise = control - previousControl;
+  if (control >= CLAP_ABOVE || suddenRise >= BURST_RISE) {
+    burstUntil = millis() + 100;
     hue = (hue + 230) % 1536;
   }
-  previousAbove = above;
+  previousControl = control;
 
-  // Keep a tiny living idle drift so we can distinguish "running" from "stuck".
   uint16_t hueStep = 1 + (uint16_t)(energy * 48.0f);
   hue = (hue + hueStep) % 1536;
 
   Rgb c1 = colorWheel(hue);
   Rgb c2 = colorWheel((hue + 500) % 1536);
 
-  // Visible heartbeat at idle; whisper remains soft; loud sound gets full range.
   float brightness = (energy <= 0.0f) ? 0.012f : (0.025f + energy * 0.975f);
   c1 = scaleColor(c1, brightness);
   c2 = scaleColor(c2, brightness);
@@ -284,7 +286,7 @@ void loop() {
   static unsigned long lastPrint = 0;
   if (millis() - lastPrint >= 100) {
     lastPrint = millis();
-    Serial.printf("HJ|SOUND|RAW=%.0f|ABOVE=%.1f|HOLD=%.1f|ENERGY=%.2f|BAND=%s|FLOOR=%.1f\n",
-                  rawLevel, above, heldLevel, energy, band, noiseFloor);
+    Serial.printf("HJ|SOUND|RAW=%.0f|ABOVE=%.1f|CONTROL=%.1f|HOLD=%.1f|ENERGY=%.2f|BAND=%s|FLOOR=%.1f\n",
+                  rawLevel, above, control, heldLevel, energy, band, noiseFloor);
   }
 }
