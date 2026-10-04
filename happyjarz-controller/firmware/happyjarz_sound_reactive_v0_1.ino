@@ -1,10 +1,8 @@
-// HAPPY JARZ — native-GRB peak-bucket 8-band sound color meter v2.3
+// HAPPY JARZ — native-GRB peak-bucket meter diagnostic v2.4
 //
 // PURPOSE
-//   Treat APA106 color bytes as GRB from end to end with no RGB->GRB swap.
-//   Preserve the raw microphone capture and proven RMT timing.
-//   Accumulate the loudest mic peak across a 120 ms bucket so speech peaks
-//   are not missed, then update color once per bucket to avoid flicker.
+//   Keep the v2.3 light behavior unchanged, while emitting one compact
+//   diagnostic line per 120 ms bucket for the Raspberry Pi meter app.
 //
 // HARDWARE
 //   ESP32-S3 SuperMini
@@ -25,11 +23,8 @@
 static constexpr uint8_t LED_DATA_PIN = 7;
 static constexpr uint8_t MIC_PIN = 8;
 static constexpr uint8_t LED_COUNT = 2;
-
-// Mic envelope window remains 10 ms. We collect the loudest value across
-// 120 ms before choosing a new color.
 static constexpr unsigned long COLOR_BUCKET_MS = 120;
-static constexpr uint8_t FALL_CONFIRM_BUCKETS = 2; // ~240 ms fall hold
+static constexpr uint8_t FALL_CONFIRM_BUCKETS = 2;
 
 struct Grb { uint8_t g, r, b; };
 
@@ -39,7 +34,6 @@ static uint8_t currentBand = 0;
 static uint8_t pendingLowerBand = 0;
 static uint8_t pendingLowerCount = 0;
 
-// Native GRB values: low sound -> high sound.
 static const Grb BAND_COLORS[8] = {
   { 0,  0, 72},  // blue
   {32,  0, 72},  // cyan-blue
@@ -66,7 +60,6 @@ static void writeFrame(const Grb frame[LED_COUNT]) {
   size_t n = 0;
 
   for (uint8_t led = 0; led < LED_COUNT; ++led) {
-    // Already stored in the exact APA106 wire order: G, R, B.
     uint8_t bytes[3] = { frame[led].g, frame[led].r, frame[led].b };
 
     for (uint8_t c = 0; c < 3; ++c) {
@@ -120,7 +113,6 @@ static uint8_t rawToBand(float raw) {
 }
 
 static void updateBandFromBucket(uint8_t targetBand) {
-  // Any higher peak wins immediately at the end of the 120 ms bucket.
   if (targetBand > currentBand) {
     currentBand = targetBand;
     pendingLowerBand = currentBand;
@@ -134,7 +126,6 @@ static void updateBandFromBucket(uint8_t targetBand) {
     return;
   }
 
-  // Falling requires two complete lower buckets (~240 ms).
   if (targetBand != pendingLowerBand) {
     pendingLowerBand = targetBand;
     pendingLowerCount = 1;
@@ -149,6 +140,9 @@ static void updateBandFromBucket(uint8_t targetBand) {
 }
 
 void setup() {
+  // Serial is telemetry only. The light logic does not wait for or depend on it.
+  Serial.begin(115200);
+
   pinMode(MIC_PIN, INPUT);
   analogReadResolution(12);
 
@@ -156,7 +150,6 @@ void setup() {
     while (true) delay(1000);
   }
 
-  // Slow native-GRB startup sweep.
   for (uint8_t band = 0; band < 8; ++band) {
     showBand(band);
     delay(140);
@@ -178,9 +171,15 @@ void loop() {
   if (now - bucketStart >= COLOR_BUCKET_MS) {
     bucketStart = now;
 
-    uint8_t targetBand = rawToBand(bucketPeak);
+    float measuredPeak = bucketPeak;
+    uint8_t targetBand = rawToBand(measuredPeak);
     updateBandFromBucket(targetBand);
     showBand(currentBand);
+
+    Serial.printf("HJ|METER|RAW=%.0f|TARGET=%u|BAND=%u\n",
+                  measuredPeak,
+                  (unsigned)(targetBand + 1),
+                  (unsigned)(currentBand + 1));
 
     bucketPeak = 0.0f;
   }
