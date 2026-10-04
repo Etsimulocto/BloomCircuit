@@ -1,9 +1,12 @@
-// HAPPY JARZ / CLUB BOX — tunable 8-band line-in EQ visualizer v3.6
+// HAPPY JARZ / CLUB BOX — tunable 8-band line-in EQ visualizer v3.7
 //
 // Current bench setup: ONE APA106 on GPIO7, mono line-in on GPIO9.
+// GPIO10 is a physical noise-floor potentiometer:
+//   pot leg 1 -> GND
+//   pot leg 2 (wiper) -> GPIO10
+//   pot leg 3 -> 3V3
 // The analyzer uses 8 Goertzel bands (no extra library dependency).
-// The strongest band drives the single LED color; energy drives brightness.
-// Band edges/colors and sensitivity can be tuned live from the Pi app.
+// Strongest band drives LED color; energy drives brightness.
 
 #include <Arduino.h>
 #include <math.h>
@@ -11,11 +14,12 @@
 
 static constexpr uint8_t LED_DATA_PIN = 7;
 static constexpr uint8_t LINE_IN_PIN = 9;
+static constexpr uint8_t NOISE_KNOB_PIN = 10;
 static constexpr uint8_t LED_COUNT = 1;
 static constexpr uint8_t BAND_COUNT = 8;
 static constexpr uint16_t SAMPLE_COUNT = 256;
 static constexpr float SAMPLE_RATE = 8000.0f;
-static constexpr uint32_t SAMPLE_PERIOD_US = 125; // 8 kHz
+static constexpr uint32_t SAMPLE_PERIOD_US = 125;
 static constexpr unsigned long TELEMETRY_MS = 100;
 
 struct Rgb { uint8_t r, g, b; };
@@ -24,23 +28,26 @@ static bool streamEnabled = false;
 static String commandBuffer;
 static unsigned long lastTelemetry = 0;
 static uint8_t maxBrightness = 96;
-static float noiseGate = 8.0f;
+static float noiseGate = 0.0f;
+static float knobGateMax = 100.0f;
 static float eqGain = 4.0f;
+static uint16_t knobRaw = 0;
+static float knobPercent = 0.0f;
+static float knobFiltered = -1.0f;
 
-// Tunable band edges. Band i spans edge[i] .. edge[i+1].
 static float bandEdge[BAND_COUNT + 1] = {
   40, 90, 180, 350, 700, 1200, 2000, 3000, 3900
 };
 
 static Rgb bandColor[BAND_COUNT] = {
-  {255, 0, 0},      // sub/bass red
-  {255, 70, 0},     // orange
-  {255, 180, 0},    // amber
-  {80, 255, 0},     // lime
-  {0, 255, 90},     // green-cyan
-  {0, 180, 255},    // cyan-blue
-  {40, 40, 255},    // blue
-  {180, 0, 255}     // violet
+  {255, 0, 0},
+  {255, 70, 0},
+  {255, 180, 0},
+  {80, 255, 0},
+  {0, 255, 90},
+  {0, 180, 255},
+  {40, 40, 255},
+  {180, 0, 255}
 };
 
 static float samples[SAMPLE_COUNT];
@@ -62,7 +69,7 @@ static bool initApa106Rmt() {
 static void writeRgb(uint8_t r, uint8_t g, uint8_t b) {
   rmt_data_t symbols[24];
   size_t n = 0;
-  uint8_t bytes[3] = {r, g, b}; // proven physical order
+  uint8_t bytes[3] = {r, g, b}; // proven physical RGB order
   for (uint8_t c = 0; c < 3; ++c) {
     for (int bit = 7; bit >= 0; --bit) {
       bool one = bytes[c] & (1U << bit);
@@ -83,12 +90,24 @@ static uint8_t scale8(uint8_t v, float level) {
   return (uint8_t)((float)v * level);
 }
 
+static void updateNoiseKnob() {
+  uint32_t total = 0;
+  for (uint8_t i = 0; i < 8; ++i) total += (uint16_t)analogRead(NOISE_KNOB_PIN);
+  float now = (float)total / 8.0f;
+
+  if (knobFiltered < 0.0f) knobFiltered = now;
+  else knobFiltered = knobFiltered * 0.82f + now * 0.18f;
+
+  knobRaw = (uint16_t)constrain((int)lroundf(knobFiltered), 0, 4095);
+  knobPercent = (float)knobRaw / 4095.0f;
+  noiseGate = knobPercent * knobGateMax;
+}
+
 static void showDominant() {
   if (dominantEnergy <= noiseGate) {
     writeRgb(0, 0, 0);
     return;
   }
-  // Energy-to-brightness with a soft compressor so normal line levels remain visible.
   float x = (dominantEnergy - noiseGate) * eqGain;
   float level = x / (x + 80.0f);
   float cap = (float)maxBrightness / 255.0f;
@@ -103,7 +122,6 @@ static float goertzelPower(float freq) {
   float coeff = 2.0f * cosf(omega);
   float q0 = 0, q1 = 0, q2 = 0;
   for (uint16_t i = 0; i < SAMPLE_COUNT; ++i) {
-    // Hann window reduces leakage enough for our coarse club-light bands.
     float w = 0.5f - 0.5f * cosf(2.0f * PI * i / (SAMPLE_COUNT - 1));
     q0 = coeff * q1 - q2 + samples[i] * w;
     q2 = q1;
@@ -141,7 +159,6 @@ static void analyzeEq() {
   dominantEnergy = 0.0f;
   dominantBand = 0;
   for (uint8_t b = 0; b < BAND_COUNT; ++b) {
-    // Sample low/mid/high points inside each tunable band and keep the strongest.
     float lo = bandEdge[b];
     float hi = bandEdge[b+1];
     float f1 = lo + (hi-lo)*0.20f;
@@ -161,15 +178,16 @@ static void analyzeEq() {
 
 static void printEq() {
   if (!Serial) return;
-  Serial.printf("HJ|EQ|CENTER=%u|P2P=%u|CLIP=%u|DOM=%u|ENERGY=%.1f",
+  Serial.printf("HJ|EQ|CENTER=%u|P2P=%u|CLIP=%u|DOM=%u|ENERGY=%.1f|KNOB=%u|KNOBPCT=%.1f|GATE=%.1f",
                 (unsigned)lastCenter, (unsigned)lastP2P, lastClip ? 1U : 0U,
-                (unsigned)(dominantBand+1), dominantEnergy);
+                (unsigned)(dominantBand+1), dominantEnergy,
+                (unsigned)knobRaw, knobPercent * 100.0f, noiseGate);
   for (uint8_t b = 0; b < BAND_COUNT; ++b) Serial.printf("|B%u=%.1f", (unsigned)(b+1), bandEnergy[b]);
   Serial.println();
 }
 
 static void printConfig() {
-  Serial.printf("HJ|EQCFG|GAIN=%.2f|GATE=%.1f|BRIGHT=%u", eqGain, noiseGate, (unsigned)maxBrightness);
+  Serial.printf("HJ|EQCFG|GAIN=%.2f|GATEMAX=%.1f|BRIGHT=%u", eqGain, knobGateMax, (unsigned)maxBrightness);
   for (uint8_t i = 0; i <= BAND_COUNT; ++i) Serial.printf("|E%u=%.0f", (unsigned)i, bandEdge[i]);
   for (uint8_t b = 0; b < BAND_COUNT; ++b) {
     Serial.printf("|C%u=%u,%u,%u", (unsigned)(b+1), bandColor[b].r, bandColor[b].g, bandColor[b].b);
@@ -187,7 +205,7 @@ static void handleCommand(String cmd) {
     writeRgb(80,0,0); delay(250); writeRgb(0,80,0); delay(250); writeRgb(0,0,80); delay(250); writeRgb(0,0,0); return;
   }
   if (cmd.startsWith("SET GAIN ")) { float v=cmd.substring(9).toFloat(); if(v>=0.1f&&v<=30.0f) eqGain=v; printConfig(); return; }
-  if (cmd.startsWith("SET GATE ")) { float v=cmd.substring(9).toFloat(); if(v>=0&&v<=500) noiseGate=v; printConfig(); return; }
+  if (cmd.startsWith("SET GATEMAX ")) { float v=cmd.substring(12).toFloat(); if(v>=5.0f&&v<=500.0f) knobGateMax=v; printConfig(); return; }
   if (cmd.startsWith("SET BRIGHT ")) { int v=cmd.substring(11).toInt(); if(v>=4&&v<=255) maxBrightness=(uint8_t)v; printConfig(); return; }
   if (cmd.startsWith("SET EDGE ")) {
     int p1=cmd.indexOf(' ',9); if(p1<0) return;
@@ -224,19 +242,22 @@ static void serviceSerial() {
 void setup() {
   Serial.begin(115200);
   pinMode(LINE_IN_PIN, INPUT);
+  pinMode(NOISE_KNOB_PIN, INPUT);
   analogReadResolution(12);
   if (!initApa106Rmt()) while(true) delay(1000);
+  updateNoiseKnob();
   writeRgb(80,0,0); delay(180); writeRgb(0,80,0); delay(180); writeRgb(0,0,80); delay(180); writeRgb(0,0,0);
 }
 
 void loop() {
   serviceSerial();
+  updateNoiseKnob();
   sampleAudio();
   analyzeEq();
   showDominant();
   unsigned long now=millis();
   if(streamEnabled && now-lastTelemetry>=TELEMETRY_MS) {
     lastTelemetry=now;
-    if(Serial.availableForWrite()>=180) printEq();
+    if(Serial.availableForWrite()>=220) printEq();
   }
 }
