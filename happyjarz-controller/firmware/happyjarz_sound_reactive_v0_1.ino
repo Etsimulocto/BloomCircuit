@@ -1,4 +1,4 @@
-// HAPPY JARZ / CLUB BOX — tunable 8-band line-in EQ visualizer v4.2
+// HAPPY JARZ / CLUB BOX — tunable 8-band line-in EQ visualizer v4.3
 //
 // GPIO7  = APA106 data
 // GPIO9  = mono line input
@@ -24,7 +24,11 @@ static constexpr float SAMPLE_RATE = 8000.0f;
 static constexpr uint32_t SAMPLE_PERIOD_US = 125;
 static constexpr unsigned long TELEMETRY_MS = 100;
 static constexpr float KNOB_GATE_MAX = 500.0f;
-static constexpr uint16_t SILENCE_P2P = 18;
+
+// Silence detector uses mean absolute waveform motion instead of P2P.
+// P2P is too sensitive to one-off ADC spikes. Hysteresis prevents chatter.
+static constexpr float SILENCE_ACTIVITY_OFF = 5.0f;
+static constexpr float SILENCE_ACTIVITY_ON = 7.0f;
 
 struct Rgb { uint8_t r, g, b; };
 
@@ -39,6 +43,7 @@ static uint16_t knobRaw = 0;
 static float knobPercent = 0.0f;
 static float knobFiltered = -1.0f;
 static bool inputSilent = true;
+static float lastActivity = 0.0f;
 
 static const float DEFAULT_EDGES[BAND_COUNT + 1] = {
   40, 90, 180, 350, 700, 1200, 2000, 3000, 3900
@@ -195,9 +200,19 @@ static void sampleAudio() {
   float center = (float)sum / SAMPLE_COUNT;
   lastCenter = (uint16_t)center;
   lastP2P = maximum - minimum;
-  inputSilent = (lastP2P < SILENCE_P2P);
   lastClip = (minimum <= 25 || maximum >= 4070);
-  for (uint16_t i = 0; i < SAMPLE_COUNT; ++i) samples[i] = (float)raw[i] - center;
+
+  float absSum = 0.0f;
+  for (uint16_t i = 0; i < SAMPLE_COUNT; ++i) {
+    samples[i] = (float)raw[i] - center;
+    absSum += fabsf(samples[i]);
+  }
+  lastActivity = absSum / (float)SAMPLE_COUNT;
+
+  // Hysteresis: quiet input must show sustained motion to wake;
+  // active input must settle lower before returning to silence.
+  if (inputSilent) inputSilent = (lastActivity < SILENCE_ACTIVITY_ON);
+  else inputSilent = (lastActivity < SILENCE_ACTIVITY_OFF);
 }
 
 static void analyzeEq() {
@@ -232,6 +247,7 @@ static void resetDefaults() {
   dominantBand = 0;
   dominantEnergy = 0.0f;
   inputSilent = true;
+  lastActivity = 0.0f;
   knobFiltered = -1.0f;
   updateNoiseKnob();
   allOff();
@@ -259,8 +275,8 @@ static void testChase16() {
 
 static void printEq() {
   if (!Serial) return;
-  Serial.printf("HJ|EQ|CENTER=%u|P2P=%u|SILENT=%u|CLIP=%u|DOM=%u|ENERGY=%.1f|KNOB=%u|KNOBPCT=%.1f|GATE=%.1f|MODE=%u",
-                (unsigned)lastCenter,(unsigned)lastP2P,inputSilent?1U:0U,lastClip?1U:0U,
+  Serial.printf("HJ|EQ|CENTER=%u|P2P=%u|ACT=%.2f|SILENT=%u|CLIP=%u|DOM=%u|ENERGY=%.1f|KNOB=%u|KNOBPCT=%.1f|GATE=%.1f|MODE=%u",
+                (unsigned)lastCenter,(unsigned)lastP2P,lastActivity,inputSilent?1U:0U,lastClip?1U:0U,
                 (unsigned)(dominantBand+1),dominantEnergy,
                 (unsigned)knobRaw,knobPercent*100.0f,noiseGate,(unsigned)outputMode);
   for (uint8_t b=0;b<BAND_COUNT;++b) Serial.printf("|B%u=%.1f",(unsigned)(b+1),bandEnergy[b]);
@@ -268,7 +284,8 @@ static void printEq() {
 }
 
 static void printConfig() {
-  Serial.printf("HJ|EQCFG|GAIN=%.2f|BRIGHT=%u|KNOBMAX=%.1f|SILENCEP2P=%u|MODE=%u",eqGain,(unsigned)maxBrightness,KNOB_GATE_MAX,(unsigned)SILENCE_P2P,(unsigned)outputMode);
+  Serial.printf("HJ|EQCFG|GAIN=%.2f|BRIGHT=%u|KNOBMAX=%.1f|SILENCEOFF=%.1f|SILENCEON=%.1f|MODE=%u",
+                eqGain,(unsigned)maxBrightness,KNOB_GATE_MAX,SILENCE_ACTIVITY_OFF,SILENCE_ACTIVITY_ON,(unsigned)outputMode);
   for (uint8_t i=0;i<=BAND_COUNT;++i) Serial.printf("|E%u=%.0f",(unsigned)i,bandEdge[i]);
   for (uint8_t b=0;b<BAND_COUNT;++b) Serial.printf("|C%u=%u,%u,%u",(unsigned)(b+1),bandColor[b].r,bandColor[b].g,bandColor[b].b);
   Serial.println();
@@ -312,7 +329,9 @@ static void handleCommand(String cmd) {
 static void serviceSerial() {
   while (Serial.available()>0) {
     char ch=(char)Serial.read();
-    if(ch=='\n'||ch=='\r') { if(commandBuffer.length()){handleCommand(commandBuffer);commandBuffer="";} }
+    if(ch=='\n'||ch=='\r') {
+      if(commandBuffer.length()) { handleCommand(commandBuffer); commandBuffer=""; }
+    }
     else if(commandBuffer.length()<128) commandBuffer+=ch;
   }
 }
@@ -337,7 +356,6 @@ void loop() {
   unsigned long now=millis();
   if(streamEnabled && now-lastTelemetry>=TELEMETRY_MS) {
     lastTelemetry=now;
-    // Do not suppress telemetry based on availableForWrite; that was starving the live EQ UI.
     printEq();
   }
 }
