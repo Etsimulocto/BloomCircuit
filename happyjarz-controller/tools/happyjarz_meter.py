@@ -16,9 +16,9 @@ COLOR_PRESETS={
 
 class EqApp:
     def __init__(self,root):
-        self.root=root; root.title('HAPPY JARZ / CLUB BOX EQ Tuner'); root.geometry('1000x940')
+        self.root=root; root.title('HAPPY JARZ / CLUB BOX EQ Tuner'); root.geometry('1000x920')
         self.q=queue.Queue(); self.running=True; self.ser=None; self.lock=threading.Lock(); self.ignore=False
-        self.gain=tk.DoubleVar(value=4.0); self.gatemax=tk.DoubleVar(value=100.0); self.bright=tk.DoubleVar(value=96)
+        self.gain=tk.DoubleVar(value=4.0); self.bright=tk.DoubleVar(value=255)
         self.edges=[tk.DoubleVar(value=v) for v in (40,90,180,350,700,1200,2000,3000,3900)]
         defaults=['Red','Orange','Amber','Lime','Green','Cyan','Blue','Violet']
         self.colors=[tk.StringVar(value=defaults[i]) for i in range(8)]
@@ -29,11 +29,13 @@ class EqApp:
 
         top=ttk.Frame(root,padding=10); top.pack(fill='x')
         ttk.Label(top,textvariable=self.status).pack(side='left')
+        ttk.Button(top,text='Reset',command=lambda:self.send('RESET')).pack(side='right',padx=(6,0))
         ttk.Button(top,text='RGB Test',command=lambda:self.send('TEST RGB')).pack(side='right')
 
         meter=ttk.LabelFrame(root,text='Live EQ',padding=10); meter.pack(fill='x',padx=10,pady=(0,8))
         ttk.Label(meter,textvariable=self.summary,font=('TkDefaultFont',16,'bold')).pack(anchor='w')
         ttk.Label(meter,textvariable=self.knob_var,font=('TkDefaultFont',13,'bold')).pack(anchor='w',pady=(2,6))
+        ttk.Label(meter,text='Physical GPIO10 knob = the ONLY threshold / noise-floor control.',font=('TkDefaultFont',10)).pack(anchor='w',pady=(0,4))
         bars=ttk.Frame(meter); bars.pack(fill='x',pady=5)
         self.band_bars=[]
         for i in range(8):
@@ -43,9 +45,8 @@ class EqApp:
 
         controls=ttk.LabelFrame(root,text='EQ Response',padding=10); controls.pack(fill='x',padx=10,pady=(0,8))
         self.add_slider(controls,'Gain',self.gain,0.1,30.0,0.1,lambda:self.send(f'SET GAIN {self.gain.get():.2f}'))
-        self.add_slider(controls,'Knob max gate',self.gatemax,5,500,1,lambda:self.send(f'SET GATEMAX {self.gatemax.get():.1f}'))
         self.add_slider(controls,'Max brightness',self.bright,4,255,1,lambda:self.send(f'SET BRIGHT {int(self.bright.get())}'))
-        ttk.Label(controls,text='GPIO10 physical knob is the live noise floor. Knob Max Gate sets what a full turn equals.',wraplength=920).pack(anchor='w',pady=(4,0))
+        ttk.Label(controls,text='Threshold is no longer adjustable here. Turn the physical knob only.',wraplength=920).pack(anchor='w',pady=(4,0))
 
         eq=ttk.LabelFrame(root,text='Band edges + colors',padding=10); eq.pack(fill='x',padx=10,pady=(0,8))
         hdr=ttk.Frame(eq); hdr.pack(fill='x')
@@ -60,7 +61,7 @@ class EqApp:
         ttk.Button(eq,text='Apply all edges/colors',command=self.apply_all).pack(anchor='w',pady=(6,0))
 
         ttk.Label(root,text=f'CSV log: {LOG_PATH}',padding=(10,0,10,4)).pack(anchor='w')
-        self.log=tk.Text(root,height=14,wrap='none'); self.log.pack(fill='both',expand=True,padx=10,pady=(0,10)); self.log.configure(state='disabled')
+        self.log=tk.Text(root,height=13,wrap='none'); self.log.pack(fill='both',expand=True,padx=10,pady=(0,10)); self.log.configure(state='disabled')
         if not os.path.exists(LOG_PATH):
             with open(LOG_PATH,'w',newline='') as f:
                 csv.writer(f).writerow(['timestamp','center','p2p','clip','dominant','energy','knob_raw','knob_percent','gate']+[f'b{i+1}' for i in range(8)])
@@ -142,10 +143,19 @@ class EqApp:
         self.ignore=True
         try:
             if 'GAIN' in d:self.gain.set(float(d['GAIN']))
-            if 'GATEMAX' in d:self.gatemax.set(float(d['GATEMAX']))
             if 'BRIGHT' in d:self.bright.set(float(d['BRIGHT']))
             for i in range(9):
                 if f'E{i}' in d:self.edges[i].set(float(d[f'E{i}']))
+            for i in range(8):
+                key=f'C{i+1}'
+                if key in d:
+                    try:
+                        rgb=tuple(int(x) for x in d[key].split(','))
+                        for name,val in COLOR_PRESETS.items():
+                            if val==rgb:
+                                self.colors[i].set(name); break
+                    except Exception:
+                        pass
         finally:self.ignore=False
 
     def append(self,s):
