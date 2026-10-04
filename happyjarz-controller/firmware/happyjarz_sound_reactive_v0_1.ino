@@ -1,46 +1,24 @@
-// HAPPY JARZ — sound-reactive light show v0.7
-// BloomCore standalone hardware test.
-//
-// PURPOSE
-//   Build the first real voice-reactive light show on top of the stable v0.6
-//   microphone + spike-guard layer while preserving the known-good APA106 RMT
-//   lighting layer on GPIO7.
+// HAPPY JARZ — sound-reactive light show v0.8
+// Smooth voice-reactive show built on the stable v0.6 input layer.
 //
 // HARDWARE
-//   Controller: ESP32-S3 SuperMini
-//   Mic: HW-484 v0.2
+//   ESP32-S3 SuperMini
+//   HW-484 v0.2 mic: A0 -> GPIO8
+//   APA106 chain: GPIO7 -> 220R -> LED1 DIN -> LED2 DIN
 //
-// WIRING
-//   HW-484 +   -> 3V3
-//   HW-484 G   -> GND
-//   HW-484 A0  -> GPIO8
-//   HW-484 D0  -> unused
+// IMPORTANT
+//   The microphone calibration, spike guard, and known-good APA106 RMT timing
+//   are preserved. v0.8 only changes the visual/show behavior.
 //
-//   GPIO7 -> 220R -> APA106 #1 DIN
-//   APA106 #1 DOUT -> APA106 #2 DIN
+// v0.8 SHOW
+//   IDLE    -> slow breathing color drift
+//   WHISPER -> soft smooth shimmer
+//   VOICE   -> flowing two-color response, no hard LED swapping
+//   LOUD    -> faster/brighter color sweep
+//   CLAP    -> one short impact flash, edge-triggered with cooldown
 //
-// KNOWN-GOOD APA106 LAYER — DO NOT CHANGE
-//   RMT clock: 10 MHz
-//   0 bit: 4 ticks HIGH / 14 ticks LOW
-//   1 bit: 14 ticks HIGH / 4 ticks LOW
-//   latch/reset: 100 us LOW
-//
-// STABLE INPUT LAYER FROM v0.6 — DO NOT CHANGE WHILE TUNING SHOW
-//   quiet floor: roughly 6-12 RAW
-//   whisper/soft voice: roughly 15-25 RAW
-//   ordinary voice: roughly 25-40 RAW
-//   loud clap: roughly 50-60 RAW
-//   control path capped at 60 above-floor to reject ADC spikes
-//
-// v0.7 SHOW LAYER
-//   IDLE    -> very slow breathing complementary colors
-//   WHISPER -> soft synchronized shimmer / gentle hue drift
-//   VOICE   -> two-LED alternating chase driven by syllables
-//   LOUD    -> bright opposing colors, faster snap/chase
-//   PEAK    -> white + rainbow burst
-//
-// DIAGNOSTICS
-//   Serial 115200 prints RAW, ABOVE, CONTROL, HOLD, ENERGY, BAND, FLOOR.
+// No rapid band-triggered strobing. No repeated burst retrigger while a clap
+// remains above threshold.
 
 #include <Arduino.h>
 #include "esp32-hal-rmt.h"
@@ -51,7 +29,7 @@ static constexpr uint8_t MIC_PIN = 8;
 static constexpr uint8_t LED_COUNT = 2;
 
 // -----------------------------
-// Stable sound tuning (v0.6)
+// Stable v0.6 sound layer
 // -----------------------------
 static float noiseFloor = 12.0f;
 static constexpr float FLOOR_MARGIN = 1.5f;
@@ -65,21 +43,27 @@ static constexpr float CLAP_ABOVE = 38.0f;
 static constexpr float BURST_RISE = 18.0f;
 
 // -----------------------------
-// Runtime state
+// Smooth show tuning
 // -----------------------------
+static constexpr float VISUAL_ATTACK = 0.28f;
+static constexpr float VISUAL_RELEASE = 0.08f;
+static constexpr unsigned long CLAP_COOLDOWN_MS = 450;
+static constexpr unsigned long IMPACT_MS = 70;
+static constexpr unsigned long TAIL_MS = 180;
+
 struct Rgb { uint8_t r, g, b; };
 
 static float heldLevel = 0.0f;
 static float previousControl = 0.0f;
+static float visualEnergy = 0.0f;
 static uint16_t hue = 0;
-static float showPhase = 0.0f;
-static bool chaseFlip = false;
-static unsigned long lastChaseFlip = 0;
-static unsigned long burstUntil = 0;
-static unsigned long burstStart = 0;
+static float phase = 0.0f;
+static unsigned long impactStart = 0;
+static unsigned long lastClap = 0;
+static bool clapArmed = true;
 
 // -----------------------------
-// LED layer — preserve known-good timing
+// Known-good APA106 RMT layer — preserve timing
 // -----------------------------
 static bool initApa106Rmt() {
   pinMode(LED_DATA_PIN, OUTPUT);
@@ -148,7 +132,7 @@ static Rgb scaleColor(Rgb c, float amount) {
 }
 
 // -----------------------------
-// Microphone envelope — stable v0.6 input layer
+// Stable microphone envelope
 // -----------------------------
 static float readSoundEnvelope() {
   constexpr uint32_t SAMPLE_WINDOW_US = 10000;
@@ -201,19 +185,16 @@ static float mapDynamics(float level, const char **bandOut) {
     *bandOut = "IDLE";
     return 0.0f;
   }
-
   if (level <= WHISPER_MAX) {
     *bandOut = "WHISPER";
     float t = (level - IDLE_MAX) / (WHISPER_MAX - IDLE_MAX);
     return 0.04f + t * 0.18f;
   }
-
   if (level <= VOICE_MAX) {
     *bandOut = "VOICE";
     float t = (level - WHISPER_MAX) / (VOICE_MAX - WHISPER_MAX);
     return 0.22f + t * 0.33f;
   }
-
   if (level <= LOUD_MAX) {
     *bandOut = "LOUD";
     float t = (level - VOICE_MAX) / (LOUD_MAX - VOICE_MAX);
@@ -225,81 +206,47 @@ static float mapDynamics(float level, const char **bandOut) {
   return 0.85f + t * 0.15f;
 }
 
-// -----------------------------
-// v0.7 show layer
-// -----------------------------
-static void renderShow(const char *band, float energy) {
+static void renderSmoothShow(float energy) {
   unsigned long now = millis();
+  unsigned long age = now - impactStart;
 
-  // A clap/shout owns the frame briefly: white impact, then rainbow tail.
-  if (now < burstUntil) {
-    unsigned long age = now - burstStart;
-    if (age < 45) {
-      show({255, 255, 255}, {255, 255, 255});
-    } else {
-      uint16_t burstHue = (hue + (uint16_t)(age * 14U)) % 1536;
-      Rgb a = colorWheel(burstHue);
-      Rgb b = colorWheel((burstHue + 768) % 1536);
-      show(a, b);
+  // One-shot clap effect: short white hit, then a smooth color tail.
+  if (impactStart != 0 && age < IMPACT_MS + TAIL_MS) {
+    if (age < IMPACT_MS) {
+      float fade = 1.0f - ((float)age / (float)IMPACT_MS) * 0.35f;
+      Rgb w = scaleColor({255, 255, 255}, fade);
+      show(w, w);
+      return;
     }
-    return;
-  }
 
-  if (strcmp(band, "IDLE") == 0) {
-    // Barely-alive slow breathing glow.
-    showPhase += 0.025f;
-    if (showPhase > 6.283185f) showPhase -= 6.283185f;
-    float breath = 0.018f + 0.022f * (0.5f + 0.5f * sinf(showPhase));
-    hue = (hue + 1) % 1536;
-    Rgb a = scaleColor(colorWheel(hue), breath);
-    Rgb b = scaleColor(colorWheel((hue + 768) % 1536), breath * 0.75f);
+    float t = (float)(age - IMPACT_MS) / (float)TAIL_MS;
+    float fade = 1.0f - t;
+    uint16_t tailHue = (hue + (uint16_t)(t * 520.0f)) % 1536;
+    Rgb a = scaleColor(colorWheel(tailHue), 0.85f * fade);
+    Rgb b = scaleColor(colorWheel((tailHue + 500) % 1536), 0.65f * fade);
     show(a, b);
     return;
   }
 
-  if (strcmp(band, "WHISPER") == 0) {
-    // Soft shimmer: both LEDs breathe together and drift slowly through color.
-    showPhase += 0.07f + energy * 0.10f;
-    if (showPhase > 6.283185f) showPhase -= 6.283185f;
-    hue = (hue + 1 + (uint16_t)(energy * 5.0f)) % 1536;
-    float shimmer = 0.10f + energy * 0.55f;
-    shimmer *= 0.72f + 0.28f * (0.5f + 0.5f * sinf(showPhase));
-    Rgb a = scaleColor(colorWheel(hue), shimmer);
-    Rgb b = scaleColor(colorWheel((hue + 220) % 1536), shimmer * 0.82f);
-    show(a, b);
-    return;
-  }
+  // Smooth continuous motion. Sound changes speed + brightness, not mode every loop.
+  phase += 0.018f + visualEnergy * 0.055f;
+  if (phase > 6.283185f) phase -= 6.283185f;
 
-  if (strcmp(band, "VOICE") == 0) {
-    // Syllable chase: alternate which LED carries the strong color.
-    unsigned long interval = (unsigned long)(150.0f - energy * 115.0f);
-    interval = constrain(interval, 38UL, 130UL);
-    if (now - lastChaseFlip >= interval) {
-      lastChaseFlip = now;
-      chaseFlip = !chaseFlip;
-      hue = (hue + 70 + (uint16_t)(energy * 120.0f)) % 1536;
-    }
+  uint16_t hueStep = 1 + (uint16_t)(visualEnergy * 7.0f);
+  hue = (hue + hueStep) % 1536;
 
-    Rgb hot = scaleColor(colorWheel(hue), 0.35f + energy * 0.65f);
-    Rgb cool = scaleColor(colorWheel((hue + 500) % 1536), 0.08f + energy * 0.28f);
-    if (chaseFlip) show(hot, cool);
-    else show(cool, hot);
-    return;
-  }
+  float breath = 0.5f + 0.5f * sinf(phase);
 
-  // LOUD / PEAK without an active burst: aggressive opposing-color chase.
-  unsigned long interval = (unsigned long)(75.0f - energy * 45.0f);
-  interval = constrain(interval, 22UL, 60UL);
-  if (now - lastChaseFlip >= interval) {
-    lastChaseFlip = now;
-    chaseFlip = !chaseFlip;
-    hue = (hue + 150 + (uint16_t)(energy * 180.0f)) % 1536;
-  }
+  // Quiet = dim living glow. Voice brightens smoothly instead of snapping states.
+  float baseBrightness = 0.018f + visualEnergy * 0.78f;
+  float aBrightness = baseBrightness * (0.78f + 0.22f * breath);
+  float bBrightness = baseBrightness * (0.78f + 0.22f * (1.0f - breath));
 
-  Rgb a = scaleColor(colorWheel(hue), 0.72f + energy * 0.28f);
-  Rgb b = scaleColor(colorWheel((hue + 768) % 1536), 0.55f + energy * 0.40f);
-  if (chaseFlip) show(a, b);
-  else show(b, a);
+  // At stronger voice levels the LEDs separate more in hue, but still flow.
+  uint16_t separation = 180 + (uint16_t)(visualEnergy * 500.0f);
+  Rgb a = scaleColor(colorWheel(hue), aBrightness);
+  Rgb b = scaleColor(colorWheel((hue + separation) % 1536), bBrightness);
+  show(a, b);
 }
 
 void setup() {
@@ -307,7 +254,7 @@ void setup() {
   delay(500);
 
   Serial.println();
-  Serial.println("HJ|SOUND|boot|fw=0.7|mic=GPIO8|led=GPIO7");
+  Serial.println("HJ|SOUND|boot|fw=0.8|mic=GPIO8|led=GPIO7");
 
   pinMode(MIC_PIN, INPUT);
   analogReadResolution(12);
@@ -319,7 +266,7 @@ void setup() {
 
   startupTest();
   calibrateMicrophone();
-  Serial.println("HJ|SOUND|ready|show=voice_reactive_v1|spike_guard=1");
+  Serial.println("HJ|SOUND|ready|show=smooth_v2|one_shot_clap=1|spike_guard=1");
 }
 
 void loop() {
@@ -327,10 +274,10 @@ void loop() {
   float above = rawLevel - noiseFloor;
   if (above < 0.0f) above = 0.0f;
 
-  // Stable v0.6 spike guard.
+  // Stable spike guard.
   float control = min(above, MAX_CONTROL_ABOVE);
 
-  // Stable v0.6 instant attack + musical decay.
+  // Stable peak hold.
   if (control > heldLevel) {
     heldLevel = control;
   } else {
@@ -339,22 +286,37 @@ void loop() {
   }
 
   const char *band = "IDLE";
-  float energy = constrain(mapDynamics(heldLevel, &band), 0.0f, 1.0f);
+  float targetEnergy = constrain(mapDynamics(heldLevel, &band), 0.0f, 1.0f);
 
+  // Separate visual smoothing: sound detector can be fast without making LEDs twitch.
+  float k = (targetEnergy > visualEnergy) ? VISUAL_ATTACK : VISUAL_RELEASE;
+  visualEnergy += (targetEnergy - visualEnergy) * k;
+  visualEnergy = constrain(visualEnergy, 0.0f, 1.0f);
+
+  // Clap triggers once on the rising edge, then must fall below threshold to re-arm.
   float suddenRise = control - previousControl;
-  if (control >= CLAP_ABOVE || suddenRise >= BURST_RISE) {
-    burstStart = millis();
-    burstUntil = burstStart + 150;
-    hue = (hue + 230) % 1536;
+  bool clapNow = (control >= CLAP_ABOVE || suddenRise >= BURST_RISE);
+
+  if (clapNow && clapArmed && (millis() - lastClap >= CLAP_COOLDOWN_MS)) {
+    impactStart = millis();
+    lastClap = impactStart;
+    clapArmed = false;
+    hue = (hue + 260) % 1536;
   }
+
+  if (control < 20.0f) {
+    clapArmed = true;
+  }
+
   previousControl = control;
 
-  renderShow(band, energy);
+  renderSmoothShow(visualEnergy);
 
   static unsigned long lastPrint = 0;
   if (millis() - lastPrint >= 100) {
     lastPrint = millis();
-    Serial.printf("HJ|SOUND|RAW=%.0f|ABOVE=%.1f|CONTROL=%.1f|HOLD=%.1f|ENERGY=%.2f|BAND=%s|FLOOR=%.1f\n",
-                  rawLevel, above, control, heldLevel, energy, band, noiseFloor);
+    Serial.printf("HJ|SOUND|RAW=%.0f|ABOVE=%.1f|CONTROL=%.1f|HOLD=%.1f|ENERGY=%.2f|VIS=%.2f|BAND=%s|ARM=%d|FLOOR=%.1f\n",
+                  rawLevel, above, control, heldLevel, targetEnergy, visualEnergy,
+                  band, clapArmed ? 1 : 0, noiseFloor);
   }
 }
