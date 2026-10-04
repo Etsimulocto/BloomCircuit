@@ -6,7 +6,7 @@ try:
 except ImportError:
     serial = None
 
-PORT='/dev/ttyACM0'; BAUD=115200
+PORT=os.environ.get('BLOOMPULSE_PORT','/dev/ttyACM0'); BAUD=115200
 DISCONNECT_GRACE_SEC=3.0
 LOG_PATH=os.path.expanduser('~/happyjarz_eq_log.csv')
 DEFAULT_EDGES=(40,90,180,350,700,1200,2000,3000,3900)
