@@ -1,7 +1,7 @@
-// HAPPY JARZ / CLUB BOX — tunable 8-band line-in EQ visualizer v3.8
+// HAPPY JARZ / CLUB BOX — tunable 8-band line-in EQ visualizer v3.9
 //
 // Current bench setup: ONE APA106 on GPIO7, mono line-in on GPIO9.
-// GPIO10 is a physical noise-floor potentiometer:
+// GPIO10 is the ONLY noise-floor / threshold control:
 //   pot leg 1 -> GND
 //   pot leg 2 (wiper) -> GPIO10
 //   pot leg 3 -> 3V3
@@ -21,6 +21,7 @@ static constexpr uint16_t SAMPLE_COUNT = 256;
 static constexpr float SAMPLE_RATE = 8000.0f;
 static constexpr uint32_t SAMPLE_PERIOD_US = 125;
 static constexpr unsigned long TELEMETRY_MS = 100;
+static constexpr float KNOB_GATE_MAX = 100.0f;
 
 struct Rgb { uint8_t r, g, b; };
 
@@ -29,11 +30,25 @@ static String commandBuffer;
 static unsigned long lastTelemetry = 0;
 static uint8_t maxBrightness = 255;
 static float noiseGate = 0.0f;
-static float knobGateMax = 100.0f;
 static float eqGain = 4.0f;
 static uint16_t knobRaw = 0;
 static float knobPercent = 0.0f;
 static float knobFiltered = -1.0f;
+
+static const float DEFAULT_EDGES[BAND_COUNT + 1] = {
+  40, 90, 180, 350, 700, 1200, 2000, 3000, 3900
+};
+
+static const Rgb DEFAULT_COLORS[BAND_COUNT] = {
+  {255, 0, 0},
+  {255, 70, 0},
+  {255, 180, 0},
+  {80, 255, 0},
+  {0, 255, 90},
+  {0, 180, 255},
+  {40, 40, 255},
+  {180, 0, 255}
+};
 
 static float bandEdge[BAND_COUNT + 1] = {
   40, 90, 180, 350, 700, 1200, 2000, 3000, 3900
@@ -69,7 +84,7 @@ static bool initApa106Rmt() {
 static void writeRgb(uint8_t r, uint8_t g, uint8_t b) {
   rmt_data_t symbols[24];
   size_t n = 0;
-  uint8_t bytes[3] = {r, g, b}; // proven physical RGB order
+  uint8_t bytes[3] = {r, g, b};
   for (uint8_t c = 0; c < 3; ++c) {
     for (int bit = 7; bit >= 0; --bit) {
       bool one = bytes[c] & (1U << bit);
@@ -100,7 +115,7 @@ static void updateNoiseKnob() {
 
   knobRaw = (uint16_t)constrain((int)lroundf(knobFiltered), 0, 4095);
   knobPercent = (float)knobRaw / 4095.0f;
-  noiseGate = knobPercent * knobGateMax;
+  noiseGate = knobPercent * KNOB_GATE_MAX;
 }
 
 static void showDominant() {
@@ -109,8 +124,6 @@ static void showDominant() {
     return;
   }
 
-  // Stronger low-level response for weak phone/Pi line outputs.
-  // Gate decides what is ignored; gain + soft compression decide visible punch.
   float x = (dominantEnergy - noiseGate) * eqGain;
   float compressed = x / (x + 18.0f);
   float level = sqrtf(constrain(compressed, 0.0f, 1.0f));
@@ -180,6 +193,15 @@ static void analyzeEq() {
   }
 }
 
+static void resetDefaults() {
+  eqGain = 4.0f;
+  maxBrightness = 255;
+  for (uint8_t i = 0; i <= BAND_COUNT; ++i) bandEdge[i] = DEFAULT_EDGES[i];
+  for (uint8_t i = 0; i < BAND_COUNT; ++i) bandColor[i] = DEFAULT_COLORS[i];
+  knobFiltered = -1.0f;
+  updateNoiseKnob();
+}
+
 static void printEq() {
   if (!Serial) return;
   Serial.printf("HJ|EQ|CENTER=%u|P2P=%u|CLIP=%u|DOM=%u|ENERGY=%.1f|KNOB=%u|KNOBPCT=%.1f|GATE=%.1f",
@@ -191,7 +213,7 @@ static void printEq() {
 }
 
 static void printConfig() {
-  Serial.printf("HJ|EQCFG|GAIN=%.2f|GATEMAX=%.1f|BRIGHT=%u", eqGain, knobGateMax, (unsigned)maxBrightness);
+  Serial.printf("HJ|EQCFG|GAIN=%.2f|BRIGHT=%u|KNOBMAX=%.1f", eqGain, (unsigned)maxBrightness, KNOB_GATE_MAX);
   for (uint8_t i = 0; i <= BAND_COUNT; ++i) Serial.printf("|E%u=%.0f", (unsigned)i, bandEdge[i]);
   for (uint8_t b = 0; b < BAND_COUNT; ++b) {
     Serial.printf("|C%u=%u,%u,%u", (unsigned)(b+1), bandColor[b].r, bandColor[b].g, bandColor[b].b);
@@ -205,11 +227,11 @@ static void handleCommand(String cmd) {
   if (cmd == "STREAM 1") { streamEnabled = true; Serial.println("HJ|ACK|STREAM=1"); printConfig(); return; }
   if (cmd == "STREAM 0") { streamEnabled = false; return; }
   if (cmd == "GET") { printConfig(); return; }
+  if (cmd == "RESET") { resetDefaults(); Serial.println("HJ|ACK|RESET=OK"); printConfig(); return; }
   if (cmd == "TEST RGB") {
     writeRgb(255,0,0); delay(250); writeRgb(0,255,0); delay(250); writeRgb(0,0,255); delay(250); writeRgb(0,0,0); return;
   }
   if (cmd.startsWith("SET GAIN ")) { float v=cmd.substring(9).toFloat(); if(v>=0.1f&&v<=30.0f) eqGain=v; printConfig(); return; }
-  if (cmd.startsWith("SET GATEMAX ")) { float v=cmd.substring(12).toFloat(); if(v>=5.0f&&v<=500.0f) knobGateMax=v; printConfig(); return; }
   if (cmd.startsWith("SET BRIGHT ")) { int v=cmd.substring(11).toInt(); if(v>=4&&v<=255) maxBrightness=(uint8_t)v; printConfig(); return; }
   if (cmd.startsWith("SET EDGE ")) {
     int p1=cmd.indexOf(' ',9); if(p1<0) return;
