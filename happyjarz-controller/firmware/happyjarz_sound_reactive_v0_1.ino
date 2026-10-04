@@ -1,24 +1,20 @@
-// HAPPY JARZ — RGB single-LED sound color meter v3.1
+// HAPPY JARZ — RGB single-LED sound color meter v3.2
 //
 // PROVEN ON BENCH
 //   raw byte 1 = RED
 //   raw byte 2 = GREEN
 //   raw byte 3 = BLUE
-//   therefore this physical APA106 is RGB wire order.
-//
-// HARDWARE
-//   ESP32-S3 SuperMini
-//   HW-484 A0 -> GPIO8
-//   GPIO7 -> 220 ohm -> ONE APA106 DIN
 //
 // LIVE TRIM
-//   The Pi trim app can adjust FLOOR, PEAK, HOLD and BRIGHTNESS live.
-//   Telemetry is OFF unless the app explicitly sends STREAM 1, so the
-//   controller remains standalone and cannot fill a Serial output buffer.
-//   SAVE stores the current trim values in ESP32 NVS.
+//   Pi app can adjust FLOOR, PEAK, CURVE, HOLD and BRIGHTNESS live.
+//   CURVE shapes the response between floor and peak so a wide mic range
+//   (for example floor ~30 and clap 1300+) still gives useful speech colors.
+//   Telemetry is OFF unless app sends STREAM 1.
+//   SAVE stores current trim values in ESP32 NVS.
 
 #include <Arduino.h>
 #include <Preferences.h>
+#include <math.h>
 #include "esp32-hal-rmt.h"
 
 static constexpr uint8_t LED_DATA_PIN = 7;
@@ -36,22 +32,22 @@ static uint8_t currentBand = 0;
 static bool streamEnabled = false;
 static String commandBuffer;
 
-// Defaults match the working bench behavior, but are now tunable.
-static float floorRaw = 6.0f;
-static float peakRaw = 30.0f;
+// Bench-friendly defaults. User can tune and SAVE from Pi app.
+static float floorRaw = 30.0f;
+static float peakRaw = 1400.0f;
+static float curve = 0.50f;       // <1 boosts mids/lows; 1 = linear; >1 compresses mids
 static uint16_t peakHoldMs = 240;
 static uint8_t brightness = 72;
 
-// Full-strength palette. Brightness is applied when written.
 static const Rgb BAND_COLORS[8] = {
-  {  0,   0, 255},  // blue
-  {  0, 110, 255},  // cyan-blue
-  {  0, 220, 170},  // cyan-green
-  {  0, 255,   0},  // green
-  {170, 255,   0},  // yellow-green
-  {255, 170,   0},  // yellow
-  {255,  70,   0},  // orange
-  {255,   0,   0}   // red
+  {  0,   0, 255},
+  {  0, 110, 255},
+  {  0, 220, 170},
+  {  0, 255,   0},
+  {170, 255,   0},
+  {255, 170,   0},
+  {255,  70,   0},
+  {255,   0,   0}
 };
 
 static uint8_t scaleChannel(uint8_t value) {
@@ -61,9 +57,7 @@ static uint8_t scaleChannel(uint8_t value) {
 static bool initApa106Rmt() {
   pinMode(LED_DATA_PIN, OUTPUT);
   digitalWrite(LED_DATA_PIN, LOW);
-  if (!rmtInit(LED_DATA_PIN, RMT_TX_MODE, RMT_MEM_NUM_BLOCKS_1, 10000000)) {
-    return false;
-  }
+  if (!rmtInit(LED_DATA_PIN, RMT_TX_MODE, RMT_MEM_NUM_BLOCKS_1, 10000000)) return false;
   rmtSetEOT(LED_DATA_PIN, 0);
   return true;
 }
@@ -71,7 +65,7 @@ static bool initApa106Rmt() {
 static void writeRgb(uint8_t r, uint8_t g, uint8_t b) {
   rmt_data_t symbols[LED_COUNT * 24];
   size_t n = 0;
-  uint8_t bytes[3] = { r, g, b };  // proven physical wire order
+  uint8_t bytes[3] = { r, g, b };
 
   for (uint8_t led = 0; led < LED_COUNT; ++led) {
     for (uint8_t c = 0; c < 3; ++c) {
@@ -108,7 +102,6 @@ static float readSoundEnvelope() {
     if (sample < minimum) minimum = sample;
     if (sample > maximum) maximum = sample;
   }
-
   return (float)(maximum - minimum);
 }
 
@@ -119,9 +112,12 @@ static uint8_t rawToBand(float raw) {
   float span = peakRaw - floorRaw;
   if (span < 1.0f) span = 1.0f;
   float normalized = (raw - floorRaw) / span;
+  if (normalized < 0.0f) normalized = 0.0f;
+  if (normalized > 1.0f) normalized = 1.0f;
 
-  // Anything above the floor gets bands 2..7, with peak reserved for red.
-  uint8_t band = 1 + (uint8_t)(normalized * 6.0f);
+  // Response shaping. With a huge dynamic range, curve < 1 expands speech.
+  float shaped = powf(normalized, curve);
+  uint8_t band = 1 + (uint8_t)(shaped * 6.0f);
   if (band > 6) band = 6;
   return band;
 }
@@ -132,24 +128,21 @@ static void updateBandFromBucket(uint8_t targetBand, unsigned long now) {
     lastRiseTime = now;
     return;
   }
-
   if (targetBand == currentBand) return;
-
-  if (now - lastRiseTime >= peakHoldMs) {
-    currentBand = targetBand;
-  }
+  if (now - lastRiseTime >= peakHoldMs) currentBand = targetBand;
 }
 
 static void printConfig() {
   if (!Serial) return;
-  Serial.printf("HJ|CFG|FLOOR=%.0f|PEAK=%.0f|HOLD=%u|BRIGHT=%u\n",
-                floorRaw, peakRaw, (unsigned)peakHoldMs, (unsigned)brightness);
+  Serial.printf("HJ|CFG|FLOOR=%.0f|PEAK=%.0f|CURVE=%.2f|HOLD=%u|BRIGHT=%u\n",
+                floorRaw, peakRaw, curve, (unsigned)peakHoldMs, (unsigned)brightness);
 }
 
 static void saveConfig() {
   prefs.begin("happyjarz", false);
   prefs.putFloat("floor", floorRaw);
   prefs.putFloat("peak", peakRaw);
+  prefs.putFloat("curve", curve);
   prefs.putUShort("hold", peakHoldMs);
   prefs.putUChar("bright", brightness);
   prefs.end();
@@ -157,14 +150,16 @@ static void saveConfig() {
 
 static void loadConfig() {
   prefs.begin("happyjarz", true);
-  floorRaw = prefs.getFloat("floor", 6.0f);
-  peakRaw = prefs.getFloat("peak", 30.0f);
+  floorRaw = prefs.getFloat("floor", 30.0f);
+  peakRaw = prefs.getFloat("peak", 1400.0f);
+  curve = prefs.getFloat("curve", 0.50f);
   peakHoldMs = prefs.getUShort("hold", 240);
   brightness = prefs.getUChar("bright", 72);
   prefs.end();
 
-  if (floorRaw < 0.0f || floorRaw > 200.0f) floorRaw = 6.0f;
-  if (peakRaw <= floorRaw + 1.0f || peakRaw > 1000.0f) peakRaw = 30.0f;
+  if (floorRaw < 0.0f || floorRaw > 2000.0f) floorRaw = 30.0f;
+  if (peakRaw <= floorRaw + 1.0f || peakRaw > 4095.0f) peakRaw = 1400.0f;
+  if (curve < 0.20f || curve > 3.00f) curve = 0.50f;
   if (peakHoldMs > 3000) peakHoldMs = 240;
   if (brightness < 4) brightness = 72;
 }
@@ -173,30 +168,14 @@ static void handleCommand(String cmd) {
   cmd.trim();
   if (!cmd.length()) return;
 
-  if (cmd == "STREAM 1") {
-    streamEnabled = true;
-    Serial.println("HJ|ACK|STREAM=1");
-    printConfig();
-    return;
-  }
-  if (cmd == "STREAM 0") {
-    streamEnabled = false;
-    Serial.println("HJ|ACK|STREAM=0");
-    return;
-  }
-  if (cmd == "GET") {
-    printConfig();
-    return;
-  }
-  if (cmd == "SAVE") {
-    saveConfig();
-    Serial.println("HJ|ACK|SAVED=1");
-    printConfig();
-    return;
-  }
+  if (cmd == "STREAM 1") { streamEnabled = true; Serial.println("HJ|ACK|STREAM=1"); printConfig(); return; }
+  if (cmd == "STREAM 0") { streamEnabled = false; Serial.println("HJ|ACK|STREAM=0"); return; }
+  if (cmd == "GET") { printConfig(); return; }
+  if (cmd == "SAVE") { saveConfig(); Serial.println("HJ|ACK|SAVED=1"); printConfig(); return; }
   if (cmd == "DEFAULTS") {
-    floorRaw = 6.0f;
-    peakRaw = 30.0f;
+    floorRaw = 30.0f;
+    peakRaw = 1400.0f;
+    curve = 0.50f;
     peakHoldMs = 240;
     brightness = 72;
     Serial.println("HJ|ACK|DEFAULTS=1");
@@ -206,28 +185,29 @@ static void handleCommand(String cmd) {
 
   if (cmd.startsWith("SET FLOOR ")) {
     float v = cmd.substring(10).toFloat();
-    if (v >= 0.0f && v < peakRaw - 1.0f) floorRaw = v;
-    printConfig();
-    return;
+    if (v >= 0.0f && v < peakRaw - 1.0f && v <= 2000.0f) floorRaw = v;
+    printConfig(); return;
   }
   if (cmd.startsWith("SET PEAK ")) {
     float v = cmd.substring(9).toFloat();
-    if (v > floorRaw + 1.0f && v <= 1000.0f) peakRaw = v;
-    printConfig();
-    return;
+    if (v > floorRaw + 1.0f && v <= 4095.0f) peakRaw = v;
+    printConfig(); return;
+  }
+  if (cmd.startsWith("SET CURVE ")) {
+    float v = cmd.substring(10).toFloat();
+    if (v >= 0.20f && v <= 3.00f) curve = v;
+    printConfig(); return;
   }
   if (cmd.startsWith("SET HOLD ")) {
     int v = cmd.substring(9).toInt();
     if (v >= 0 && v <= 3000) peakHoldMs = (uint16_t)v;
-    printConfig();
-    return;
+    printConfig(); return;
   }
   if (cmd.startsWith("SET BRIGHT ")) {
     int v = cmd.substring(11).toInt();
     if (v >= 4 && v <= 255) brightness = (uint8_t)v;
     showBand(currentBand);
-    printConfig();
-    return;
+    printConfig(); return;
   }
 }
 
@@ -235,10 +215,7 @@ static void serviceSerial() {
   while (Serial.available() > 0) {
     char ch = (char)Serial.read();
     if (ch == '\n' || ch == '\r') {
-      if (commandBuffer.length()) {
-        handleCommand(commandBuffer);
-        commandBuffer = "";
-      }
+      if (commandBuffer.length()) { handleCommand(commandBuffer); commandBuffer = ""; }
     } else if (commandBuffer.length() < 96) {
       commandBuffer += ch;
     }
@@ -251,11 +228,8 @@ void setup() {
   analogReadResolution(12);
   loadConfig();
 
-  if (!initApa106Rmt()) {
-    while (true) delay(1000);
-  }
+  if (!initApa106Rmt()) while (true) delay(1000);
 
-  // Short proven RGB sanity sweep.
   writeRgb(scaleChannel(255), 0, 0); delay(250);
   writeRgb(0, scaleChannel(255), 0); delay(250);
   writeRgb(0, 0, scaleChannel(255)); delay(250);
@@ -276,20 +250,15 @@ void loop() {
   unsigned long now = millis();
   if (now - bucketStart >= COLOR_BUCKET_MS) {
     bucketStart = now;
-
     float measuredPeak = bucketPeak;
     uint8_t targetBand = rawToBand(measuredPeak);
     updateBandFromBucket(targetBand, now);
     showBand(currentBand);
 
-    // Telemetry only exists while the app explicitly requests it.
     if (streamEnabled && Serial.availableForWrite() >= 48) {
       Serial.printf("HJ|METER|RAW=%.0f|TARGET=%u|BAND=%u\n",
-                    measuredPeak,
-                    (unsigned)(targetBand + 1),
-                    (unsigned)(currentBand + 1));
+                    measuredPeak, (unsigned)(targetBand + 1), (unsigned)(currentBand + 1));
     }
-
     bucketPeak = 0.0f;
   }
 }
