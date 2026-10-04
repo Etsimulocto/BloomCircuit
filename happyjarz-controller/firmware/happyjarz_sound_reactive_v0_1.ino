@@ -1,9 +1,10 @@
-// HAPPY JARZ — sound-reactive light show v0.4
+// HAPPY JARZ — sound-reactive light show v0.5
 // BloomCore standalone hardware test.
 //
 // PURPOSE
-//   Tune the sound-response bands from real HW-484 bench logs while preserving
-//   the known-good HAPPY JARZ APA106 RMT lighting layer on GPIO7.
+//   Make the HW-484 response stable over time by driving the visual bands from
+//   the real peak-to-peak microphone envelope above the calibrated room floor.
+//   Preserve the known-good HAPPY JARZ APA106 RMT lighting layer on GPIO7.
 //
 // HARDWARE
 //   Controller: ESP32-S3 SuperMini
@@ -24,18 +25,20 @@
 //   1 bit: 14 ticks HIGH / 4 ticks LOW
 //   latch/reset: 100 us LOW
 //
-// v0.4 SOUND RESPONSE — based on v0.3 bench data
-//   Observed floor ~12.7, useful smoothed LEVEL mostly ~7-40+.
-//   - IDLE:    residual / settled room noise
-//   - WHISPER: very quiet speech
-//   - VOICE:   normal speech
-//   - LOUD:    strong nearby speech / music
-//   - PEAK:    shout / clap / sharp transient
-//   The upper bands are intentionally moved down so the real microphone range
-//   drives the entire visual range instead of living almost entirely in VOICE.
+// v0.5 SOUND RESPONSE
+//   Real bench data:
+//     quiet floor ~10-13 RAW
+//     whisper / soft speech ~15-25 RAW
+//     ordinary speech ~25-40 RAW
+//     loud clap ~50-60 RAW
+//
+//   v0.4 classified the smoothed LEVEL after floor subtraction. That could
+//   shrink a real 50-60 RAW clap into a much smaller control value and make the
+//   light response seem to fade away. v0.5 instead uses RAW-above-floor with a
+//   short peak hold and controlled decay.
 //
 // DIAGNOSTICS
-//   Serial 115200 prints RAW, LEVEL, ENERGY, BAND, FLOOR, FULL every ~100 ms.
+//   Serial 115200 prints RAW, ABOVE, HOLD, ENERGY, BAND, FLOOR every ~100 ms.
 
 #include <Arduino.h>
 #include "esp32-hal-rmt.h"
@@ -47,21 +50,23 @@ static constexpr uint8_t LED_COUNT = 2;
 // -----------------------------
 // Sound tuning
 // -----------------------------
-static float noiseFloor = 18.0f;
-static float fullScale = 90.0f;
-static constexpr float MIN_FULL_SCALE = 70.0f;
-static constexpr float ATTACK_SMOOTHING = 0.34f;
-static constexpr float RELEASE_SMOOTHING = 0.80f;
-static constexpr float BURST_AMOUNT = 22.0f;
-static constexpr float DEADBAND = 3.0f;
+static float noiseFloor = 12.0f;
+static constexpr float FLOOR_MARGIN = 1.5f;
+static constexpr float HOLD_DECAY = 0.88f;
+static constexpr float IDLE_MAX = 2.0f;
+static constexpr float WHISPER_MAX = 10.0f;
+static constexpr float VOICE_MAX = 22.0f;
+static constexpr float LOUD_MAX = 38.0f;
+static constexpr float CLAP_ABOVE = 38.0f;
+static constexpr float BURST_RISE = 18.0f;
 
 // -----------------------------
 // Runtime state
 // -----------------------------
 struct Rgb { uint8_t r, g, b; };
 
-static float soundLevel = 0.0f;
-static float previousLevel = 0.0f;
+static float heldLevel = 0.0f;
+static float previousAbove = 0.0f;
 static uint16_t hue = 0;
 static unsigned long burstUntil = 0;
 
@@ -139,7 +144,6 @@ static Rgb scaleColor(Rgb c, float amount) {
 // -----------------------------
 static float readSoundEnvelope() {
   constexpr uint32_t SAMPLE_WINDOW_US = 10000;
-
   uint32_t start = micros();
   int minimum = 4095;
   int maximum = 0;
@@ -175,53 +179,44 @@ static void calibrateMicrophone() {
   }
 
   float average = sum / (float)CAL_SAMPLES;
-  noiseFloor = constrain((average * 1.25f) + 6.0f, 10.0f, 80.0f);
 
-  // v0.3 showed that this HW-484's useful everyday range is much smaller
-  // than the earlier conservative 220 full-scale target.
-  fullScale = max(MIN_FULL_SCALE, noiseFloor * 5.5f);
+  // Fixed after boot: do not let later sound teach the detector to ignore sound.
+  noiseFloor = constrain(max(average + FLOOR_MARGIN, peak * 0.85f), 6.0f, 18.0f);
 
-  Serial.printf("HJ|SOUND|cal_done|AVG=%.1f|PEAK=%.0f|FLOOR=%.1f|FULL=%.1f\n",
-                average, peak, noiseFloor, fullScale);
+  Serial.printf("HJ|SOUND|cal_done|AVG=%.1f|PEAK=%.0f|FLOOR=%.1f\n",
+                average, peak, noiseFloor);
 
-  show({0, 80, 0}, {0, 80, 0});
-  delay(250);
+  show({0, 80, 0}, {0, 80, 0}); delay(250);
   show({0, 0, 0}, {0, 0, 0});
 }
 
-// Piecewise dynamics curve tuned from the real v0.3 log.
-// Input is LEVEL after floor subtraction and attack/release smoothing.
 static float mapDynamics(float level, const char **bandOut) {
-  if (level <= DEADBAND) {
+  if (level <= IDLE_MAX) {
     *bandOut = "IDLE";
     return 0.0f;
   }
 
-  // Very quiet speech and near-room-level detail.
-  if (level <= 12.0f) {
+  if (level <= WHISPER_MAX) {
     *bandOut = "WHISPER";
-    float t = (level - DEADBAND) / (12.0f - DEADBAND);
-    return 0.02f + t * 0.16f;
+    float t = (level - IDLE_MAX) / (WHISPER_MAX - IDLE_MAX);
+    return 0.04f + t * 0.18f;
   }
 
-  // Ordinary conversational range from the bench logs.
-  if (level <= 25.0f) {
+  if (level <= VOICE_MAX) {
     *bandOut = "VOICE";
-    float t = (level - 12.0f) / (25.0f - 12.0f);
-    return 0.18f + t * 0.30f;
+    float t = (level - WHISPER_MAX) / (VOICE_MAX - WHISPER_MAX);
+    return 0.22f + t * 0.33f;
   }
 
-  // Strong nearby speech / music should now use most of the light output.
-  if (level <= 45.0f) {
+  if (level <= LOUD_MAX) {
     *bandOut = "LOUD";
-    float t = (level - 25.0f) / (45.0f - 25.0f);
-    return 0.48f + t * 0.34f;
+    float t = (level - VOICE_MAX) / (LOUD_MAX - VOICE_MAX);
+    return 0.55f + t * 0.30f;
   }
 
-  // Peaks no longer require an unrealistic LEVEL > 140.
   *bandOut = "PEAK";
-  float t = constrain((level - 45.0f) / max(1.0f, fullScale - 45.0f), 0.0f, 1.0f);
-  return 0.82f + t * 0.18f;
+  float t = constrain((level - LOUD_MAX) / 20.0f, 0.0f, 1.0f);
+  return 0.85f + t * 0.15f;
 }
 
 void setup() {
@@ -229,7 +224,7 @@ void setup() {
   delay(500);
 
   Serial.println();
-  Serial.println("HJ|SOUND|boot|fw=0.4|mic=GPIO8|led=GPIO7");
+  Serial.println("HJ|SOUND|boot|fw=0.5|mic=GPIO8|led=GPIO7");
 
   pinMode(MIC_PIN, INPUT);
   analogReadResolution(12);
@@ -241,40 +236,41 @@ void setup() {
 
   startupTest();
   calibrateMicrophone();
-
-  Serial.println("HJ|SOUND|ready|dynamic_bands=IDLE,WHISPER,VOICE,LOUD,PEAK");
+  Serial.println("HJ|SOUND|ready|raw_peak_hold=1|bands=IDLE,WHISPER,VOICE,LOUD,PEAK");
 }
 
 void loop() {
   float rawLevel = readSoundEnvelope();
-  float adjusted = rawLevel - noiseFloor;
-  if (adjusted < 0.0f) adjusted = 0.0f;
+  float above = rawLevel - noiseFloor;
+  if (above < 0.0f) above = 0.0f;
 
-  float smoothing = (adjusted > soundLevel) ? ATTACK_SMOOTHING : RELEASE_SMOOTHING;
-  soundLevel = (soundLevel * smoothing) +
-               (adjusted * (1.0f - smoothing));
+  // Instant attack, short visual memory. Crucially, there is no moving baseline.
+  if (above > heldLevel) {
+    heldLevel = above;
+  } else {
+    heldLevel *= HOLD_DECAY;
+    if (heldLevel < 0.15f) heldLevel = 0.0f;
+  }
 
   const char *band = "IDLE";
-  float energy = constrain(mapDynamics(soundLevel, &band), 0.0f, 1.0f);
+  float energy = constrain(mapDynamics(heldLevel, &band), 0.0f, 1.0f);
 
-  float suddenRise = soundLevel - previousLevel;
-  if (suddenRise > BURST_AMOUNT || soundLevel > 60.0f) {
-    burstUntil = millis() + 95;
-    hue = (hue + 210) % 1536;
+  float suddenRise = above - previousAbove;
+  if (above >= CLAP_ABOVE || suddenRise >= BURST_RISE) {
+    burstUntil = millis() + 110;
+    hue = (hue + 230) % 1536;
   }
-  previousLevel = soundLevel;
+  previousAbove = above;
 
-  // Whisper drifts; ordinary voice moves; loud/peak runs quickly through color.
-  uint16_t hueStep = 0;
-  if (energy > 0.0f) {
-    hueStep = 1 + (uint16_t)(energy * 44.0f);
-  }
+  // Keep a tiny living idle drift so we can distinguish "running" from "stuck".
+  uint16_t hueStep = 1 + (uint16_t)(energy * 48.0f);
   hue = (hue + hueStep) % 1536;
 
   Rgb c1 = colorWheel(hue);
   Rgb c2 = colorWheel((hue + 500) % 1536);
 
-  float brightness = (energy <= 0.0f) ? 0.003f : (0.01f + energy * 0.99f);
+  // Visible heartbeat at idle; whisper remains soft; loud sound gets full range.
+  float brightness = (energy <= 0.0f) ? 0.012f : (0.025f + energy * 0.975f);
   c1 = scaleColor(c1, brightness);
   c2 = scaleColor(c2, brightness);
 
@@ -288,7 +284,7 @@ void loop() {
   static unsigned long lastPrint = 0;
   if (millis() - lastPrint >= 100) {
     lastPrint = millis();
-    Serial.printf("HJ|SOUND|RAW=%.0f|LEVEL=%.1f|ENERGY=%.2f|BAND=%s|FLOOR=%.1f|FULL=%.1f\n",
-                  rawLevel, soundLevel, energy, band, noiseFloor, fullScale);
+    Serial.printf("HJ|SOUND|RAW=%.0f|ABOVE=%.1f|HOLD=%.1f|ENERGY=%.2f|BAND=%s|FLOOR=%.1f\n",
+                  rawLevel, above, heldLevel, energy, band, noiseFloor);
   }
 }
