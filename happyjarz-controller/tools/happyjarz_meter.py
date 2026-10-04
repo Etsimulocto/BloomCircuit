@@ -8,6 +8,8 @@ except ImportError:
 
 PORT='/dev/ttyACM0'; BAUD=115200
 LOG_PATH=os.path.expanduser('~/happyjarz_eq_log.csv')
+DEFAULT_EDGES=(40,90,180,350,700,1200,2000,3000,3900)
+DEFAULT_COLOR_NAMES=('Red','Orange','Amber','Lime','Green','Cyan','Blue','Violet')
 COLOR_PRESETS={
     'Red':(255,0,0),'Orange':(255,70,0),'Amber':(255,180,0),'Lime':(80,255,0),
     'Green':(0,255,90),'Cyan':(0,180,255),'Blue':(40,40,255),'Violet':(180,0,255),
@@ -19,9 +21,8 @@ class EqApp:
         self.root=root; root.title('HAPPY JARZ / CLUB BOX EQ Tuner'); root.geometry('1040x980')
         self.q=queue.Queue(); self.running=True; self.ser=None; self.lock=threading.Lock(); self.ignore=False
         self.gain=tk.DoubleVar(value=4.0); self.bright=tk.DoubleVar(value=255); self.mode=tk.IntVar(value=1)
-        self.edges=[tk.DoubleVar(value=v) for v in (40,90,180,350,700,1200,2000,3000,3900)]
-        defaults=['Red','Orange','Amber','Lime','Green','Cyan','Blue','Violet']
-        self.colors=[tk.StringVar(value=defaults[i]) for i in range(8)]
+        self.edges=[tk.DoubleVar(value=v) for v in DEFAULT_EDGES]
+        self.colors=[tk.StringVar(value=DEFAULT_COLOR_NAMES[i]) for i in range(8)]
         self.energy_vars=[tk.StringVar(value=f'B{i+1}: 0.0') for i in range(8)]
         self.status=tk.StringVar(value='Connecting...')
         self.summary=tk.StringVar(value='Waiting for EQ data...')
@@ -31,13 +32,13 @@ class EqApp:
 
         top=ttk.Frame(root,padding=10); top.pack(fill='x')
         ttk.Label(top,textvariable=self.status).pack(side='left')
-        ttk.Button(top,text='Reset',command=lambda:self.send('RESET')).pack(side='right',padx=(6,0))
+        ttk.Button(top,text='Reset',command=self.reset_all).pack(side='right',padx=(6,0))
         ttk.Button(top,text='RGB Test',command=lambda:self.send('TEST RGB')).pack(side='right')
 
         meter=ttk.LabelFrame(root,text='Live EQ',padding=10); meter.pack(fill='x',padx=10,pady=(0,8))
         ttk.Label(meter,textvariable=self.summary,font=('TkDefaultFont',16,'bold')).pack(anchor='w')
         ttk.Label(meter,textvariable=self.knob_var,font=('TkDefaultFont',13,'bold')).pack(anchor='w',pady=(2,6))
-        ttk.Label(meter,text='Physical GPIO10 knob = the ONLY threshold / noise-floor control.',font=('TkDefaultFont',10)).pack(anchor='w',pady=(0,4))
+        ttk.Label(meter,text='Physical GPIO10 knob = the ONLY threshold / noise-floor control. Full turn = gate 0–500.',font=('TkDefaultFont',10)).pack(anchor='w',pady=(0,4))
         bars=ttk.Frame(meter); bars.pack(fill='x',pady=5)
         self.band_bars=[]
         for i in range(8):
@@ -101,6 +102,26 @@ class EqApp:
                     self.ser.write((s+'\n').encode()); self.ser.flush()
                 except Exception:
                     pass
+
+    def reset_all(self):
+        # Reset the visible UI immediately, then reset the ESP32 to the exact same defaults.
+        self.ignore=True
+        try:
+            self.gain.set(4.0); self.bright.set(255); self.mode.set(1)
+            for i,v in enumerate(DEFAULT_EDGES): self.edges[i].set(v)
+            for i,name in enumerate(DEFAULT_COLOR_NAMES): self.colors[i].set(name)
+            self.last_vals=[0.0]*8; self.last_gate=0.0
+            for i in range(8):
+                self.energy_vars[i].set(f'B{i+1}: 0.0')
+                self.band_bars[i]['value']=0
+        finally:
+            self.ignore=False
+        self.update_bulbs(self.last_vals,self.last_gate)
+        self.summary.set('Resetting to original EQ map...')
+        self.send('RESET')
+        # Make sure live telemetry remains on and re-request authoritative config.
+        self.root.after(120,lambda:self.send('STREAM 1'))
+        self.root.after(180,lambda:self.send('GET'))
 
     def apply_band(self,i):
         self.send(f'SET EDGE {i} {self.edges[i].get():.0f}'); self.send(f'SET EDGE {i+1} {self.edges[i+1].get():.0f}')
@@ -200,9 +221,14 @@ class EqApp:
                 if key in d:
                     try:
                         rgb=tuple(int(x) for x in d[key].split(','))
+                        matched=False
                         for name,val in COLOR_PRESETS.items():
-                            if val==rgb: self.colors[i].set(name); break
-                    except Exception: pass
+                            if val==rgb:
+                                self.colors[i].set(name); matched=True; break
+                        if not matched:
+                            self.colors[i].set(DEFAULT_COLOR_NAMES[i])
+                    except Exception:
+                        self.colors[i].set(DEFAULT_COLOR_NAMES[i])
         finally:self.ignore=False
         self.update_bulbs(self.last_vals,self.last_gate)
 
