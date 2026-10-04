@@ -1,11 +1,11 @@
-// HAPPY JARZ — sound-reactive isolation test v1.0
+// HAPPY JARZ — sound-reactive isolation test v1.1
 //
 // PURPOSE
-//   Isolate APA106 data/power behavior from all color-mixing/show logic.
-//   This firmware intentionally drives BLUE ONLY after boot. No red/green/white
-//   are used in the runtime effect. If an LED ever becomes white/red/green or
-//   freezes while serial diagnostics continue, the fault is below the show layer
-//   (power, wiring, data integrity, APA106 behavior, or signal level).
+//   Verify the real APA106 behavior from the earlier HAPPY JARZ notes:
+//   - GRB packet order
+//   - blue-only runtime
+//   - inverted brightness response for this bench test because the physical
+//     bulb was observed to DIM when the commanded blue byte increased.
 //
 // HARDWARE
 //   ESP32-S3 SuperMini
@@ -25,15 +25,15 @@ static constexpr uint8_t LED_DATA_PIN = 7;
 static constexpr uint8_t MIC_PIN = 8;
 static constexpr uint8_t LED_COUNT = 2;
 
-// Stable sound layer from v0.6
 static float noiseFloor = 12.0f;
 static constexpr float FLOOR_MARGIN = 1.5f;
 static constexpr float HOLD_DECAY = 0.86f;
 static constexpr float MAX_CONTROL_ABOVE = 60.0f;
 
-// Deliberately conservative BLUE-ONLY output.
-static constexpr uint8_t BLUE_IDLE = 8;
-static constexpr uint8_t BLUE_MAX = 90;
+// Bench-safe blue-only limits.
+// IMPORTANT: response is inverted on purpose for this physical batch test.
+static constexpr uint8_t BLUE_QUIET = 72;
+static constexpr uint8_t BLUE_LOUD = 12;
 
 struct Rgb { uint8_t r, g, b; };
 
@@ -56,8 +56,8 @@ static void writeFrame(const Rgb frame[LED_COUNT]) {
   size_t n = 0;
 
   for (uint8_t led = 0; led < LED_COUNT; ++led) {
-    // Preserve the byte order already proven on this physical batch.
-    uint8_t bytes[3] = { frame[led].r, frame[led].g, frame[led].b };
+    // HAPPY JARZ APA106 notes: physical batch uses GRB byte order.
+    uint8_t bytes[3] = { frame[led].g, frame[led].r, frame[led].b };
 
     for (uint8_t c = 0; c < 3; ++c) {
       for (int bit = 7; bit >= 0; --bit) {
@@ -101,9 +101,7 @@ static float readSoundEnvelope() {
 
 static void calibrateMicrophone() {
   Serial.println("HJ|ISO|calibrating|quiet_room=1");
-
-  // BLUE ONLY during calibration.
-  showBlue(20, 20);
+  showBlue(30, 30);
 
   constexpr int CAL_SAMPLES = 100;
   float sum = 0.0f;
@@ -130,7 +128,7 @@ void setup() {
   delay(500);
 
   Serial.println();
-  Serial.println("HJ|ISO|boot|fw=1.0|mode=BLUE_ONLY|mic=GPIO8|led=GPIO7");
+  Serial.println("HJ|ISO|boot|fw=1.1|mode=BLUE_ONLY_GRB_INVERTED|mic=GPIO8|led=GPIO7");
 
   pinMode(MIC_PIN, INPUT);
   analogReadResolution(12);
@@ -140,14 +138,14 @@ void setup() {
     while (true) delay(1000);
   }
 
-  // IMPORTANT: startup test is BLUE ONLY. White/red/green here is not commanded.
-  showBlue(18, 18); delay(200);
-  showBlue(35, 35); delay(200);
-  showBlue(60, 60); delay(200);
-  showBlue(0, 0);   delay(200);
+  // Blue-only stepped startup test. No white/red/green commanded.
+  showBlue(15, 15); delay(250);
+  showBlue(35, 35); delay(250);
+  showBlue(55, 55); delay(250);
+  showBlue(0, 0);   delay(250);
 
   calibrateMicrophone();
-  Serial.println("HJ|ISO|ready|runtime=BLUE_ONLY|red=0|green=0");
+  Serial.println("HJ|ISO|ready|packet=GRB|runtime=BLUE_ONLY|response=INVERTED");
 }
 
 void loop() {
@@ -164,13 +162,13 @@ void loop() {
     if (heldLevel < 0.15f) heldLevel = 0.0f;
   }
 
-  // Normalize real measured range to 0..1, then smooth only brightness.
   float target = constrain(heldLevel / 38.0f, 0.0f, 1.0f);
   float k = (target > visualLevel) ? 0.20f : 0.05f;
   visualLevel += (target - visualLevel) * k;
 
-  uint8_t b1 = BLUE_IDLE + (uint8_t)(visualLevel * (BLUE_MAX - BLUE_IDLE));
-  uint8_t b2 = BLUE_IDLE + (uint8_t)(visualLevel * 0.70f * (BLUE_MAX - BLUE_IDLE));
+  // INVERTED bench mapping: quiet = higher byte, louder = lower byte.
+  uint8_t b1 = BLUE_QUIET - (uint8_t)(visualLevel * (BLUE_QUIET - BLUE_LOUD));
+  uint8_t b2 = BLUE_QUIET - (uint8_t)(visualLevel * 0.70f * (BLUE_QUIET - BLUE_LOUD));
 
   showBlue(b1, b2);
   ++frameCounter;
