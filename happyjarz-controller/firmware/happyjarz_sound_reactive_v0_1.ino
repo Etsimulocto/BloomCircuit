@@ -1,24 +1,22 @@
-// HAPPY JARZ — peak-bucket meter diagnostic v2.5
+// HAPPY JARZ — raw-channel diagnostic + meter v2.6
 //
 // PURPOSE
-//   Keep the proven microphone thresholds, 120 ms peak bucket, fall hold,
-//   RMT timing, and telemetry exactly as v2.4.
-//   Only change the LED red/green wire-byte order based on live evidence:
-//     TARGET=8 and BAND=8 were logged while the physical LED appeared green.
-//   Therefore the first two transmitted color bytes were reversed relative
-//   to the previous assumption. This build sends physical RGB byte order.
+//   Revert the failed v2.5 RGB-byte experiment back to the prior GRB behavior.
+//   Add a deterministic raw 3-channel startup test so the physical byte order
+//   can be identified directly instead of inferred from mixed colors.
+//
+// STARTUP TEST
+//   STEP 1: transmit byte1 only  -> {72,0,0}
+//   STEP 2: transmit byte2 only  -> {0,72,0}
+//   STEP 3: transmit byte3 only  -> {0,0,72}
+//   Each step lasts 900 ms with a brief OFF gap.
+//   Tell us the PHYSICAL color seen for step 1, step 2, step 3.
 //
 // HARDWARE
 //   ESP32-S3 SuperMini
 //   HW-484 A0 -> GPIO8
 //   GPIO7 -> 220 ohm -> APA106 #1 DIN -> APA106 #2 DIN
 //   Local decoupling capacitor(s) across LED VCC/GND
-//
-// APA106 PHYSICAL BATCH
-//   RMT 10 MHz
-//   0 = 4 high / 14 low ticks
-//   1 = 14 high / 4 low ticks
-//   latch = 100 us low
 
 #include <Arduino.h>
 #include "esp32-hal-rmt.h"
@@ -29,7 +27,7 @@ static constexpr uint8_t LED_COUNT = 2;
 static constexpr unsigned long COLOR_BUCKET_MS = 120;
 static constexpr uint8_t FALL_CONFIRM_BUCKETS = 2;
 
-struct Rgb { uint8_t r, g, b; };
+struct Grb { uint8_t g, r, b; };
 
 static unsigned long bucketStart = 0;
 static float bucketPeak = 0.0f;
@@ -37,15 +35,16 @@ static uint8_t currentBand = 0;
 static uint8_t pendingLowerBand = 0;
 static uint8_t pendingLowerCount = 0;
 
-static const Rgb BAND_COLORS[8] = {
-  { 0,  0, 72},  // blue
-  { 0, 32, 72},  // cyan-blue
-  { 0, 64, 48},  // cyan-green
-  { 0, 72,  0},  // green
-  {48, 72,  0},  // yellow-green
-  {72, 48,  0},  // yellow
-  {72, 20,  0},  // orange
-  {72,  0,  0}   // red
+// Prior v2.4/v2.3 palette, expressed in G,R,B fields.
+static const Grb BAND_COLORS[8] = {
+  { 0,  0, 72},
+  {32,  0, 72},
+  {64,  0, 48},
+  {72,  0,  0},
+  {72, 48,  0},
+  {48, 72,  0},
+  {20, 72,  0},
+  { 0, 72,  0}
 };
 
 static bool initApa106Rmt() {
@@ -58,14 +57,12 @@ static bool initApa106Rmt() {
   return true;
 }
 
-static void writeFrame(const Rgb frame[LED_COUNT]) {
+static void writeRawBytes(uint8_t b1, uint8_t b2, uint8_t b3) {
   rmt_data_t symbols[LED_COUNT * 24];
   size_t n = 0;
 
   for (uint8_t led = 0; led < LED_COUNT; ++led) {
-    // Live meter proved red/green were reversed in the previous wire order.
-    // Send bytes in physical RGB order for this LED batch.
-    uint8_t bytes[3] = { frame[led].r, frame[led].g, frame[led].b };
+    uint8_t bytes[3] = { b1, b2, b3 };
 
     for (uint8_t c = 0; c < 3; ++c) {
       for (int bit = 7; bit >= 0; --bit) {
@@ -84,10 +81,15 @@ static void writeFrame(const Rgb frame[LED_COUNT]) {
   delayMicroseconds(100);
 }
 
+static void writeFrame(const Grb frame[LED_COUNT]) {
+  // Back to the prior native GRB assumption for runtime.
+  writeRawBytes(frame[0].g, frame[0].r, frame[0].b);
+}
+
 static void showBand(uint8_t band) {
   if (band > 7) band = 7;
-  Rgb c = BAND_COLORS[band];
-  Rgb frame[LED_COUNT] = { c, c };
+  Grb c = BAND_COLORS[band];
+  Grb frame[LED_COUNT] = { c, c };
   writeFrame(frame);
 }
 
@@ -144,8 +146,27 @@ static void updateBandFromBucket(uint8_t targetBand) {
   }
 }
 
+static void startupRawChannelTest() {
+  Serial.println("HJ|CHANNEL_TEST|STEP=1|BYTES=72,0,0");
+  writeRawBytes(72, 0, 0);
+  delay(900);
+  writeRawBytes(0, 0, 0);
+  delay(250);
+
+  Serial.println("HJ|CHANNEL_TEST|STEP=2|BYTES=0,72,0");
+  writeRawBytes(0, 72, 0);
+  delay(900);
+  writeRawBytes(0, 0, 0);
+  delay(250);
+
+  Serial.println("HJ|CHANNEL_TEST|STEP=3|BYTES=0,0,72");
+  writeRawBytes(0, 0, 72);
+  delay(900);
+  writeRawBytes(0, 0, 0);
+  delay(350);
+}
+
 void setup() {
-  // Serial is telemetry only. The light logic never waits for a monitor.
   Serial.begin(115200);
 
   pinMode(MIC_PIN, INPUT);
@@ -155,10 +176,7 @@ void setup() {
     while (true) delay(1000);
   }
 
-  for (uint8_t band = 0; band < 8; ++band) {
-    showBand(band);
-    delay(140);
-  }
+  startupRawChannelTest();
 
   currentBand = 0;
   pendingLowerBand = 0;
