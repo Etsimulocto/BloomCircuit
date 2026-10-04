@@ -1,4 +1,4 @@
-// HAPPY JARZ / CLUB BOX — tunable 8-band line-in EQ visualizer v4.0
+// HAPPY JARZ / CLUB BOX — tunable 8-band line-in EQ visualizer v4.1
 //
 // GPIO7  = APA106 data
 // GPIO9  = mono line input
@@ -23,7 +23,7 @@ static constexpr uint16_t SAMPLE_COUNT = 256;
 static constexpr float SAMPLE_RATE = 8000.0f;
 static constexpr uint32_t SAMPLE_PERIOD_US = 125;
 static constexpr unsigned long TELEMETRY_MS = 100;
-static constexpr float KNOB_GATE_MAX = 100.0f;
+static constexpr float KNOB_GATE_MAX = 500.0f;
 
 struct Rgb { uint8_t r, g, b; };
 
@@ -106,6 +106,11 @@ static void writeRgb(uint8_t r, uint8_t g, uint8_t b) {
   writePixels(one, 1);
 }
 
+static void allOff() {
+  Rgb pixels[MAX_LED_COUNT] = {};
+  writePixels(pixels, outputMode == 16 ? MAX_LED_COUNT : 1);
+}
+
 static float energyLevel(float energy) {
   if (energy <= noiseGate) return 0.0f;
   float x = (energy - noiseGate) * eqGain;
@@ -115,6 +120,8 @@ static float energyLevel(float energy) {
 }
 
 static void updateNoiseKnob() {
+  // Throw away the first read after switching ADC channels, then average.
+  (void)analogRead(NOISE_KNOB_PIN);
   uint32_t total = 0;
   for (uint8_t i = 0; i < 8; ++i) total += (uint16_t)analogRead(NOISE_KNOB_PIN);
   float now = (float)total / 8.0f;
@@ -161,6 +168,8 @@ static float goertzelPower(float freq) {
 }
 
 static void sampleAudio() {
+  // Throw away first sample after knob ADC access so GPIO9 settles cleanly.
+  (void)analogRead(LINE_IN_PIN);
   uint32_t next = micros();
   uint32_t sum = 0;
   uint16_t minimum = 4095, maximum = 0;
@@ -202,9 +211,15 @@ static void resetDefaults() {
   maxBrightness = 255;
   outputMode = 1;
   for (uint8_t i = 0; i <= BAND_COUNT; ++i) bandEdge[i] = DEFAULT_EDGES[i];
-  for (uint8_t i = 0; i < BAND_COUNT; ++i) bandColor[i] = DEFAULT_COLORS[i];
+  for (uint8_t i = 0; i < BAND_COUNT; ++i) {
+    bandColor[i] = DEFAULT_COLORS[i];
+    bandEnergy[i] = 0.0f;
+  }
+  dominantBand = 0;
+  dominantEnergy = 0.0f;
   knobFiltered = -1.0f;
   updateNoiseKnob();
+  allOff();
 }
 
 static void testAll16() {
@@ -249,7 +264,7 @@ static void handleCommand(String cmd) {
   if (cmd=="STREAM 1") { streamEnabled=true; Serial.println("HJ|ACK|STREAM=1"); printConfig(); return; }
   if (cmd=="STREAM 0") { streamEnabled=false; return; }
   if (cmd=="GET") { printConfig(); return; }
-  if (cmd=="RESET") { resetDefaults(); Serial.println("HJ|ACK|RESET=OK"); printConfig(); return; }
+  if (cmd=="RESET") { resetDefaults(); Serial.println("HJ|ACK|RESET=OK"); printConfig(); printEq(); return; }
   if (cmd=="TEST RGB") { writeRgb(255,0,0);delay(250);writeRgb(0,255,0);delay(250);writeRgb(0,0,255);delay(250);writeRgb(0,0,0);return; }
   if (cmd=="TEST ALL16") { testAll16(); return; }
   if (cmd=="TEST CHASE16") { testChase16(); return; }
@@ -289,17 +304,25 @@ static void serviceSerial() {
 
 void setup() {
   Serial.begin(115200);
-  pinMode(LINE_IN_PIN,INPUT); pinMode(NOISE_KNOB_PIN,INPUT); analogReadResolution(12);
+  pinMode(LINE_IN_PIN,INPUT);
+  pinMode(NOISE_KNOB_PIN,INPUT);
+  analogReadResolution(12);
   if(!initApa106Rmt()) while(true) delay(1000);
   updateNoiseKnob();
   writeRgb(255,0,0);delay(180);writeRgb(0,255,0);delay(180);writeRgb(0,0,255);delay(180);writeRgb(0,0,0);
 }
 
 void loop() {
-  serviceSerial(); updateNoiseKnob(); sampleAudio(); analyzeEq(); showEq();
+  serviceSerial();
+  sampleAudio();
+  analyzeEq();
+  updateNoiseKnob();
+  showEq();
+
   unsigned long now=millis();
-  if(streamEnabled&&now-lastTelemetry>=TELEMETRY_MS) {
+  if(streamEnabled && now-lastTelemetry>=TELEMETRY_MS) {
     lastTelemetry=now;
-    if(Serial.availableForWrite()>=240) printEq();
+    // Do not suppress telemetry based on availableForWrite; that was starving the live EQ UI.
+    printEq();
   }
 }
