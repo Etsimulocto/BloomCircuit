@@ -1,12 +1,14 @@
-// HAPPY JARZ — 8-band sound color meter v1.5
+// HAPPY JARZ — 8-band sound color meter v1.6
 //
 // PURPOSE
-//   Keep the proven v1.4 microphone + 25 FPS APA106 update path, but replace
-//   continuous full-range color/brightness behavior with eight discrete bands.
+//   Keep the proven v1.4 microphone + 25 FPS APA106 update path.
+//   Map the real mic control range into eight discrete color bands.
 //
 // IMPORTANT
-//   The HW-484 is NOT acoustically calibrated in true dB SPL. We use the stable
-//   0..60 control range as a 0..60 display scale, split into eight equal bands.
+//   The HW-484 is NOT acoustically calibrated in true dB SPL.
+//   Actual normal speech on this physical mic is roughly 0..30 above floor.
+//   For the display only, control is multiplied by 2 and capped at 60 so
+//   ordinary speech can traverse the full eight-color 0..60 display scale.
 //
 // HARDWARE
 //   ESP32-S3 SuperMini
@@ -28,28 +30,25 @@
 static constexpr uint8_t LED_DATA_PIN = 7;
 static constexpr uint8_t MIC_PIN = 8;
 static constexpr uint8_t LED_COUNT = 2;
-static constexpr unsigned long LED_FRAME_MS = 40; // 25 FPS
+static constexpr unsigned long LED_FRAME_MS = 40;
 
 static float noiseFloor = 12.0f;
 static constexpr float FLOOR_MARGIN = 1.5f;
-static constexpr float HOLD_DECAY = 0.86f;
 static constexpr float MAX_CONTROL_ABOVE = 60.0f;
+static constexpr float DISPLAY_GAIN = 2.0f;
 
 struct Rgb { uint8_t r, g, b; };
 
-static float heldLevel = 0.0f;
 static unsigned long frameCounter = 0;
 static unsigned long lastLedFrame = 0;
 
-// 8 fixed colors, low sound -> high sound.
-// Intentionally discrete: no interpolation between colors.
 static const Rgb BAND_COLORS[8] = {
   {0,   0,  72},  //  0.0 -  7.4  blue
   {0,  32,  72},  //  7.5 - 14.9  cyan-blue
   {0,  64,  48},  // 15.0 - 22.4  cyan-green
   {0,  72,   0},  // 22.5 - 29.9  green
   {48, 72,   0},  // 30.0 - 37.4  yellow-green
-  {72, 48,   0},  // 37.5 - 44.9  yellow/orange
+  {72, 48,   0},  // 37.5 - 44.9  yellow-orange
   {72, 20,   0},  // 45.0 - 52.4  orange
   {72,  0,   0}   // 52.5 - 60.0  red
 };
@@ -131,9 +130,9 @@ static void calibrateMicrophone() {
                 average, peak, noiseFloor);
 }
 
-static uint8_t controlToBand(float control) {
-  control = constrain(control, 0.0f, 60.0f);
-  uint8_t band = (uint8_t)(control / 7.5f);
+static uint8_t displayToBand(float displayLevel) {
+  displayLevel = constrain(displayLevel, 0.0f, 60.0f);
+  uint8_t band = (uint8_t)(displayLevel / 7.5f);
   if (band > 7) band = 7;
   return band;
 }
@@ -143,7 +142,7 @@ void setup() {
   delay(500);
 
   Serial.println();
-  Serial.println("HJ|METER|boot|fw=1.5|mode=8_BANDS|scale=0_60|packet=GRB|mic=GPIO8|led=GPIO7");
+  Serial.println("HJ|METER|boot|fw=1.6|mode=8_BANDS_EXPANDED|scale=0_60|gain=2|packet=GRB|mic=GPIO8|led=GPIO7");
 
   pinMode(MIC_PIN, INPUT);
   analogReadResolution(12);
@@ -153,7 +152,6 @@ void setup() {
     while (true) delay(1000);
   }
 
-  // Slow startup color sweep through all eight bands.
   for (uint8_t band = 0; band < 8; ++band) {
     showBand(band);
     delay(180);
@@ -161,7 +159,7 @@ void setup() {
 
   calibrateMicrophone();
   lastLedFrame = millis();
-  Serial.println("HJ|METER|ready|bands=8|band_width=7.5|led_fps=25");
+  Serial.println("HJ|METER|ready|bands=8|display_gain=2|band_source=DIRECT_CONTROL|led_fps=25");
 }
 
 void loop() {
@@ -170,15 +168,8 @@ void loop() {
   if (above < 0.0f) above = 0.0f;
 
   float control = min(above, MAX_CONTROL_ABOVE);
-
-  if (control > heldLevel) {
-    heldLevel = control;
-  } else {
-    heldLevel *= HOLD_DECAY;
-    if (heldLevel < 0.15f) heldLevel = 0.0f;
-  }
-
-  uint8_t band = controlToBand(heldLevel);
+  float displayLevel = min(control * DISPLAY_GAIN, 60.0f);
+  uint8_t band = displayToBand(displayLevel);
 
   unsigned long now = millis();
   if (now - lastLedFrame >= LED_FRAME_MS) {
@@ -190,7 +181,8 @@ void loop() {
   static unsigned long lastPrint = 0;
   if (millis() - lastPrint >= 100) {
     lastPrint = millis();
-    Serial.printf("HJ|METER|RAW=%.0f|ABOVE=%.1f|LEVEL=%.1f|BAND=%u|FRAME=%lu|FLOOR=%.1f\n",
-                  rawLevel, above, heldLevel, (unsigned)(band + 1), frameCounter, noiseFloor);
+    Serial.printf("HJ|METER|RAW=%.0f|ABOVE=%.1f|CONTROL=%.1f|DISPLAY=%.1f|BAND=%u|FRAME=%lu|FLOOR=%.1f\n",
+                  rawLevel, above, control, displayLevel,
+                  (unsigned)(band + 1), frameCounter, noiseFloor);
   }
 }
