@@ -1,9 +1,12 @@
-// HAPPY JARZ — sound-reactive blue test v1.4
+// HAPPY JARZ — 8-band sound color meter v1.5
 //
 // PURPOSE
-//   Reintroduce microphone response only after proving the APA106 chain can
-//   reliably accept slow updates. The mic samples continuously, but LED frames
-//   are throttled to 25 Hz (40 ms) instead of being written every loop.
+//   Keep the proven v1.4 microphone + 25 FPS APA106 update path, but replace
+//   continuous full-range color/brightness behavior with eight discrete bands.
+//
+// IMPORTANT
+//   The HW-484 is NOT acoustically calibrated in true dB SPL. We use the stable
+//   0..60 control range as a 0..60 display scale, split into eight equal bands.
 //
 // HARDWARE
 //   ESP32-S3 SuperMini
@@ -17,6 +20,7 @@
 //   0 = 4 high / 14 low ticks
 //   1 = 14 high / 4 low ticks
 //   latch = 100 us low
+//   LED refresh capped at 25 FPS
 
 #include <Arduino.h>
 #include "esp32-hal-rmt.h"
@@ -30,15 +34,25 @@ static float noiseFloor = 12.0f;
 static constexpr float FLOOR_MARGIN = 1.5f;
 static constexpr float HOLD_DECAY = 0.86f;
 static constexpr float MAX_CONTROL_ABOVE = 60.0f;
-static constexpr uint8_t BLUE_IDLE = 4;
-static constexpr uint8_t BLUE_MAX = 72;
 
 struct Rgb { uint8_t r, g, b; };
 
 static float heldLevel = 0.0f;
-static float visualLevel = 0.0f;
 static unsigned long frameCounter = 0;
 static unsigned long lastLedFrame = 0;
+
+// 8 fixed colors, low sound -> high sound.
+// Intentionally discrete: no interpolation between colors.
+static const Rgb BAND_COLORS[8] = {
+  {0,   0,  72},  //  0.0 -  7.4  blue
+  {0,  32,  72},  //  7.5 - 14.9  cyan-blue
+  {0,  64,  48},  // 15.0 - 22.4  cyan-green
+  {0,  72,   0},  // 22.5 - 29.9  green
+  {48, 72,   0},  // 30.0 - 37.4  yellow-green
+  {72, 48,   0},  // 37.5 - 44.9  yellow/orange
+  {72, 20,   0},  // 45.0 - 52.4  orange
+  {72,  0,   0}   // 52.5 - 60.0  red
+};
 
 static bool initApa106Rmt() {
   pinMode(LED_DATA_PIN, OUTPUT);
@@ -74,11 +88,10 @@ static void writeFrame(const Rgb frame[LED_COUNT]) {
   delayMicroseconds(100);
 }
 
-static void showBlue(uint8_t aBlue, uint8_t bBlue) {
-  Rgb frame[LED_COUNT] = {
-    {0, 0, aBlue},
-    {0, 0, bBlue}
-  };
+static void showBand(uint8_t band) {
+  if (band > 7) band = 7;
+  Rgb c = BAND_COLORS[band];
+  Rgb frame[LED_COUNT] = { c, c };
   writeFrame(frame);
 }
 
@@ -98,8 +111,8 @@ static float readSoundEnvelope() {
 }
 
 static void calibrateMicrophone() {
-  Serial.println("HJ|SOUND|calibrating|quiet_room=1");
-  showBlue(12, 12);
+  Serial.println("HJ|METER|calibrating|quiet_room=1");
+  showBand(0);
 
   constexpr int CAL_SAMPLES = 100;
   float sum = 0.0f;
@@ -114,11 +127,15 @@ static void calibrateMicrophone() {
   float average = sum / (float)CAL_SAMPLES;
   noiseFloor = constrain(max(average + FLOOR_MARGIN, peak * 0.85f), 6.0f, 18.0f);
 
-  Serial.printf("HJ|SOUND|cal_done|AVG=%.1f|PEAK=%.0f|FLOOR=%.1f\n",
+  Serial.printf("HJ|METER|cal_done|AVG=%.1f|PEAK=%.0f|FLOOR=%.1f\n",
                 average, peak, noiseFloor);
+}
 
-  showBlue(0, 0);
-  delay(150);
+static uint8_t controlToBand(float control) {
+  control = constrain(control, 0.0f, 60.0f);
+  uint8_t band = (uint8_t)(control / 7.5f);
+  if (band > 7) band = 7;
+  return band;
 }
 
 void setup() {
@@ -126,7 +143,7 @@ void setup() {
   delay(500);
 
   Serial.println();
-  Serial.println("HJ|SOUND|boot|fw=1.4|mode=BLUE_25FPS|packet=GRB|mic=GPIO8|led=GPIO7");
+  Serial.println("HJ|METER|boot|fw=1.5|mode=8_BANDS|scale=0_60|packet=GRB|mic=GPIO8|led=GPIO7");
 
   pinMode(MIC_PIN, INPUT);
   analogReadResolution(12);
@@ -136,15 +153,15 @@ void setup() {
     while (true) delay(1000);
   }
 
-  // Same slow update path that just proved reliable.
-  showBlue(16, 16); delay(250);
-  showBlue(32, 32); delay(250);
-  showBlue(48, 48); delay(250);
-  showBlue(0, 0);   delay(250);
+  // Slow startup color sweep through all eight bands.
+  for (uint8_t band = 0; band < 8; ++band) {
+    showBand(band);
+    delay(180);
+  }
 
   calibrateMicrophone();
   lastLedFrame = millis();
-  Serial.println("HJ|SOUND|ready|led_fps=25|runtime=BLUE_SOUND_REACTIVE");
+  Serial.println("HJ|METER|ready|bands=8|band_width=7.5|led_fps=25");
 }
 
 void loop() {
@@ -161,29 +178,19 @@ void loop() {
     if (heldLevel < 0.15f) heldLevel = 0.0f;
   }
 
-  float target = constrain(heldLevel / 38.0f, 0.0f, 1.0f);
-  float k = (target > visualLevel) ? 0.22f : 0.06f;
-  visualLevel += (target - visualLevel) * k;
-  visualLevel = constrain(visualLevel, 0.0f, 1.0f);
+  uint8_t band = controlToBand(heldLevel);
 
   unsigned long now = millis();
   if (now - lastLedFrame >= LED_FRAME_MS) {
     lastLedFrame = now;
-
-    uint8_t b1 = BLUE_IDLE + (uint8_t)(visualLevel * (BLUE_MAX - BLUE_IDLE));
-    uint8_t b2 = BLUE_IDLE + (uint8_t)(visualLevel * 0.72f * (BLUE_MAX - BLUE_IDLE));
-
-    showBlue(b1, b2);
+    showBand(band);
     ++frameCounter;
   }
 
   static unsigned long lastPrint = 0;
   if (millis() - lastPrint >= 100) {
     lastPrint = millis();
-    uint8_t b1 = BLUE_IDLE + (uint8_t)(visualLevel * (BLUE_MAX - BLUE_IDLE));
-    uint8_t b2 = BLUE_IDLE + (uint8_t)(visualLevel * 0.72f * (BLUE_MAX - BLUE_IDLE));
-    Serial.printf("HJ|SOUND|RAW=%.0f|ABOVE=%.1f|HOLD=%.1f|VIS=%.2f|B1=%u|B2=%u|FRAME=%lu|FLOOR=%.1f\n",
-                  rawLevel, above, heldLevel, visualLevel,
-                  (unsigned)b1, (unsigned)b2, frameCounter, noiseFloor);
+    Serial.printf("HJ|METER|RAW=%.0f|ABOVE=%.1f|LEVEL=%.1f|BAND=%u|FRAME=%lu|FLOOR=%.1f\n",
+                  rawLevel, above, heldLevel, (unsigned)(band + 1), frameCounter, noiseFloor);
   }
 }
