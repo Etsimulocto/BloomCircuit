@@ -1,58 +1,48 @@
-// HAPPY JARZ — RGB single-LED sound color meter v3.3
+// HAPPY JARZ / CLUB BOX — 16-pixel line-in bench diagnostic v3.4
 //
-// PROVEN ON BENCH
-//   raw byte 1 = RED
-//   raw byte 2 = GREEN
-//   raw byte 3 = BLUE
+// PURPOSE
+//   Validate a mono 1/8-inch line input on GPIO9 before adding FFT/EQ.
+//   Drive/test a 16-pixel APA106 RGB chain using the proven custom RMT timing.
+//   Telemetry is OFF unless the Pi app explicitly enables it.
 //
-// MIC INPUTS
-//   HW-484 A0 -> GPIO8 for analog volume envelope
-//   HW-484 D0 -> GPIO6 for comparator diagnostics
-//   D0 is diagnostic only in this build; it does NOT control the colors yet.
+// LINE INPUT
+//   TRS TIP -> 10k -> 10uF coupling cap -> GPIO9 bias node
+//   GPIO9 bias node -> 10k -> 3V3
+//   GPIO9 bias node -> 10k -> GND
+//   TRS SLEEVE -> common GND
+//   TRS RING unused for the first mono test
 //
-// LIVE TRIM
-//   Pi app can adjust FLOOR, PEAK, CURVE, HOLD and BRIGHTNESS live.
-//   Telemetry is OFF unless app sends STREAM 1.
-//   SAVE stores current trim values in ESP32 NVS.
+// LED OUTPUT
+//   GPIO7 -> 220 ohm -> APA106 DIN
+//   16 pixels expected in chain
+//   Proven physical byte order: RGB
+//
+// IMPORTANT
+//   16 LEDs must NOT be powered from an ESP32 3V3 pin in the finished array.
+//   Use an adequate external LED supply with common ground.
 
 #include <Arduino.h>
-#include <Preferences.h>
-#include <math.h>
 #include "esp32-hal-rmt.h"
 
 static constexpr uint8_t LED_DATA_PIN = 7;
-static constexpr uint8_t MIC_PIN = 8;
-static constexpr uint8_t MIC_D0_PIN = 6;
-static constexpr uint8_t LED_COUNT = 1;
-static constexpr unsigned long COLOR_BUCKET_MS = 120;
+static constexpr uint8_t LINE_IN_PIN = 9;
+static constexpr uint8_t LED_COUNT = 16;
+static constexpr uint32_t SAMPLE_WINDOW_US = 10000;
+static constexpr unsigned long TELEMETRY_MS = 100;
 
 struct Rgb { uint8_t r, g, b; };
 
-static Preferences prefs;
-static unsigned long bucketStart = 0;
-static unsigned long lastRiseTime = 0;
-static float bucketPeak = 0.0f;
-static uint8_t currentBand = 0;
 static bool streamEnabled = false;
 static String commandBuffer;
-static bool bucketD0LowSeen = false;
-static bool bucketD0HighSeen = false;
+static unsigned long lastTelemetry = 0;
+static uint8_t brightness = 48;
 
-static float floorRaw = 30.0f;
-static float peakRaw = 1400.0f;
-static float curve = 0.50f;
-static uint16_t peakHoldMs = 240;
-static uint8_t brightness = 72;
-
-static const Rgb BAND_COLORS[8] = {
-  {  0,   0, 255},
-  {  0, 110, 255},
-  {  0, 220, 170},
-  {  0, 255,   0},
-  {170, 255,   0},
-  {255, 170,   0},
-  {255,  70,   0},
-  {255,   0,   0}
+struct LineStats {
+  uint16_t minimum;
+  uint16_t maximum;
+  uint16_t center;
+  uint16_t p2p;
+  bool clipped;
 };
 
 static uint8_t scaleChannel(uint8_t value) {
@@ -62,17 +52,24 @@ static uint8_t scaleChannel(uint8_t value) {
 static bool initApa106Rmt() {
   pinMode(LED_DATA_PIN, OUTPUT);
   digitalWrite(LED_DATA_PIN, LOW);
-  if (!rmtInit(LED_DATA_PIN, RMT_TX_MODE, RMT_MEM_NUM_BLOCKS_1, 10000000)) return false;
+  if (!rmtInit(LED_DATA_PIN, RMT_TX_MODE, RMT_MEM_NUM_BLOCKS_1, 10000000)) {
+    return false;
+  }
   rmtSetEOT(LED_DATA_PIN, 0);
   return true;
 }
 
-static void writeRgb(uint8_t r, uint8_t g, uint8_t b) {
+static void writePixels(const Rgb pixels[LED_COUNT]) {
   rmt_data_t symbols[LED_COUNT * 24];
   size_t n = 0;
-  uint8_t bytes[3] = { r, g, b };
 
   for (uint8_t led = 0; led < LED_COUNT; ++led) {
+    uint8_t bytes[3] = {
+      scaleChannel(pixels[led].r),
+      scaleChannel(pixels[led].g),
+      scaleChannel(pixels[led].b)
+    };
+
     for (uint8_t c = 0; c < 3; ++c) {
       for (int bit = 7; bit >= 0; --bit) {
         bool one = bytes[c] & (1U << bit);
@@ -90,132 +87,123 @@ static void writeRgb(uint8_t r, uint8_t g, uint8_t b) {
   delayMicroseconds(100);
 }
 
-static void showBand(uint8_t band) {
-  if (band > 7) band = 7;
-  const Rgb &c = BAND_COLORS[band];
-  writeRgb(scaleChannel(c.r), scaleChannel(c.g), scaleChannel(c.b));
+static void allOff() {
+  Rgb pixels[LED_COUNT] = {};
+  writePixels(pixels);
 }
 
-static float readSoundEnvelope() {
-  constexpr uint32_t SAMPLE_WINDOW_US = 10000;
+static void allColor(uint8_t r, uint8_t g, uint8_t b) {
+  Rgb pixels[LED_COUNT];
+  for (uint8_t i = 0; i < LED_COUNT; ++i) pixels[i] = {r, g, b};
+  writePixels(pixels);
+}
+
+static void rgbTest() {
+  allColor(255, 0, 0); delay(350);
+  allColor(0, 255, 0); delay(350);
+  allColor(0, 0, 255); delay(350);
+  allOff();
+}
+
+static void chaseTest() {
+  Rgb pixels[LED_COUNT] = {};
+  for (uint8_t i = 0; i < LED_COUNT; ++i) {
+    for (uint8_t j = 0; j < LED_COUNT; ++j) pixels[j] = {0, 0, 0};
+    // rainbow-ish progression makes position easy to see
+    switch (i % 6) {
+      case 0: pixels[i] = {255, 0, 0}; break;
+      case 1: pixels[i] = {255, 100, 0}; break;
+      case 2: pixels[i] = {0, 255, 0}; break;
+      case 3: pixels[i] = {0, 180, 255}; break;
+      case 4: pixels[i] = {0, 0, 255}; break;
+      default: pixels[i] = {180, 0, 255}; break;
+    }
+    writePixels(pixels);
+    delay(120);
+  }
+  allOff();
+}
+
+static LineStats sampleLine() {
   uint32_t start = micros();
-  int minimum = 4095;
-  int maximum = 0;
+  uint32_t sum = 0;
+  uint32_t count = 0;
+  uint16_t minimum = 4095;
+  uint16_t maximum = 0;
 
   while ((uint32_t)(micros() - start) < SAMPLE_WINDOW_US) {
-    int sample = analogRead(MIC_PIN);
-    if (sample < minimum) minimum = sample;
-    if (sample > maximum) maximum = sample;
-
-    int d0 = digitalRead(MIC_D0_PIN);
-    if (d0 == LOW) bucketD0LowSeen = true;
-    else bucketD0HighSeen = true;
+    uint16_t s = (uint16_t)analogRead(LINE_IN_PIN);
+    if (s < minimum) minimum = s;
+    if (s > maximum) maximum = s;
+    sum += s;
+    ++count;
   }
-  return (float)(maximum - minimum);
+
+  uint16_t center = count ? (uint16_t)(sum / count) : 0;
+  uint16_t p2p = maximum - minimum;
+  // leave headroom from ADC rails; clipping near either edge is suspicious
+  bool clipped = (minimum <= 40 || maximum >= 4055);
+  return {minimum, maximum, center, p2p, clipped};
 }
 
-static uint8_t rawToBand(float raw) {
-  if (raw <= floorRaw) return 0;
-  if (raw >= peakRaw) return 7;
-
-  float span = peakRaw - floorRaw;
-  if (span < 1.0f) span = 1.0f;
-  float normalized = (raw - floorRaw) / span;
-  if (normalized < 0.0f) normalized = 0.0f;
-  if (normalized > 1.0f) normalized = 1.0f;
-
-  float shaped = powf(normalized, curve);
-  uint8_t band = 1 + (uint8_t)(shaped * 6.0f);
-  if (band > 6) band = 6;
-  return band;
-}
-
-static void updateBandFromBucket(uint8_t targetBand, unsigned long now) {
-  if (targetBand > currentBand) {
-    currentBand = targetBand;
-    lastRiseTime = now;
-    return;
-  }
-  if (targetBand == currentBand) return;
-  if (now - lastRiseTime >= peakHoldMs) currentBand = targetBand;
-}
-
-static void printConfig() {
+static void printStats(const LineStats &s) {
   if (!Serial) return;
-  Serial.printf("HJ|CFG|FLOOR=%.0f|PEAK=%.0f|CURVE=%.2f|HOLD=%u|BRIGHT=%u\n",
-                floorRaw, peakRaw, curve, (unsigned)peakHoldMs, (unsigned)brightness);
-}
-
-static void saveConfig() {
-  prefs.begin("happyjarz", false);
-  prefs.putFloat("floor", floorRaw);
-  prefs.putFloat("peak", peakRaw);
-  prefs.putFloat("curve", curve);
-  prefs.putUShort("hold", peakHoldMs);
-  prefs.putUChar("bright", brightness);
-  prefs.end();
-}
-
-static void loadConfig() {
-  prefs.begin("happyjarz", true);
-  floorRaw = prefs.getFloat("floor", 30.0f);
-  peakRaw = prefs.getFloat("peak", 1400.0f);
-  curve = prefs.getFloat("curve", 0.50f);
-  peakHoldMs = prefs.getUShort("hold", 240);
-  brightness = prefs.getUChar("bright", 72);
-  prefs.end();
-
-  if (floorRaw < 0.0f || floorRaw > 2000.0f) floorRaw = 30.0f;
-  if (peakRaw <= floorRaw + 1.0f || peakRaw > 4095.0f) peakRaw = 1400.0f;
-  if (curve < 0.20f || curve > 3.00f) curve = 0.50f;
-  if (peakHoldMs > 3000) peakHoldMs = 240;
-  if (brightness < 4) brightness = 72;
+  Serial.printf("HJ|LINE|CENTER=%u|MIN=%u|MAX=%u|P2P=%u|CLIP=%u|BRIGHT=%u|LEDS=%u\n",
+                (unsigned)s.center,
+                (unsigned)s.minimum,
+                (unsigned)s.maximum,
+                (unsigned)s.p2p,
+                s.clipped ? 1U : 0U,
+                (unsigned)brightness,
+                (unsigned)LED_COUNT);
 }
 
 static void handleCommand(String cmd) {
   cmd.trim();
   if (!cmd.length()) return;
 
-  if (cmd == "STREAM 1") { streamEnabled = true; Serial.println("HJ|ACK|STREAM=1"); printConfig(); return; }
-  if (cmd == "STREAM 0") { streamEnabled = false; Serial.println("HJ|ACK|STREAM=0"); return; }
-  if (cmd == "GET") { printConfig(); return; }
-  if (cmd == "SAVE") { saveConfig(); Serial.println("HJ|ACK|SAVED=1"); printConfig(); return; }
-  if (cmd == "DEFAULTS") {
-    floorRaw = 30.0f;
-    peakRaw = 1400.0f;
-    curve = 0.50f;
-    peakHoldMs = 240;
-    brightness = 72;
-    Serial.println("HJ|ACK|DEFAULTS=1");
-    printConfig();
+  if (cmd == "STREAM 1") {
+    streamEnabled = true;
+    Serial.println("HJ|ACK|STREAM=1");
     return;
   }
-
-  if (cmd.startsWith("SET FLOOR ")) {
-    float v = cmd.substring(10).toFloat();
-    if (v >= 0.0f && v < peakRaw - 1.0f && v <= 2000.0f) floorRaw = v;
-    printConfig(); return;
+  if (cmd == "STREAM 0") {
+    streamEnabled = false;
+    Serial.println("HJ|ACK|STREAM=0");
+    return;
   }
-  if (cmd.startsWith("SET PEAK ")) {
-    float v = cmd.substring(9).toFloat();
-    if (v > floorRaw + 1.0f && v <= 4095.0f) peakRaw = v;
-    printConfig(); return;
+  if (cmd == "GET") {
+    LineStats s = sampleLine();
+    printStats(s);
+    return;
   }
-  if (cmd.startsWith("SET CURVE ")) {
-    float v = cmd.substring(10).toFloat();
-    if (v >= 0.20f && v <= 3.00f) curve = v;
-    printConfig(); return;
+  if (cmd == "TEST RGB") {
+    Serial.println("HJ|ACK|TEST=RGB");
+    rgbTest();
+    return;
   }
-  if (cmd.startsWith("SET HOLD ")) {
-    int v = cmd.substring(9).toInt();
-    if (v >= 0 && v <= 3000) peakHoldMs = (uint16_t)v;
-    printConfig(); return;
+  if (cmd == "TEST CHASE") {
+    Serial.println("HJ|ACK|TEST=CHASE");
+    chaseTest();
+    return;
+  }
+  if (cmd == "TEST ALL") {
+    Serial.println("HJ|ACK|TEST=ALL");
+    allColor(255, 255, 255);
+    delay(700);
+    allOff();
+    return;
+  }
+  if (cmd == "TEST OFF") {
+    allOff();
+    Serial.println("HJ|ACK|TEST=OFF");
+    return;
   }
   if (cmd.startsWith("SET BRIGHT ")) {
     int v = cmd.substring(11).toInt();
-    if (v >= 4 && v <= 255) brightness = (uint8_t)v;
-    showBand(currentBand);
-    printConfig(); return;
+    if (v >= 4 && v <= 128) brightness = (uint8_t)v;
+    Serial.printf("HJ|ACK|BRIGHT=%u\n", (unsigned)brightness);
+    return;
   }
 }
 
@@ -223,7 +211,10 @@ static void serviceSerial() {
   while (Serial.available() > 0) {
     char ch = (char)Serial.read();
     if (ch == '\n' || ch == '\r') {
-      if (commandBuffer.length()) { handleCommand(commandBuffer); commandBuffer = ""; }
+      if (commandBuffer.length()) {
+        handleCommand(commandBuffer);
+        commandBuffer = "";
+      }
     } else if (commandBuffer.length() < 96) {
       commandBuffer += ch;
     }
@@ -232,53 +223,27 @@ static void serviceSerial() {
 
 void setup() {
   Serial.begin(115200);
-  pinMode(MIC_PIN, INPUT);
-  pinMode(MIC_D0_PIN, INPUT);
+  pinMode(LINE_IN_PIN, INPUT);
   analogReadResolution(12);
-  loadConfig();
 
-  if (!initApa106Rmt()) while (true) delay(1000);
+  if (!initApa106Rmt()) {
+    while (true) delay(1000);
+  }
 
-  writeRgb(scaleChannel(255), 0, 0); delay(250);
-  writeRgb(0, scaleChannel(255), 0); delay(250);
-  writeRgb(0, 0, scaleChannel(255)); delay(250);
-
-  currentBand = 0;
-  bucketPeak = 0.0f;
-  bucketStart = millis();
-  lastRiseTime = 0;
-  bucketD0LowSeen = false;
-  bucketD0HighSeen = false;
-  showBand(currentBand);
+  // Short startup proof using all 16 configured pixels.
+  rgbTest();
+  lastTelemetry = millis();
 }
 
 void loop() {
   serviceSerial();
 
-  float rawLevel = readSoundEnvelope();
-  if (rawLevel > bucketPeak) bucketPeak = rawLevel;
-
   unsigned long now = millis();
-  if (now - bucketStart >= COLOR_BUCKET_MS) {
-    bucketStart = now;
-    float measuredPeak = bucketPeak;
-    uint8_t targetBand = rawToBand(measuredPeak);
-    updateBandFromBucket(targetBand, now);
-    showBand(currentBand);
-
-    int d0Now = digitalRead(MIC_D0_PIN);
-    if (streamEnabled && Serial.availableForWrite() >= 64) {
-      Serial.printf("HJ|METER|RAW=%.0f|TARGET=%u|BAND=%u|D0=%d|D0LOW=%u|D0HIGH=%u\n",
-                    measuredPeak,
-                    (unsigned)(targetBand + 1),
-                    (unsigned)(currentBand + 1),
-                    d0Now,
-                    bucketD0LowSeen ? 1U : 0U,
-                    bucketD0HighSeen ? 1U : 0U);
+  if (streamEnabled && now - lastTelemetry >= TELEMETRY_MS) {
+    lastTelemetry = now;
+    LineStats s = sampleLine();
+    if (Serial.availableForWrite() >= 80) {
+      printStats(s);
     }
-
-    bucketPeak = 0.0f;
-    bucketD0LowSeen = false;
-    bucketD0HighSeen = false;
   }
 }
