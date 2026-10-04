@@ -1,4 +1,4 @@
-// HAPPY JARZ — proven-RGB single-LED sound color meter v2.9
+// HAPPY JARZ — standalone proven-RGB single-LED sound color meter v3.0
 //
 // PROVEN ON BENCH
 //   raw byte 1 = RED
@@ -19,8 +19,8 @@
 //   upward moves immediate
 //   fixed 240 ms peak hold, then direct fall to current target
 //
-// TELEMETRY
-//   One line per 120 ms bucket for the Pi meter app.
+// IMPORTANT
+//   No Serial/USB telemetry in runtime. This build is fully standalone.
 
 #include <Arduino.h>
 #include "esp32-hal-rmt.h"
@@ -115,7 +115,6 @@ static uint8_t rawToBand(float raw) {
 }
 
 static void updateBandFromBucket(uint8_t targetBand, unsigned long now) {
-  // Higher peaks show immediately and restart a short visual peak hold.
   if (targetBand > currentBand) {
     currentBand = targetBand;
     lastRiseTime = now;
@@ -126,16 +125,12 @@ static void updateBandFromBucket(uint8_t targetBand, unsigned long now) {
     return;
   }
 
-  // Do not require the same lower band repeatedly. After the fixed hold
-  // expires, fall directly to the current measured target.
   if (now - lastRiseTime >= PEAK_HOLD_MS) {
     currentBand = targetBand;
   }
 }
 
 void setup() {
-  Serial.begin(115200);
-
   pinMode(MIC_PIN, INPUT);
   analogReadResolution(12);
 
@@ -144,9 +139,9 @@ void setup() {
   }
 
   // Short proven RGB sanity sweep: red -> green -> blue.
-  writeRgb(72, 0, 0); delay(350);
-  writeRgb(0, 72, 0); delay(350);
-  writeRgb(0, 0, 72); delay(350);
+  writeRgb(72, 0, 0); delay(300);
+  writeRgb(0, 72, 0); delay(300);
+  writeRgb(0, 0, 72); delay(300);
 
   currentBand = 0;
   bucketPeak = 0.0f;
@@ -163,15 +158,9 @@ void loop() {
   if (now - bucketStart >= COLOR_BUCKET_MS) {
     bucketStart = now;
 
-    float measuredPeak = bucketPeak;
-    uint8_t targetBand = rawToBand(measuredPeak);
+    uint8_t targetBand = rawToBand(bucketPeak);
     updateBandFromBucket(targetBand, now);
     showBand(currentBand);
-
-    Serial.printf("HJ|METER|RAW=%.0f|TARGET=%u|BAND=%u\n",
-                  measuredPeak,
-                  (unsigned)(targetBand + 1),
-                  (unsigned)(currentBand + 1));
 
     bucketPeak = 0.0f;
   }
