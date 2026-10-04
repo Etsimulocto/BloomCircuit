@@ -1,9 +1,10 @@
-// HAPPY JARZ — stabilized raw-peak 8-band sound color meter v2.2
+// HAPPY JARZ — native-GRB peak-bucket 8-band sound color meter v2.3
 //
 // PURPOSE
-//   Preserve the proven raw microphone path and 25 FPS APA106 update ceiling.
-//   Upward sound peaks change color immediately. Downward changes must persist
-//   briefly so normal speech does not chatter between neighboring colors.
+//   Treat APA106 color bytes as GRB from end to end with no RGB->GRB swap.
+//   Preserve the raw microphone capture and proven RMT timing.
+//   Accumulate the loudest mic peak across a 120 ms bucket so speech peaks
+//   are not missed, then update color once per bucket to avoid flicker.
 //
 // HARDWARE
 //   ESP32-S3 SuperMini
@@ -12,12 +13,11 @@
 //   Local decoupling capacitor(s) across LED VCC/GND
 //
 // APA106 PHYSICAL BATCH
-//   GRB packet order
+//   NATIVE GRB packet order
 //   RMT 10 MHz
 //   0 = 4 high / 14 low ticks
 //   1 = 14 high / 4 low ticks
 //   latch = 100 us low
-//   LED refresh capped at 25 FPS
 
 #include <Arduino.h>
 #include "esp32-hal-rmt.h"
@@ -25,29 +25,30 @@
 static constexpr uint8_t LED_DATA_PIN = 7;
 static constexpr uint8_t MIC_PIN = 8;
 static constexpr uint8_t LED_COUNT = 2;
-static constexpr unsigned long LED_FRAME_MS = 40;
 
-// Falling color must persist for four frames (~160 ms).
-// Rising color is immediate so short speech peaks are visible.
-static constexpr uint8_t FALL_CONFIRM_FRAMES = 4;
+// Mic envelope window remains 10 ms. We collect the loudest value across
+// 120 ms before choosing a new color.
+static constexpr unsigned long COLOR_BUCKET_MS = 120;
+static constexpr uint8_t FALL_CONFIRM_BUCKETS = 2; // ~240 ms fall hold
 
-struct Rgb { uint8_t r, g, b; };
+struct Grb { uint8_t g, r, b; };
 
-static unsigned long lastLedFrame = 0;
-static float framePeak = 0.0f;
+static unsigned long bucketStart = 0;
+static float bucketPeak = 0.0f;
 static uint8_t currentBand = 0;
-static uint8_t pendingBand = 0;
-static uint8_t pendingCount = 0;
+static uint8_t pendingLowerBand = 0;
+static uint8_t pendingLowerCount = 0;
 
-static const Rgb BAND_COLORS[8] = {
-  {0,   0,  72},  // raw 0-6    blue
-  {0,  32,  72},  // raw 7-8    cyan-blue
-  {0,  64,  48},  // raw 9-10   cyan-green
-  {0,  72,   0},  // raw 11-13  green
-  {48, 72,   0},  // raw 14-16  yellow-green
-  {72, 48,   0},  // raw 17-20  yellow
-  {72, 20,   0},  // raw 21-26  orange
-  {72,  0,   0}   // raw 27+    red
+// Native GRB values: low sound -> high sound.
+static const Grb BAND_COLORS[8] = {
+  { 0,  0, 72},  // blue
+  {32,  0, 72},  // cyan-blue
+  {64,  0, 48},  // cyan-green
+  {72,  0,  0},  // green
+  {72, 48,  0},  // yellow-green
+  {48, 72,  0},  // yellow
+  {20, 72,  0},  // orange
+  { 0, 72,  0}   // red
 };
 
 static bool initApa106Rmt() {
@@ -60,11 +61,12 @@ static bool initApa106Rmt() {
   return true;
 }
 
-static void writeFrame(const Rgb frame[LED_COUNT]) {
+static void writeFrame(const Grb frame[LED_COUNT]) {
   rmt_data_t symbols[LED_COUNT * 24];
   size_t n = 0;
 
   for (uint8_t led = 0; led < LED_COUNT; ++led) {
+    // Already stored in the exact APA106 wire order: G, R, B.
     uint8_t bytes[3] = { frame[led].g, frame[led].r, frame[led].b };
 
     for (uint8_t c = 0; c < 3; ++c) {
@@ -86,8 +88,8 @@ static void writeFrame(const Rgb frame[LED_COUNT]) {
 
 static void showBand(uint8_t band) {
   if (band > 7) band = 7;
-  Rgb c = BAND_COLORS[band];
-  Rgb frame[LED_COUNT] = { c, c };
+  Grb c = BAND_COLORS[band];
+  Grb frame[LED_COUNT] = { c, c };
   writeFrame(frame);
 }
 
@@ -117,32 +119,32 @@ static uint8_t rawToBand(float raw) {
   return 7;
 }
 
-static void updateStableBand(uint8_t targetBand) {
-  // Peak-meter behavior: any upward movement is shown immediately.
+static void updateBandFromBucket(uint8_t targetBand) {
+  // Any higher peak wins immediately at the end of the 120 ms bucket.
   if (targetBand > currentBand) {
     currentBand = targetBand;
-    pendingBand = currentBand;
-    pendingCount = 0;
+    pendingLowerBand = currentBand;
+    pendingLowerCount = 0;
     return;
   }
 
   if (targetBand == currentBand) {
-    pendingBand = currentBand;
-    pendingCount = 0;
+    pendingLowerBand = currentBand;
+    pendingLowerCount = 0;
     return;
   }
 
-  // Downward movement must remain lower for several frames before falling.
-  if (targetBand != pendingBand) {
-    pendingBand = targetBand;
-    pendingCount = 1;
-  } else if (pendingCount < 255) {
-    ++pendingCount;
+  // Falling requires two complete lower buckets (~240 ms).
+  if (targetBand != pendingLowerBand) {
+    pendingLowerBand = targetBand;
+    pendingLowerCount = 1;
+  } else if (pendingLowerCount < 255) {
+    ++pendingLowerCount;
   }
 
-  if (pendingCount >= FALL_CONFIRM_FRAMES) {
+  if (pendingLowerCount >= FALL_CONFIRM_BUCKETS) {
     currentBand = targetBand;
-    pendingCount = 0;
+    pendingLowerCount = 0;
   }
 }
 
@@ -154,34 +156,32 @@ void setup() {
     while (true) delay(1000);
   }
 
-  // Visual startup sweep only. No microphone calibration is performed.
+  // Slow native-GRB startup sweep.
   for (uint8_t band = 0; band < 8; ++band) {
     showBand(band);
-    delay(120);
+    delay(140);
   }
 
   currentBand = 0;
-  pendingBand = 0;
-  pendingCount = 0;
+  pendingLowerBand = 0;
+  pendingLowerCount = 0;
+  bucketPeak = 0.0f;
+  bucketStart = millis();
   showBand(currentBand);
-  framePeak = 0.0f;
-  lastLedFrame = millis();
 }
 
 void loop() {
   float rawLevel = readSoundEnvelope();
-
-  // Keep the loudest 10 ms envelope seen during this 40 ms LED frame.
-  if (rawLevel > framePeak) framePeak = rawLevel;
+  if (rawLevel > bucketPeak) bucketPeak = rawLevel;
 
   unsigned long now = millis();
-  if (now - lastLedFrame >= LED_FRAME_MS) {
-    lastLedFrame = now;
+  if (now - bucketStart >= COLOR_BUCKET_MS) {
+    bucketStart = now;
 
-    uint8_t targetBand = rawToBand(framePeak);
-    updateStableBand(targetBand);
+    uint8_t targetBand = rawToBand(bucketPeak);
+    updateBandFromBucket(targetBand);
     showBand(currentBand);
 
-    framePeak = 0.0f;
+    bucketPeak = 0.0f;
   }
 }
