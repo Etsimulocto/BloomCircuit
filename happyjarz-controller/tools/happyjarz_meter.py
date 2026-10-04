@@ -21,7 +21,7 @@ class MeterApp:
     def __init__(self, root):
         self.root = root
         self.root.title("HAPPY JARZ Live Trim")
-        self.root.geometry("780x760")
+        self.root.geometry("800x800")
 
         self.q = queue.Queue()
         self.running = True
@@ -47,9 +47,11 @@ class MeterApp:
         self.raw_var = tk.StringVar(value="RAW 0")
         self.max_var = tk.StringVar(value="MAX 0")
         self.band_var = tk.StringVar(value="TARGET 0   DISPLAY 0")
+        self.d0_var = tk.StringVar(value="D0 NOW ?   LOW-SEEN ?   HIGH-SEEN ?")
         ttk.Label(meter, textvariable=self.raw_var, font=("TkDefaultFont", 22, "bold")).pack(anchor="w")
         ttk.Label(meter, textvariable=self.max_var, font=("TkDefaultFont", 14)).pack(anchor="w")
-        ttk.Label(meter, textvariable=self.band_var, font=("TkDefaultFont", 14)).pack(anchor="w", pady=(0, 8))
+        ttk.Label(meter, textvariable=self.band_var, font=("TkDefaultFont", 14)).pack(anchor="w")
+        ttk.Label(meter, textvariable=self.d0_var, font=("TkDefaultFont", 14, "bold")).pack(anchor="w", pady=(0, 8))
         self.bar = ttk.Progressbar(meter, orient="horizontal", mode="determinate", maximum=4095)
         self.bar.pack(fill="x")
 
@@ -73,7 +75,7 @@ class MeterApp:
         ttk.Button(buttons, text="Reload from ESP32", command=self.get_settings).pack(side="left", padx=8)
         ttk.Button(buttons, text="Defaults", command=self.defaults).pack(side="left")
 
-        ttk.Label(trim, text="Good starting point for your bench: Floor ~35, Peak ~1400, Curve ~0.50", padding=(0, 8, 0, 0)).pack(anchor="w")
+        ttk.Label(trim, text="D0 is diagnostic only right now. Turn the HW-484 pot and watch D0 while talking normally.", padding=(0, 8, 0, 0)).pack(anchor="w")
         ttk.Label(root, text=f"CSV log: {LOG_PATH}", padding=(10, 0, 10, 4)).pack(anchor="w")
 
         self.log = tk.Text(root, height=12, wrap="none")
@@ -82,7 +84,7 @@ class MeterApp:
 
         if not os.path.exists(LOG_PATH):
             with open(LOG_PATH, "w", newline="") as f:
-                csv.writer(f).writerow(["timestamp", "raw", "target_band", "display_band"])
+                csv.writer(f).writerow(["timestamp", "raw", "target_band", "display_band", "d0_now", "d0_low_seen", "d0_high_seen"])
 
         threading.Thread(target=self.reader_thread, daemon=True).start()
         self.root.after(50, self.process_queue)
@@ -133,15 +135,9 @@ class MeterApp:
             self.peak_var.set(peak)
         self.write_line(f"SET PEAK {peak}")
 
-    def send_curve(self):
-        self.write_line(f"SET CURVE {self.curve_var.get():.2f}")
-
-    def send_hold(self):
-        self.write_line(f"SET HOLD {int(self.hold_var.get())}")
-
-    def send_bright(self):
-        self.write_line(f"SET BRIGHT {int(self.bright_var.get())}")
-
+    def send_curve(self): self.write_line(f"SET CURVE {self.curve_var.get():.2f}")
+    def send_hold(self): self.write_line(f"SET HOLD {int(self.hold_var.get())}")
+    def send_bright(self): self.write_line(f"SET BRIGHT {int(self.bright_var.get())}")
     def save_settings(self): self.write_line("SAVE")
     def get_settings(self): self.write_line("GET")
     def defaults(self): self.write_line("DEFAULTS")
@@ -186,7 +182,13 @@ class MeterApp:
                     if line.startswith("HJ|METER|"):
                         vals = self.parse_kv(line)
                         try:
-                            self.q.put(("meter", int(float(vals["RAW"])), int(vals["TARGET"]), int(vals["BAND"])))
+                            self.q.put(("meter",
+                                        int(float(vals["RAW"])),
+                                        int(vals["TARGET"]),
+                                        int(vals["BAND"]),
+                                        int(vals.get("D0", -1)),
+                                        int(vals.get("D0LOW", -1)),
+                                        int(vals.get("D0HIGH", -1))))
                         except (KeyError, ValueError):
                             pass
                     elif line.startswith("HJ|CFG|"):
@@ -235,18 +237,22 @@ class MeterApp:
             self.log.delete("1.0", "80.0")
         self.log.configure(state="disabled")
 
-    def update_meter(self, raw, target, band):
+    def update_meter(self, raw, target, band, d0_now, d0_low, d0_high):
         self.max_raw = max(self.max_raw, raw)
         self.raw_var.set(f"RAW {raw}")
         self.max_var.set(f"MAX {self.max_raw}")
         self.band_var.set(f"TARGET {target}   DISPLAY {band}")
+        self.d0_var.set(f"D0 NOW {d0_now}   LOW-SEEN {d0_low}   HIGH-SEEN {d0_high}")
+
         display_max = max(100, int(self.peak_var.get()) * 1.10)
         self.bar["maximum"] = display_max
         self.bar["value"] = min(raw, display_max)
+
         stamp = time.strftime("%H:%M:%S")
-        self.append_log(f"{stamp}   RAW={raw:4d}   TARGET={target}   DISPLAY={band}")
+        self.append_log(f"{stamp}   RAW={raw:4d}   TARGET={target}   DISPLAY={band}   D0={d0_now} LOW={d0_low} HIGH={d0_high}")
+
         with open(LOG_PATH, "a", newline="") as f:
-            csv.writer(f).writerow([time.strftime("%Y-%m-%d %H:%M:%S"), raw, target, band])
+            csv.writer(f).writerow([time.strftime("%Y-%m-%d %H:%M:%S"), raw, target, band, d0_now, d0_low, d0_high])
 
     def close(self):
         self.running = False
