@@ -1,13 +1,10 @@
-// HAPPY JARZ — standalone direct-threshold sound color meter v1.8
+// HAPPY JARZ — standalone raw-peak 8-band sound color meter v1.9
 //
 // PURPOSE
-//   Keep the proven 25 FPS APA106 update path, but remove gain/smoothing/hold.
-//   Sound response is now direct:
-//     raw peak-to-peak -> subtract calibrated floor -> fixed thresholds -> color
-//
-// IMPORTANT
-//   The HW-484 is not calibrated in true acoustic dB SPL.
-//   These are direct envelope-above-floor thresholds chosen from observed bench values.
+//   Preserve the proven APA106 RMT driver and 25 FPS LED ceiling.
+//   Remove all microphone floor subtraction, gain, hold, smoothing, and caps.
+//   The LED color uses the loudest raw 10 ms envelope observed during each
+//   40 ms LED frame window so short claps/transients are not missed.
 //
 // HARDWARE
 //   ESP32-S3 SuperMini
@@ -31,22 +28,20 @@ static constexpr uint8_t MIC_PIN = 8;
 static constexpr uint8_t LED_COUNT = 2;
 static constexpr unsigned long LED_FRAME_MS = 40;
 
-static float noiseFloor = 12.0f;
-static constexpr float FLOOR_MARGIN = 1.5f;
-
 struct Rgb { uint8_t r, g, b; };
 
 static unsigned long lastLedFrame = 0;
+static float framePeak = 0.0f;
 
 static const Rgb BAND_COLORS[8] = {
-  {0,   0,  72},  // 0-5 blue
-  {0,  32,  72},  // 6-10 cyan-blue
-  {0,  64,  48},  // 11-15 cyan-green
-  {0,  72,   0},  // 16-20 green
-  {48, 72,   0},  // 21-25 yellow-green
-  {72, 48,   0},  // 26-30 yellow
-  {72, 20,   0},  // 31-40 orange
-  {72,  0,   0}   // 41+ red
+  {0,   0,  72},  // raw 0-8    blue
+  {0,  32,  72},  // raw 9-14   cyan-blue
+  {0,  64,  48},  // raw 15-20  cyan-green
+  {0,  72,   0},  // raw 21-27  green
+  {48, 72,   0},  // raw 28-35  yellow-green
+  {72, 48,   0},  // raw 36-45  yellow
+  {72, 20,   0},  // raw 46-60  orange
+  {72,  0,   0}   // raw 61+    red
 };
 
 static bool initApa106Rmt() {
@@ -105,31 +100,14 @@ static float readSoundEnvelope() {
   return (float)(maximum - minimum);
 }
 
-static void calibrateMicrophone() {
-  showBand(0);
-
-  constexpr int CAL_SAMPLES = 100;
-  float sum = 0.0f;
-  float peak = 0.0f;
-
-  for (int i = 0; i < CAL_SAMPLES; ++i) {
-    float v = readSoundEnvelope();
-    sum += v;
-    if (v > peak) peak = v;
-  }
-
-  float average = sum / (float)CAL_SAMPLES;
-  noiseFloor = constrain(max(average + FLOOR_MARGIN, peak * 0.85f), 6.0f, 18.0f);
-}
-
-static uint8_t levelToBand(float level) {
-  if (level <= 5.0f)  return 0;
-  if (level <= 10.0f) return 1;
-  if (level <= 15.0f) return 2;
-  if (level <= 20.0f) return 3;
-  if (level <= 25.0f) return 4;
-  if (level <= 30.0f) return 5;
-  if (level <= 40.0f) return 6;
+static uint8_t rawToBand(float raw) {
+  if (raw <= 8.0f)  return 0;
+  if (raw <= 14.0f) return 1;
+  if (raw <= 20.0f) return 2;
+  if (raw <= 27.0f) return 3;
+  if (raw <= 35.0f) return 4;
+  if (raw <= 45.0f) return 5;
+  if (raw <= 60.0f) return 6;
   return 7;
 }
 
@@ -141,26 +119,31 @@ void setup() {
     while (true) delay(1000);
   }
 
-  // Slow visual startup sweep to confirm LED chain initialized.
+  // Visual startup sweep only. No microphone calibration is performed.
   for (uint8_t band = 0; band < 8; ++band) {
     showBand(band);
     delay(120);
   }
 
-  calibrateMicrophone();
+  showBand(0);
+  framePeak = 0.0f;
   lastLedFrame = millis();
 }
 
 void loop() {
   float rawLevel = readSoundEnvelope();
-  float above = rawLevel - noiseFloor;
-  if (above < 0.0f) above = 0.0f;
 
-  uint8_t band = levelToBand(above);
+  // Keep the loudest 10 ms envelope seen during this 40 ms LED frame.
+  if (rawLevel > framePeak) framePeak = rawLevel;
 
   unsigned long now = millis();
   if (now - lastLedFrame >= LED_FRAME_MS) {
     lastLedFrame = now;
+
+    uint8_t band = rawToBand(framePeak);
     showBand(band);
+
+    // Start collecting the next 40 ms frame peak.
+    framePeak = 0.0f;
   }
 }
