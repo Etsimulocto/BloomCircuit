@@ -21,7 +21,7 @@ class MeterApp:
     def __init__(self, root):
         self.root = root
         self.root.title("HAPPY JARZ Live Trim")
-        self.root.geometry("760x690")
+        self.root.geometry("780x760")
 
         self.q = queue.Queue()
         self.running = True
@@ -30,43 +30,42 @@ class MeterApp:
         self.serial_lock = threading.Lock()
         self.ignore_slider_events = False
 
-        self.floor_var = tk.DoubleVar(value=6)
-        self.peak_var = tk.DoubleVar(value=30)
+        self.floor_var = tk.DoubleVar(value=30)
+        self.peak_var = tk.DoubleVar(value=1400)
+        self.curve_var = tk.DoubleVar(value=0.50)
         self.hold_var = tk.DoubleVar(value=240)
         self.bright_var = tk.DoubleVar(value=72)
 
         top = ttk.Frame(root, padding=10)
         top.pack(fill="x")
-
         self.status = tk.StringVar(value="Connecting...")
         ttk.Label(top, textvariable=self.status).pack(side="left")
         ttk.Button(top, text="Clear Max", command=self.clear_max).pack(side="right")
 
         meter = ttk.LabelFrame(root, text="Live Meter", padding=10)
         meter.pack(fill="x", padx=10, pady=(0, 8))
-
         self.raw_var = tk.StringVar(value="RAW 0")
         self.max_var = tk.StringVar(value="MAX 0")
         self.band_var = tk.StringVar(value="TARGET 0   DISPLAY 0")
-
         ttk.Label(meter, textvariable=self.raw_var, font=("TkDefaultFont", 22, "bold")).pack(anchor="w")
         ttk.Label(meter, textvariable=self.max_var, font=("TkDefaultFont", 14)).pack(anchor="w")
         ttk.Label(meter, textvariable=self.band_var, font=("TkDefaultFont", 14)).pack(anchor="w", pady=(0, 8))
-
-        self.bar = ttk.Progressbar(meter, orient="horizontal", mode="determinate", maximum=100)
+        self.bar = ttk.Progressbar(meter, orient="horizontal", mode="determinate", maximum=4095)
         self.bar.pack(fill="x")
 
         trim = ttk.LabelFrame(root, text="Live Trim", padding=10)
         trim.pack(fill="x", padx=10, pady=(0, 8))
 
-        self.make_slider(trim, "Floor / noise gate", self.floor_var, 0, 50, 1, self.send_floor,
-                         "Raise this until fans/room noise stay on root blue.")
-        self.make_slider(trim, "Peak / red point", self.peak_var, 8, 100, 1, self.send_peak,
-                         "Lower this if normal loud sounds never reach red.")
+        self.make_slider(trim, "Floor / noise gate", self.floor_var, 0, 500, 1, self.send_floor,
+                         "Set just above the fan/room-noise RAW level.")
+        self.make_slider(trim, "Peak / red point", self.peak_var, 50, 4095, 10, self.send_peak,
+                         "Set near the RAW level that should count as full red.")
+        self.make_slider(trim, "Response curve", self.curve_var, 0.20, 3.00, 0.05, self.send_curve,
+                         "Below 1.0 expands speech/mids; 1.0 is linear; above 1.0 compresses them.")
         self.make_slider(trim, "Peak hold (ms)", self.hold_var, 0, 1000, 10, self.send_hold,
-                         "How long a higher color is held before it can fall.")
+                         "How long a higher color is held before falling.")
         self.make_slider(trim, "Brightness", self.bright_var, 4, 255, 1, self.send_bright,
-                         "LED output level only; does not change sensitivity.")
+                         "LED output only; does not change sensitivity.")
 
         buttons = ttk.Frame(trim)
         buttons.pack(fill="x", pady=(8, 0))
@@ -74,6 +73,7 @@ class MeterApp:
         ttk.Button(buttons, text="Reload from ESP32", command=self.get_settings).pack(side="left", padx=8)
         ttk.Button(buttons, text="Defaults", command=self.defaults).pack(side="left")
 
+        ttk.Label(trim, text="Good starting point for your bench: Floor ~35, Peak ~1400, Curve ~0.50", padding=(0, 8, 0, 0)).pack(anchor="w")
         ttk.Label(root, text=f"CSV log: {LOG_PATH}", padding=(10, 0, 10, 4)).pack(anchor="w")
 
         self.log = tk.Text(root, height=12, wrap="none")
@@ -91,24 +91,12 @@ class MeterApp:
     def make_slider(self, parent, label, variable, lo, hi, step, callback, help_text):
         row = ttk.Frame(parent)
         row.pack(fill="x", pady=4)
-
-        left = ttk.Frame(row, width=180)
+        left = ttk.Frame(row, width=190)
         left.pack(side="left", fill="y")
         left.pack_propagate(False)
         ttk.Label(left, text=label).pack(anchor="w")
-        ttk.Label(left, text=help_text, wraplength=175, font=("TkDefaultFont", 8)).pack(anchor="w")
-
-        scale = tk.Scale(
-            row,
-            from_=lo,
-            to=hi,
-            resolution=step,
-            orient="horizontal",
-            variable=variable,
-            command=lambda _v: self.root.after_cancel(getattr(scale, "_after_id", ""))
-            if getattr(scale, "_after_id", None) else None,
-            length=430,
-        )
+        ttk.Label(left, text=help_text, wraplength=185, font=("TkDefaultFont", 8)).pack(anchor="w")
+        scale = tk.Scale(row, from_=lo, to=hi, resolution=step, orient="horizontal", variable=variable, length=450)
         scale.pack(side="left", fill="x", expand=True)
 
         def schedule_send(_event=None):
@@ -117,7 +105,6 @@ class MeterApp:
             if getattr(scale, "_send_after", None):
                 self.root.after_cancel(scale._send_after)
             scale._send_after = self.root.after(120, callback)
-
         scale.configure(command=lambda _v: schedule_send())
 
     def clear_max(self):
@@ -146,25 +133,22 @@ class MeterApp:
             self.peak_var.set(peak)
         self.write_line(f"SET PEAK {peak}")
 
+    def send_curve(self):
+        self.write_line(f"SET CURVE {self.curve_var.get():.2f}")
+
     def send_hold(self):
         self.write_line(f"SET HOLD {int(self.hold_var.get())}")
 
     def send_bright(self):
         self.write_line(f"SET BRIGHT {int(self.bright_var.get())}")
 
-    def save_settings(self):
-        self.write_line("SAVE")
-
-    def get_settings(self):
-        self.write_line("GET")
-
-    def defaults(self):
-        self.write_line("DEFAULTS")
+    def save_settings(self): self.write_line("SAVE")
+    def get_settings(self): self.write_line("GET")
+    def defaults(self): self.write_line("DEFAULTS")
 
     def parse_kv(self, line):
-        parts = line.strip().split("|")
         vals = {}
-        for part in parts[2:]:
+        for part in line.strip().split("|")[2:]:
             if "=" in part:
                 k, v = part.split("=", 1)
                 vals[k] = v
@@ -174,7 +158,6 @@ class MeterApp:
         if serial is None:
             self.q.put(("status", "python3-serial is not installed"))
             return
-
         while self.running:
             try:
                 ser = serial.Serial()
@@ -188,7 +171,6 @@ class MeterApp:
                 ser.dtr = False
                 ser.rts = False
                 self.ser = ser
-
                 self.q.put(("status", f"Connected: {PORT} @ {BAUD}  (DTR/RTS OFF)"))
                 time.sleep(0.15)
                 self.write_line("STREAM 1")
@@ -201,7 +183,6 @@ class MeterApp:
                     line = raw.decode("utf-8", errors="replace").strip()
                     if not line.startswith("HJ|"):
                         continue
-
                     if line.startswith("HJ|METER|"):
                         vals = self.parse_kv(line)
                         try:
@@ -209,11 +190,9 @@ class MeterApp:
                         except (KeyError, ValueError):
                             pass
                     elif line.startswith("HJ|CFG|"):
-                        vals = self.parse_kv(line)
-                        self.q.put(("config", vals))
+                        self.q.put(("config", self.parse_kv(line)))
                     elif line.startswith("HJ|ACK|"):
                         self.q.put(("ack", line))
-
             except Exception as e:
                 self.q.put(("status", f"Disconnected: {e} — retrying..."))
                 try:
@@ -228,32 +207,23 @@ class MeterApp:
         try:
             while True:
                 item = self.q.get_nowait()
-                if item[0] == "status":
-                    self.status.set(item[1])
-                elif item[0] == "meter":
-                    _, raw, target, band = item
-                    self.update_meter(raw, target, band)
-                elif item[0] == "config":
-                    self.apply_config(item[1])
-                elif item[0] == "ack":
-                    self.append_log(item[1])
+                if item[0] == "status": self.status.set(item[1])
+                elif item[0] == "meter": self.update_meter(*item[1:])
+                elif item[0] == "config": self.apply_config(item[1])
+                elif item[0] == "ack": self.append_log(item[1])
         except queue.Empty:
             pass
-
         if self.running:
             self.root.after(50, self.process_queue)
 
     def apply_config(self, vals):
         try:
             self.ignore_slider_events = True
-            if "FLOOR" in vals:
-                self.floor_var.set(float(vals["FLOOR"]))
-            if "PEAK" in vals:
-                self.peak_var.set(float(vals["PEAK"]))
-            if "HOLD" in vals:
-                self.hold_var.set(float(vals["HOLD"]))
-            if "BRIGHT" in vals:
-                self.bright_var.set(float(vals["BRIGHT"]))
+            if "FLOOR" in vals: self.floor_var.set(float(vals["FLOOR"]))
+            if "PEAK" in vals: self.peak_var.set(float(vals["PEAK"]))
+            if "CURVE" in vals: self.curve_var.set(float(vals["CURVE"]))
+            if "HOLD" in vals: self.hold_var.set(float(vals["HOLD"]))
+            if "BRIGHT" in vals: self.bright_var.set(float(vals["BRIGHT"]))
         finally:
             self.ignore_slider_events = False
 
@@ -270,14 +240,11 @@ class MeterApp:
         self.raw_var.set(f"RAW {raw}")
         self.max_var.set(f"MAX {self.max_raw}")
         self.band_var.set(f"TARGET {target}   DISPLAY {band}")
-
-        display_max = max(50, int(self.peak_var.get()) + 10)
+        display_max = max(100, int(self.peak_var.get()) * 1.10)
         self.bar["maximum"] = display_max
         self.bar["value"] = min(raw, display_max)
-
         stamp = time.strftime("%H:%M:%S")
         self.append_log(f"{stamp}   RAW={raw:4d}   TARGET={target}   DISPLAY={band}")
-
         with open(LOG_PATH, "a", newline="") as f:
             csv.writer(f).writerow([time.strftime("%Y-%m-%d %H:%M:%S"), raw, target, band])
 
