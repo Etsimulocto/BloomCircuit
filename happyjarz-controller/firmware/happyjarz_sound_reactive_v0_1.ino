@@ -1,8 +1,12 @@
-// HAPPY JARZ — native-GRB peak-bucket meter diagnostic v2.4
+// HAPPY JARZ — peak-bucket meter diagnostic v2.5
 //
 // PURPOSE
-//   Keep the v2.3 light behavior unchanged, while emitting one compact
-//   diagnostic line per 120 ms bucket for the Raspberry Pi meter app.
+//   Keep the proven microphone thresholds, 120 ms peak bucket, fall hold,
+//   RMT timing, and telemetry exactly as v2.4.
+//   Only change the LED red/green wire-byte order based on live evidence:
+//     TARGET=8 and BAND=8 were logged while the physical LED appeared green.
+//   Therefore the first two transmitted color bytes were reversed relative
+//   to the previous assumption. This build sends physical RGB byte order.
 //
 // HARDWARE
 //   ESP32-S3 SuperMini
@@ -11,7 +15,6 @@
 //   Local decoupling capacitor(s) across LED VCC/GND
 //
 // APA106 PHYSICAL BATCH
-//   NATIVE GRB packet order
 //   RMT 10 MHz
 //   0 = 4 high / 14 low ticks
 //   1 = 14 high / 4 low ticks
@@ -26,7 +29,7 @@ static constexpr uint8_t LED_COUNT = 2;
 static constexpr unsigned long COLOR_BUCKET_MS = 120;
 static constexpr uint8_t FALL_CONFIRM_BUCKETS = 2;
 
-struct Grb { uint8_t g, r, b; };
+struct Rgb { uint8_t r, g, b; };
 
 static unsigned long bucketStart = 0;
 static float bucketPeak = 0.0f;
@@ -34,15 +37,15 @@ static uint8_t currentBand = 0;
 static uint8_t pendingLowerBand = 0;
 static uint8_t pendingLowerCount = 0;
 
-static const Grb BAND_COLORS[8] = {
+static const Rgb BAND_COLORS[8] = {
   { 0,  0, 72},  // blue
-  {32,  0, 72},  // cyan-blue
-  {64,  0, 48},  // cyan-green
-  {72,  0,  0},  // green
-  {72, 48,  0},  // yellow-green
-  {48, 72,  0},  // yellow
-  {20, 72,  0},  // orange
-  { 0, 72,  0}   // red
+  { 0, 32, 72},  // cyan-blue
+  { 0, 64, 48},  // cyan-green
+  { 0, 72,  0},  // green
+  {48, 72,  0},  // yellow-green
+  {72, 48,  0},  // yellow
+  {72, 20,  0},  // orange
+  {72,  0,  0}   // red
 };
 
 static bool initApa106Rmt() {
@@ -55,12 +58,14 @@ static bool initApa106Rmt() {
   return true;
 }
 
-static void writeFrame(const Grb frame[LED_COUNT]) {
+static void writeFrame(const Rgb frame[LED_COUNT]) {
   rmt_data_t symbols[LED_COUNT * 24];
   size_t n = 0;
 
   for (uint8_t led = 0; led < LED_COUNT; ++led) {
-    uint8_t bytes[3] = { frame[led].g, frame[led].r, frame[led].b };
+    // Live meter proved red/green were reversed in the previous wire order.
+    // Send bytes in physical RGB order for this LED batch.
+    uint8_t bytes[3] = { frame[led].r, frame[led].g, frame[led].b };
 
     for (uint8_t c = 0; c < 3; ++c) {
       for (int bit = 7; bit >= 0; --bit) {
@@ -81,8 +86,8 @@ static void writeFrame(const Grb frame[LED_COUNT]) {
 
 static void showBand(uint8_t band) {
   if (band > 7) band = 7;
-  Grb c = BAND_COLORS[band];
-  Grb frame[LED_COUNT] = { c, c };
+  Rgb c = BAND_COLORS[band];
+  Rgb frame[LED_COUNT] = { c, c };
   writeFrame(frame);
 }
 
@@ -140,7 +145,7 @@ static void updateBandFromBucket(uint8_t targetBand) {
 }
 
 void setup() {
-  // Serial is telemetry only. The light logic does not wait for or depend on it.
+  // Serial is telemetry only. The light logic never waits for a monitor.
   Serial.begin(115200);
 
   pinMode(MIC_PIN, INPUT);
