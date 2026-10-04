@@ -7,6 +7,7 @@ except ImportError:
     serial = None
 
 PORT='/dev/ttyACM0'; BAUD=115200
+DISCONNECT_GRACE_SEC=3.0
 LOG_PATH=os.path.expanduser('~/happyjarz_eq_log.csv')
 DEFAULT_EDGES=(40,90,180,350,700,1200,2000,3000,3900)
 DEFAULT_COLOR_NAMES=('Red','Orange','Amber','Lime','Green','Cyan','Blue','Violet')
@@ -18,7 +19,7 @@ COLOR_PRESETS={
 
 class EqApp:
     def __init__(self,root):
-        self.root=root; root.title('HAPPY JARZ / CLUB BOX EQ Tuner'); root.geometry('1040x980')
+        self.root=root; root.title('BloomPulse — HAPPY JARZ EQ Tuner'); root.geometry('1040x980')
         self.q=queue.Queue(); self.running=True; self.ser=None; self.lock=threading.Lock(); self.ignore=False
         self.gain=tk.DoubleVar(value=4.0); self.bright=tk.DoubleVar(value=255); self.mode=tk.IntVar(value=1)
         self.edges=[tk.DoubleVar(value=v) for v in DEFAULT_EDGES]
@@ -104,7 +105,6 @@ class EqApp:
                     pass
 
     def reset_all(self):
-        # Reset the visible UI immediately, then reset the ESP32 to the exact same defaults.
         self.ignore=True
         try:
             self.gain.set(4.0); self.bright.set(255); self.mode.set(1)
@@ -119,7 +119,6 @@ class EqApp:
         self.update_bulbs(self.last_vals,self.last_gate)
         self.summary.set('Resetting to original EQ map...')
         self.send('RESET')
-        # Make sure live telemetry remains on and re-request authoritative config.
         self.root.after(120,lambda:self.send('STREAM 1'))
         self.root.after(180,lambda:self.send('GET'))
 
@@ -143,28 +142,56 @@ class EqApp:
     def reader(self):
         if serial is None:
             self.q.put(('status','python3-serial not installed')); return
-        try:
-            s=serial.Serial()
-            s.port=PORT; s.baudrate=BAUD; s.timeout=.25; s.write_timeout=.25; s.dtr=False; s.rts=False
-            s.open(); s.dtr=False; s.rts=False; self.ser=s
-            self.q.put(('status',f'Connected: {PORT} @ {BAUD}'))
-            time.sleep(.15); self.send('STREAM 1'); self.send('GET')
-            while self.running and s.is_open:
+
+        missing_since=None
+        while self.running:
+            try:
                 if not os.path.exists(PORT):
-                    self.q.put(('device_gone',)); return
+                    if missing_since is None: missing_since=time.monotonic()
+                    elapsed=time.monotonic()-missing_since
+                    if elapsed>=DISCONNECT_GRACE_SEC:
+                        self.q.put(('device_gone',)); return
+                    self.q.put(('status',f'Controller reconnecting… {DISCONNECT_GRACE_SEC-elapsed:.1f}s'))
+                    time.sleep(.20)
+                    continue
+
+                missing_since=None
+                s=serial.Serial()
+                s.port=PORT; s.baudrate=BAUD; s.timeout=.25; s.write_timeout=.25; s.dtr=False; s.rts=False
+                s.open(); s.dtr=False; s.rts=False; self.ser=s
+                self.q.put(('status',f'Connected: {PORT} @ {BAUD}'))
+                time.sleep(.15); self.send('STREAM 1'); self.send('GET')
+
+                while self.running and s.is_open:
+                    if not os.path.exists(PORT):
+                        break
+                    try:
+                        raw=s.readline()
+                    except Exception:
+                        break
+                    if not raw: continue
+                    line=raw.decode(errors='replace').strip()
+                    if line.startswith('HJ|EQ|'): self.q.put(('eq',self.kv(line)))
+                    elif line.startswith('HJ|EQCFG|'): self.q.put(('cfg',self.kv(line)))
+                    elif line.startswith('HJ|ACK|'): self.q.put(('log',line))
+
+                try:s.close()
+                except:pass
+                self.ser=None
+                missing_since=time.monotonic()
+                self.q.put(('status','Controller reconnecting…'))
+                time.sleep(.20)
+
+            except Exception as e:
                 try:
-                    raw=s.readline()
-                except Exception:
+                    if self.ser:self.ser.close()
+                except:pass
+                self.ser=None
+                if missing_since is None: missing_since=time.monotonic()
+                if not os.path.exists(PORT) and time.monotonic()-missing_since>=DISCONNECT_GRACE_SEC:
                     self.q.put(('device_gone',)); return
-                if not raw: continue
-                line=raw.decode(errors='replace').strip()
-                if line.startswith('HJ|EQ|'): self.q.put(('eq',self.kv(line)))
-                elif line.startswith('HJ|EQCFG|'): self.q.put(('cfg',self.kv(line)))
-                elif line.startswith('HJ|ACK|'): self.q.put(('log',line))
-        except Exception as e:
-            if self.running:
-                if not os.path.exists(PORT): self.q.put(('device_gone',))
-                else: self.q.put(('status',f'Could not open controller: {e}'))
+                self.q.put(('status',f'Controller reconnecting… {e}'))
+                time.sleep(.35)
 
     def process(self):
         try:
@@ -199,12 +226,13 @@ class EqApp:
             vals=[float(d.get(f'B{i+1}',0)) for i in range(8)]
         except Exception:return
         self.mode.set(mode); self.last_vals=vals; self.last_gate=gate
-        self.summary.set(f'CENTER {center}   P2P {p2p}   DOMINANT BAND {dom}   ENERGY {en:.1f}   CLIP {clip}')
+        silent=int(d.get('SILENT',0)); act=float(d.get('ACT',0))
+        self.summary.set(f'CENTER {center}   P2P {p2p}   ACT {act:.1f}   SILENT {silent}   DOM {dom}   ENERGY {en:.1f}   CLIP {clip}')
         self.knob_var.set(f'Noise knob: raw {knob}   {knobpct:.1f}%   gate {gate:.1f}')
         peak=max(max(vals),1.0)
         for i,v in enumerate(vals): self.energy_vars[i].set(f'B{i+1}: {v:.1f}'); self.band_bars[i]['value']=min(100,100*v/peak)
         self.update_bulbs(vals,gate)
-        stamp=time.strftime('%H:%M:%S'); self.append(f'{stamp} MODE={mode} DOM={dom} P2P={p2p} ENERGY={en:.1f} KNOB={knob} ({knobpct:.1f}%) GATE={gate:.1f}')
+        stamp=time.strftime('%H:%M:%S'); self.append(f'{stamp} MODE={mode} DOM={dom} P2P={p2p} ACT={act:.1f} SILENT={silent} ENERGY={en:.1f} KNOB={knob} ({knobpct:.1f}%) GATE={gate:.1f}')
         with open(LOG_PATH,'a',newline='') as f:
             csv.writer(f).writerow([time.strftime('%Y-%m-%d %H:%M:%S'),center,p2p,clip,dom,en,knob,knobpct,gate,mode,*vals])
 
@@ -225,10 +253,8 @@ class EqApp:
                         for name,val in COLOR_PRESETS.items():
                             if val==rgb:
                                 self.colors[i].set(name); matched=True; break
-                        if not matched:
-                            self.colors[i].set(DEFAULT_COLOR_NAMES[i])
-                    except Exception:
-                        self.colors[i].set(DEFAULT_COLOR_NAMES[i])
+                        if not matched:self.colors[i].set(DEFAULT_COLOR_NAMES[i])
+                    except Exception:self.colors[i].set(DEFAULT_COLOR_NAMES[i])
         finally:self.ignore=False
         self.update_bulbs(self.last_vals,self.last_gate)
 
