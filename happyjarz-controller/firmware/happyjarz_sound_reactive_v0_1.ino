@@ -1,9 +1,9 @@
-// HAPPY JARZ — sound-reactive light show v0.3
+// HAPPY JARZ — sound-reactive light show v0.4
 // BloomCore standalone hardware test.
 //
 // PURPOSE
-//   Preserve whisper sensitivity from v0.2, but spread whisper / normal voice /
-//   loud voice / clap across a much wider visual response range.
+//   Tune the sound-response bands from real HW-484 bench logs while preserving
+//   the known-good HAPPY JARZ APA106 RMT lighting layer on GPIO7.
 //
 // HARDWARE
 //   Controller: ESP32-S3 SuperMini
@@ -24,14 +24,15 @@
 //   1 bit: 14 ticks HIGH / 4 ticks LOW
 //   latch/reset: 100 us LOW
 //
-// v0.3 SOUND RESPONSE
-//   - Keeps boot-time room calibration.
-//   - Adds a hard deadband just above the calibrated floor.
-//   - Replaces sqrt compression with a piecewise response curve.
-//   - Whisper = soft shimmer.
-//   - Normal voice = strong visible motion.
-//   - Loud voice/music = high brightness + fast hue travel.
-//   - Clap/shout = short burst flash.
+// v0.4 SOUND RESPONSE — based on v0.3 bench data
+//   Observed floor ~12.7, useful smoothed LEVEL mostly ~7-40+.
+//   - IDLE:    residual / settled room noise
+//   - WHISPER: very quiet speech
+//   - VOICE:   normal speech
+//   - LOUD:    strong nearby speech / music
+//   - PEAK:    shout / clap / sharp transient
+//   The upper bands are intentionally moved down so the real microphone range
+//   drives the entire visual range instead of living almost entirely in VOICE.
 //
 // DIAGNOSTICS
 //   Serial 115200 prints RAW, LEVEL, ENERGY, BAND, FLOOR, FULL every ~100 ms.
@@ -47,12 +48,12 @@ static constexpr uint8_t LED_COUNT = 2;
 // Sound tuning
 // -----------------------------
 static float noiseFloor = 18.0f;
-static float fullScale = 260.0f;
-static constexpr float MIN_FULL_SCALE = 220.0f;
-static constexpr float ATTACK_SMOOTHING = 0.38f;
-static constexpr float RELEASE_SMOOTHING = 0.84f;
-static constexpr float BURST_AMOUNT = 65.0f;
-static constexpr float DEADBAND = 4.0f;
+static float fullScale = 90.0f;
+static constexpr float MIN_FULL_SCALE = 70.0f;
+static constexpr float ATTACK_SMOOTHING = 0.34f;
+static constexpr float RELEASE_SMOOTHING = 0.80f;
+static constexpr float BURST_AMOUNT = 22.0f;
+static constexpr float DEADBAND = 3.0f;
 
 // -----------------------------
 // Runtime state
@@ -176,8 +177,9 @@ static void calibrateMicrophone() {
   float average = sum / (float)CAL_SAMPLES;
   noiseFloor = constrain((average * 1.25f) + 6.0f, 10.0f, 80.0f);
 
-  // Give more headroom than v0.2 so whisper does not consume too much range.
-  fullScale = max(MIN_FULL_SCALE, noiseFloor * 8.0f);
+  // v0.3 showed that this HW-484's useful everyday range is much smaller
+  // than the earlier conservative 220 full-scale target.
+  fullScale = max(MIN_FULL_SCALE, noiseFloor * 5.5f);
 
   Serial.printf("HJ|SOUND|cal_done|AVG=%.1f|PEAK=%.0f|FLOOR=%.1f|FULL=%.1f\n",
                 average, peak, noiseFloor, fullScale);
@@ -187,40 +189,39 @@ static void calibrateMicrophone() {
   show({0, 0, 0}, {0, 0, 0});
 }
 
-// Piecewise dynamics curve based on the bench behavior observed in v0.2.
-// The input here is LEVEL after floor subtraction and smoothing.
+// Piecewise dynamics curve tuned from the real v0.3 log.
+// Input is LEVEL after floor subtraction and attack/release smoothing.
 static float mapDynamics(float level, const char **bandOut) {
-  // Quiet / residual room noise.
   if (level <= DEADBAND) {
     *bandOut = "IDLE";
     return 0.0f;
   }
 
-  // Whisper region: deliberately visible, but kept below ~22% energy.
-  if (level <= 18.0f) {
+  // Very quiet speech and near-room-level detail.
+  if (level <= 12.0f) {
     *bandOut = "WHISPER";
-    float t = (level - DEADBAND) / (18.0f - DEADBAND);
-    return 0.03f + t * 0.19f;
+    float t = (level - DEADBAND) / (12.0f - DEADBAND);
+    return 0.02f + t * 0.16f;
   }
 
-  // Normal conversational speech.
-  if (level <= 55.0f) {
+  // Ordinary conversational range from the bench logs.
+  if (level <= 25.0f) {
     *bandOut = "VOICE";
-    float t = (level - 18.0f) / (55.0f - 18.0f);
-    return 0.22f + t * 0.38f;
+    float t = (level - 12.0f) / (25.0f - 12.0f);
+    return 0.18f + t * 0.30f;
   }
 
-  // Loud speech / nearby music.
-  if (level <= 140.0f) {
+  // Strong nearby speech / music should now use most of the light output.
+  if (level <= 45.0f) {
     *bandOut = "LOUD";
-    float t = (level - 55.0f) / (140.0f - 55.0f);
-    return 0.60f + t * 0.30f;
+    float t = (level - 25.0f) / (45.0f - 25.0f);
+    return 0.48f + t * 0.34f;
   }
 
-  // Everything above this is intentionally near/full output.
+  // Peaks no longer require an unrealistic LEVEL > 140.
   *bandOut = "PEAK";
-  float t = constrain((level - 140.0f) / max(1.0f, fullScale - 140.0f), 0.0f, 1.0f);
-  return 0.90f + t * 0.10f;
+  float t = constrain((level - 45.0f) / max(1.0f, fullScale - 45.0f), 0.0f, 1.0f);
+  return 0.82f + t * 0.18f;
 }
 
 void setup() {
@@ -228,7 +229,7 @@ void setup() {
   delay(500);
 
   Serial.println();
-  Serial.println("HJ|SOUND|boot|fw=0.3|mic=GPIO8|led=GPIO7");
+  Serial.println("HJ|SOUND|boot|fw=0.4|mic=GPIO8|led=GPIO7");
 
   pinMode(MIC_PIN, INPUT);
   analogReadResolution(12);
@@ -257,24 +258,23 @@ void loop() {
   float energy = constrain(mapDynamics(soundLevel, &band), 0.0f, 1.0f);
 
   float suddenRise = soundLevel - previousLevel;
-  if (suddenRise > BURST_AMOUNT || soundLevel > 220.0f) {
+  if (suddenRise > BURST_AMOUNT || soundLevel > 60.0f) {
     burstUntil = millis() + 95;
     hue = (hue + 210) % 1536;
   }
   previousLevel = soundLevel;
 
-  // Whisper drifts gently; loud events drive fast hue movement.
+  // Whisper drifts; ordinary voice moves; loud/peak runs quickly through color.
   uint16_t hueStep = 0;
   if (energy > 0.0f) {
-    hueStep = 1 + (uint16_t)(energy * 38.0f);
+    hueStep = 1 + (uint16_t)(energy * 44.0f);
   }
   hue = (hue + hueStep) % 1536;
 
   Rgb c1 = colorWheel(hue);
   Rgb c2 = colorWheel((hue + 500) % 1536);
 
-  // Idle is nearly dark. Whisper is a soft shimmer; louder bands scale smoothly.
-  float brightness = (energy <= 0.0f) ? 0.004f : (0.015f + energy * 0.985f);
+  float brightness = (energy <= 0.0f) ? 0.003f : (0.01f + energy * 0.99f);
   c1 = scaleColor(c1, brightness);
   c2 = scaleColor(c2, brightness);
 
