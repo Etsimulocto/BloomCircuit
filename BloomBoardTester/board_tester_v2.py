@@ -60,7 +60,7 @@ class App(tk.Tk):
         self.minsize(1000,700)
         self.running=False; self.flashed=False; self.selected=None
         self.pin_buttons={}; self.pin_status={}; self.records=[]
-        self._build(); self.after(250,self.refresh_ports)
+        self._build(); self.after(250,lambda:self.refresh_ports(reset=False))
 
     def _build(self):
         top=ttk.Frame(self,padding=10); top.pack(fill="x")
@@ -72,7 +72,7 @@ class App(tk.Tk):
         ttk.Label(controls,text="Port").pack(side="left")
         self.port=tk.StringVar(); self.ports=ttk.Combobox(controls,textvariable=self.port,width=20,state="readonly")
         self.ports.pack(side="left",padx=6)
-        ttk.Button(controls,text="Refresh",command=self.refresh_ports).pack(side="left")
+        ttk.Button(controls,text="Refresh / Reset",command=lambda:self.refresh_ports(reset=True)).pack(side="left")
         self.test_btn=ttk.Button(controls,text="FLASH + TEST ENTIRE BOARD",command=self.start_full); self.test_btn.pack(side="left",padx=12)
         self.bare=tk.BooleanVar(value=False)
         ttk.Checkbutton(controls,text="BARE BOARD: nothing connected except USB",variable=self.bare,command=self.update_drive_lock).pack(side="left",padx=8)
@@ -96,7 +96,21 @@ class App(tk.Tk):
         ttk.Label(meas,text="3V3:").grid(row=2,column=0); self.v33=tk.StringVar(); ttk.Entry(meas,textvariable=self.v33,width=8).grid(row=2,column=1)
         self.thermal=tk.BooleanVar(value=False); ttk.Checkbutton(meas,text="FLIR: no hotspot",variable=self.thermal).grid(row=3,column=0,columnspan=2,sticky="w")
 
-        pinarea=ttk.Frame(board); pinarea.pack(fill="both",expand=True)
+        # Scrollable pin panel so lower physical pins remain reachable on smaller windows.
+        pinwrap=ttk.Frame(board); pinwrap.pack(fill="both",expand=True)
+        self.pin_canvas=tk.Canvas(pinwrap,highlightthickness=0)
+        pin_scroll=ttk.Scrollbar(pinwrap,orient="vertical",command=self.pin_canvas.yview)
+        self.pin_canvas.configure(yscrollcommand=pin_scroll.set)
+        pin_scroll.pack(side="right",fill="y")
+        self.pin_canvas.pack(side="left",fill="both",expand=True)
+        pinarea=ttk.Frame(self.pin_canvas)
+        self.pin_window=self.pin_canvas.create_window((0,0),window=pinarea,anchor="nw")
+        pinarea.bind("<Configure>",lambda e:self.pin_canvas.configure(scrollregion=self.pin_canvas.bbox("all")))
+        self.pin_canvas.bind("<Configure>",lambda e:self.pin_canvas.itemconfigure(self.pin_window,width=e.width))
+        self.pin_canvas.bind_all("<MouseWheel>",self._mousewheel)
+        self.pin_canvas.bind_all("<Button-4>",lambda e:self.pin_canvas.yview_scroll(-1,"units"))
+        self.pin_canvas.bind_all("<Button-5>",lambda e:self.pin_canvas.yview_scroll(1,"units"))
+
         left=ttk.Frame(pinarea); left.pack(side="left",fill="both",expand=True,padx=(0,8))
         center=ttk.Label(pinarea,text="USB-C\n\nESP32-S3\nSUPER MINI\n\nCLICK A PIN\nFOR MANUAL TEST",anchor="center",relief="groove",padding=20); center.pack(side="left",fill="y",padx=8)
         right=ttk.Frame(pinarea); right.pack(side="left",fill="both",expand=True,padx=(8,0))
@@ -127,17 +141,62 @@ class App(tk.Tk):
         self.log=tk.Text(logf,height=18,wrap="word"); self.log.pack(fill="both",expand=True)
         bottom=ttk.Frame(details); bottom.pack(fill="x",pady=6); ttk.Button(bottom,text="Open Results",command=self.open_results).pack(side="right")
 
+    def _mousewheel(self,event):
+        delta=getattr(event,"delta",0)
+        if delta:
+            self.pin_canvas.yview_scroll(int(-delta/120),"units")
+
     def update_drive_lock(self):
         allow=self.bare.get() and self.selected is not None
         for c in ("H","L"):
             if c in self.action_buttons: self.action_buttons[c].configure(state="normal" if allow else "disabled")
 
-    def refresh_ports(self):
+    def _scan_ports(self):
         ports=[]
-        if serial: ports=[p.device for p in serial.tools.list_ports.comports() if "ttyACM" in p.device or "ttyUSB" in p.device]
-        if not ports: ports=sorted(str(p) for p in Path("/dev").glob("ttyACM*"))+sorted(str(p) for p in Path("/dev").glob("ttyUSB*"))
+        if serial:
+            ports=[p.device for p in serial.tools.list_ports.comports() if "ttyACM" in p.device or "ttyUSB" in p.device]
+        if not ports:
+            ports=sorted(str(p) for p in Path("/dev").glob("ttyACM*"))+sorted(str(p) for p in Path("/dev").glob("ttyUSB*"))
+        return ports
+
+    def refresh_ports(self,reset=False):
+        # Manual refresh is also a clean tester reset so a board can immediately be tested again.
+        if reset and self.running:
+            return
+        old=self.port.get()
+        ports=self._scan_ports()
         self.ports["values"]=ports
-        if ports and self.port.get() not in ports: self.port.set(ports[0])
+        if old in ports:
+            self.port.set(old)
+        elif ports:
+            self.port.set(ports[0])
+        else:
+            self.port.set("")
+
+        if reset:
+            self.flashed=False
+            self.records=[]
+            self.selected=None
+            self.bare.set(False)
+            self.result.set("READY")
+            self.progress.stop()
+            self.running=False
+            self.test_btn.configure(state="normal")
+            self.sel_title.set("Select a GPIO")
+            self.sel_caps.set("")
+            self.sel_result.set("")
+            self.v5.set("")
+            self.v33.set("")
+            self.thermal.set(False)
+            self.pin_canvas.yview_moveto(0)
+            for gpio,lab in self.pin_status.items():
+                lab.configure(text="NOT TESTED")
+            for gpio,b in self.pin_buttons.items():
+                b.configure(bg="SystemButtonFace")
+            self.action_buttons["A"].configure(state="normal")
+            self.action_buttons["C"].configure(state="normal")
+            self.update_drive_lock()
+            self._log("Refreshed / reset tester. Port: " + (self.port.get() or "none detected"))
 
     def select_pin(self,p):
         self.selected=p; caps=["DIGITAL"]
@@ -156,6 +215,11 @@ class App(tk.Tk):
     def start_full(self):
         if self.running:return
         if serial is None: messagebox.showerror("Missing pyserial","Install with: sudo apt install python3-serial"); return
+        # Re-scan just before every run in case USB re-enumerated to a new ttyACM number.
+        ports=self._scan_ports()
+        self.ports["values"]=ports
+        if self.port.get() not in ports:
+            self.port.set(ports[0] if ports else "")
         if not self.port.get(): messagebox.showerror("No board","Plug in the board and select its serial port."); return
         self.set_busy(True); self.result.set("TESTING"); self.log.delete("1.0","end"); threading.Thread(target=self.full_worker,daemon=True).start()
 
@@ -163,7 +227,12 @@ class App(tk.Tk):
         try:
             self.ui_log("Compiling diagnostic firmware..."); self.run_cmd(["arduino-cli","compile","--fqbn",FQBN,str(FW_DIR)])
             self.ui_log("Uploading..."); self.run_cmd(["arduino-cli","upload","-p",self.port.get(),"--fqbn",FQBN,str(FW_DIR)])
-            self.flashed=True; time.sleep(1.1); records=self.read_report("R",end_marker=True,timeout=18); self.records=records; self.save_report(records); self.after(0,lambda:self.apply_records(records))
+            self.flashed=True; time.sleep(1.1)
+            # USB CDC can re-enumerate after upload; refresh the selected port before reading.
+            ports=self._scan_ports()
+            if self.port.get() not in ports and ports:
+                self.port.set(ports[0])
+            records=self.read_report("R",end_marker=True,timeout=18); self.records=records; self.save_report(records); self.after(0,lambda:self.apply_records(records))
         except Exception as e: self.after(0,lambda:self.fail(str(e)))
 
     def run_cmd(self,cmd):
