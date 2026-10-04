@@ -1,4 +1,4 @@
-// HAPPY JARZ — proven-RGB single-LED sound color meter v2.8
+// HAPPY JARZ — proven-RGB single-LED sound color meter v2.9
 //
 // PROVEN ON BENCH
 //   raw byte 1 = RED
@@ -16,8 +16,8 @@
 //   10 ms peak-to-peak mic envelope
 //   loudest value across 120 ms bucket
 //   fixed 8-band mapping
-//   upward moves immediate at bucket boundary
-//   downward moves require two buckets (~240 ms)
+//   upward moves immediate
+//   fixed 240 ms peak hold, then direct fall to current target
 //
 // TELEMETRY
 //   One line per 120 ms bucket for the Pi meter app.
@@ -29,15 +29,14 @@ static constexpr uint8_t LED_DATA_PIN = 7;
 static constexpr uint8_t MIC_PIN = 8;
 static constexpr uint8_t LED_COUNT = 1;
 static constexpr unsigned long COLOR_BUCKET_MS = 120;
-static constexpr uint8_t FALL_CONFIRM_BUCKETS = 2;
+static constexpr unsigned long PEAK_HOLD_MS = 240;
 
 struct Rgb { uint8_t r, g, b; };
 
 static unsigned long bucketStart = 0;
+static unsigned long lastRiseTime = 0;
 static float bucketPeak = 0.0f;
 static uint8_t currentBand = 0;
-static uint8_t pendingLowerBand = 0;
-static uint8_t pendingLowerCount = 0;
 
 static const Rgb BAND_COLORS[8] = {
   { 0,  0, 72},  // blue
@@ -115,30 +114,22 @@ static uint8_t rawToBand(float raw) {
   return 7;
 }
 
-static void updateBandFromBucket(uint8_t targetBand) {
+static void updateBandFromBucket(uint8_t targetBand, unsigned long now) {
+  // Higher peaks show immediately and restart a short visual peak hold.
   if (targetBand > currentBand) {
     currentBand = targetBand;
-    pendingLowerBand = currentBand;
-    pendingLowerCount = 0;
+    lastRiseTime = now;
     return;
   }
 
   if (targetBand == currentBand) {
-    pendingLowerBand = currentBand;
-    pendingLowerCount = 0;
     return;
   }
 
-  if (targetBand != pendingLowerBand) {
-    pendingLowerBand = targetBand;
-    pendingLowerCount = 1;
-  } else if (pendingLowerCount < 255) {
-    ++pendingLowerCount;
-  }
-
-  if (pendingLowerCount >= FALL_CONFIRM_BUCKETS) {
+  // Do not require the same lower band repeatedly. After the fixed hold
+  // expires, fall directly to the current measured target.
+  if (now - lastRiseTime >= PEAK_HOLD_MS) {
     currentBand = targetBand;
-    pendingLowerCount = 0;
   }
 }
 
@@ -158,10 +149,9 @@ void setup() {
   writeRgb(0, 0, 72); delay(350);
 
   currentBand = 0;
-  pendingLowerBand = 0;
-  pendingLowerCount = 0;
   bucketPeak = 0.0f;
   bucketStart = millis();
+  lastRiseTime = 0;
   showBand(currentBand);
 }
 
@@ -175,7 +165,7 @@ void loop() {
 
     float measuredPeak = bucketPeak;
     uint8_t targetBand = rawToBand(measuredPeak);
-    updateBandFromBucket(targetBand);
+    updateBandFromBucket(targetBand, now);
     showBand(currentBand);
 
     Serial.printf("HJ|METER|RAW=%.0f|TARGET=%u|BAND=%u\n",
