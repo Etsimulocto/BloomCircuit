@@ -1,0 +1,15 @@
+{
+  "category": "Food / Nutrition",
+  "stats": [
+    "appetite_control",
+    "food_affinity",
+    "food_curiosity",
+    "healthy_eating",
+    "hydration_efficiency",
+    "metabolic_balance",
+    "nutrient_absorption",
+    "nutrition",
+    "taste_sensitivity",
+    "treat_affinity"
+  ]
+}
