@@ -6,25 +6,32 @@ A tiny real-time-ish ASCII dungeon crawler for the BLOOM SYSTEM controller. Move
 ## Screen model
 Coordinate convention is always X x Y = width x height.
 
-- Physical text layout target: 16 x 4 characters.
-- HUD: 4 x 4 on the left.
-- Map viewport: 12 x 4 on the right.
+### Current proven hardware layout
+
+The physical SSD1306 uses the full practical 21-character width with the current 6x12 font:
+
+- Total text width: 21 x 4
+- HUD: 7 x 4 on the left
+- Map viewport: 14 x 4 on the right
+- No BloomPetz side-art/gutters while DND is active
 
 Example:
 
 ```text
-HUD | MAP
-----+------------
-ACT |............
-HP  |............
-AC  |............
-LV  |............
+HUD....##############
+HUD....#............#
+HUD....#............#
+HUD....##############
 ```
+
+The HUD and map are concatenated directly. There is no separator column.
+
+The Raspberry Pi companion mirrors the same 21 logical columns. It must not expose a wider dungeon than the physical OLED. The Pi app measures its local monospaced font so all 21 columns fit its 192 px mirror without clipping.
 
 ## Controls
 - D-pad alone: free movement, one grid cell per press.
 - A: action modifier / action button.
-- D-pad + A: use equipped weapon in that direction at any time.
+- Current touch implementation emits one event per touch, so V0.1 directional attacks use: tap A, then tap a direction within about 700 ms.
 - B: menu / HUD menu / back.
 - Menu includes RETURN TO BLOOM SYSTEM.
 
@@ -32,7 +39,7 @@ Player symbol is `@`.
 Directional aim/attack indicators may temporarily use `^`, `>`, `v`, `<`.
 
 ## HUD behavior
-The HUD is 4 columns wide and 4 rows high.
+The current HUD is 7 columns wide and 4 rows high.
 
 ### Top HUD row
 Dedicated contextual action/event feed.
@@ -54,7 +61,7 @@ Examples of underlying messages:
 - +8 XP
 - FOUND KEY
 
-The visible HUD row is only 4 characters wide, so all rows support horizontal marquee scrolling. Do not abbreviate labels merely to fit the viewport.
+Rows support horizontal marquee scrolling. Do not abbreviate labels merely to fit the viewport.
 
 ### Bottom 3 HUD rows
 These are rotating status rows. They auto-scroll vertically through a larger status pool and each individual row can also scroll horizontally.
@@ -80,13 +87,15 @@ Menus also prefer full words and numbers over abbreviations.
 - A selects.
 - B backs out.
 
-Core menu categories:
-- Inventory
+Current implemented menu categories:
 - Character
-- Equipment
-- Quests
+- Inventory
 - Symbols / Glossary
 - System Menu
+
+Planned categories may later include:
+- Equipment
+- Quests
 
 ## Movement and interaction model
 The world is not turn-based on every empty tile.
@@ -107,7 +116,7 @@ Examples:
 The map remains visible while the HUD narrates the event.
 
 ## Weapons
-Weapons can be used at any time with D-pad direction + A.
+Weapons can be used at any time with directional input plus A behavior.
 
 Weapons should differ by grid behavior, not only damage values.
 
@@ -202,8 +211,29 @@ Core stats can begin with:
 
 V0.1 may use a smaller subset while systems are proven.
 
+## Current playable hardware slice
+
+The following is already working on the ESP32-S3 hardware:
+
+- 14 x 4 map viewport
+- 7 x 4 scrolling HUD
+- `@` player
+- free D-pad movement
+- tap A then direction within about 700 ms for directional attack
+- collision-triggered rolls
+- independently timed Rat / Goblin / Skeleton movement
+- Health / Strength / Dexterity / Armor Class / Experience / Gold / Level HUD data
+- Iron Sword starter weapon
+- Chest, Gold, Potion, Door, Trap interactions
+- Character / Inventory / Symbols / System Menu
+- full-width physical OLED rendering
+- Raspberry Pi 21-column mirror/controller
+- return to BLOOM SYSTEM
+
+This is still a hardware proof slice rather than the finished game. Save/load, equipment swapping, procedural room generation, expanded items, classes, quests, and long-term persistence remain future work.
+
 ## World structure
-The dungeon should be procedurally generated and effectively infinite without storing a giant world map.
+The dungeon should become procedurally generated and effectively infinite without storing a giant world map.
 
 Room generation should be reproducible from values such as:
 - world seed
@@ -245,26 +275,24 @@ DND can eventually use real date/time for:
 - daily heal/reward
 - date-seeded rooms/events
 
-## V0.1 playable scope
-Keep the first playable build intentionally small:
+## Display ownership contract
+DND owns the full OLED while active.
 
-- 12 x 4 map viewport
-- 4 x 4 scrolling HUD
-- `@` player
-- free D-pad movement
-- directional A attacks
-- collision-triggered rolls
-- independently timed enemy movement
-- 1 player class/build
-- Health / Strength / Dexterity / Armor Class / Experience
-- Rat, Goblin, Skeleton
-- Sword, Dagger, Spear
-- Chest, Gold, Potion, Key, Door, Trap
-- one simple generated dungeon biome
-- inventory
-- equipment
+Background BloomPetz services must not repaint the display during DND. In particular, the decorative side-art refresh previously repainted the shared BloomPetz screen buffer every ~120 ms and caused DND/BLOOM SYSTEM flicker. That repaint path is now gated off while DND is active.
+
+DND's renderer also updates the shared mirror rows so the Pi companion receives the current game frame.
+
+## V0.1 next scope
+Build outward from the proven hardware loop:
+
+- preserve 7 HUD + 14 map geometry
+- procedural rooms
+- inventory expansion
+- equipment swapping
 - save/load
-- symbol glossary
-- return to BLOOM SYSTEM
+- symbol registry cleanup and locking
+- additional enemies/items
+- one simple generated dungeon biome
+- room-to-room traversal
 
-Build this first. Expand classes, spells, crafting, factions, companions, advanced loot, idle expeditions, and persistent world events only after the core movement/combat loop feels good on hardware.
+Expand classes, spells, crafting, factions, companions, advanced loot, idle expeditions, and persistent world events only after the core movement/combat loop remains solid on hardware.
