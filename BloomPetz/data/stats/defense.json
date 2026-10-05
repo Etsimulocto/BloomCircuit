@@ -1,0 +1,15 @@
+{
+  "category": "Defense",
+  "stats": [
+    "armor",
+    "cold_resistance",
+    "damage_resistance",
+    "fatigue_resistance",
+    "heat_resistance",
+    "illness_resistance",
+    "impact_resistance",
+    "pain_tolerance",
+    "stress_resistance",
+    "toughness"
+  ]
+}
