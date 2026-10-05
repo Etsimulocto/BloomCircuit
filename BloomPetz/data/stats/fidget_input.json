@@ -1,0 +1,15 @@
+{
+  "category": "Fidget / Input Personality",
+  "stats": [
+    "down_affinity",
+    "input_accuracy",
+    "input_confidence",
+    "left_affinity",
+    "rapid_tap_affinity",
+    "rhythm_affinity",
+    "right_affinity",
+    "slow_tap_affinity",
+    "tap_affinity",
+    "up_affinity"
+  ]
+}
