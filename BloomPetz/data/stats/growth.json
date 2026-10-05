@@ -1,4 +1,15 @@
 {
-  "_note": "Editable definitions for age, growth, forms, long-term development, and bloom/evolution progression.",
-  "stats": {}
+  "category": "Growth / Evolution",
+  "stats": [
+    "adaptation",
+    "development",
+    "evolution_progress",
+    "form_affinity",
+    "growth",
+    "life_experience",
+    "maturity",
+    "potential",
+    "specialization",
+    "trait_stability"
+  ]
 }
