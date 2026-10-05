@@ -110,19 +110,19 @@ class BloomPetzMini(tk.Tk):
         self.title_label.bind("<ButtonPress-1>", self._drag_start)
         self.title_label.bind("<B1-Motion>", self._drag_move)
 
-        tk.Button(
-            self.header, text="×", command=self.close_app,
-            bg="#151515", fg="#dddddd", activebackground="#333333",
-            activeforeground="#ffffff", relief="flat", bd=0, width=3,
-            font=("DejaVu Sans", 12, "bold"), takefocus=False
-        ).pack(side="right")
+        close = tk.Label(
+            self.header, text="×", bg="#151515", fg="#dddddd",
+            width=3, font=("DejaVu Sans", 12, "bold"), cursor="hand2"
+        )
+        close.pack(side="right")
+        close.bind("<Button-1>", self._close_click)
 
-        tk.Button(
-            self.header, text="›", command=lambda: self.change_color(1),
-            bg="#151515", fg="#dddddd", activebackground="#333333",
-            activeforeground="#ffffff", relief="flat", bd=0, width=2,
-            font=("DejaVu Sans", 12, "bold"), takefocus=False
-        ).pack(side="right")
+        self.next_color = tk.Label(
+            self.header, text="›", bg="#151515", fg="#dddddd",
+            width=2, font=("DejaVu Sans", 12, "bold"), cursor="hand2"
+        )
+        self.next_color.pack(side="right")
+        self.next_color.bind("<Button-1>", lambda e: self._color_click(1))
 
         self.swatch = tk.Label(
             self.header, text="●", bg="#151515", fg=PALETTE[self.color_index],
@@ -130,12 +130,12 @@ class BloomPetzMini(tk.Tk):
         )
         self.swatch.pack(side="right")
 
-        tk.Button(
-            self.header, text="‹", command=lambda: self.change_color(-1),
-            bg="#151515", fg="#dddddd", activebackground="#333333",
-            activeforeground="#ffffff", relief="flat", bd=0, width=2,
-            font=("DejaVu Sans", 12, "bold"), takefocus=False
-        ).pack(side="right")
+        self.prev_color = tk.Label(
+            self.header, text="‹", bg="#151515", fg="#dddddd",
+            width=2, font=("DejaVu Sans", 12, "bold"), cursor="hand2"
+        )
+        self.prev_color.pack(side="right")
+        self.prev_color.bind("<Button-1>", lambda e: self._color_click(-1))
 
         self.screen = tk.Frame(self, bg="#000000", width=SCREEN_W, height=SCREEN_H)
         self.screen.pack(fill="both", expand=True)
@@ -178,6 +178,14 @@ class BloomPetzMini(tk.Tk):
     def _drag_move(self, event):
         self.geometry(f"+{event.x_root - self._drag_x}+{event.y_root - self._drag_y}")
 
+    def _close_click(self, _event=None):
+        self.close_app()
+        return "break"
+
+    def _color_click(self, delta: int):
+        self.change_color(delta)
+        return "break"
+
     def _load_color_index(self) -> int:
         try:
             with open(CONFIG_PATH, "r", encoding="utf-8") as f:
@@ -200,7 +208,7 @@ class BloomPetzMini(tk.Tk):
         for label in self.line_labels:
             label.configure(fg=color)
         self._save_color_index()
-        self.focus_force()
+        self.after_idle(self.focus_force)
 
     def _set_connected(self, connected: bool):
         self.title_label.configure(
