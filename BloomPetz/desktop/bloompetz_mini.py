@@ -8,10 +8,11 @@ UI contract:
 - no hold/repeat behavior: one firmware key event per physical key press
 - only visible app controls are previous/next screen color and Close
 
-Serial behavior intentionally follows the proven HAPPY JARZ desktop path:
+Serial behavior follows the proven HAPPY JARZ desktop path:
 - identify the controller by BP protocol, never by a hard-coded ttyACM number
 - open USB CDC with DTR/RTS false so connecting does not intentionally reset it
 - wait for a USB port to be stable before probing
+- probe a stable device ONCE per physical plug-in session
 - do not grab serial while arduino-cli/esptool is running
 - tolerate unplug/replug and reconnect while the window stays open
 """
@@ -37,8 +38,7 @@ except ImportError as exc:
 BAUD = 115200
 POLL_SECONDS = 0.25
 STABLE_SECONDS = 2.0
-HANDSHAKE_TIMEOUT = 1.0
-RETRY_SECONDS = 1.0
+HANDSHAKE_TIMEOUT = 1.5
 CONFIG_PATH = os.path.expanduser("~/.config/bloompetz/mini.json")
 
 SCREEN_W = 384
@@ -65,7 +65,6 @@ def serial_ports() -> list[str]:
 
 
 def make_palette() -> list[str]:
-    """128 bright OLED-like foreground colors."""
     out = []
     for i in range(128):
         h = i / 128.0
@@ -92,7 +91,7 @@ class BloomPetzMini(tk.Tk):
         self.ser_lock = threading.Lock()
         self.connected_port: str | None = None
         self.first_seen: dict[str, float] = {}
-        self.last_probe: dict[str, float] = {}
+        self.probed: set[str] = set()
         self.key_down: set[str] = set()
         self.screen_lines = [" " * 16 for _ in range(4)]
         self.color_index = self._load_color_index()
@@ -115,71 +114,40 @@ class BloomPetzMini(tk.Tk):
         self.header.bind("<B1-Motion>", self._drag_move)
 
         self.title_label = tk.Label(
-            self.header,
-            text="BloomPetz",
-            bg="#151515",
-            fg="#b8b8b8",
-            font=("DejaVu Sans", 9, "bold"),
+            self.header, text="BloomPetz ·", bg="#151515", fg="#777777",
+            font=("DejaVu Sans", 9, "bold")
         )
         self.title_label.pack(side="left", padx=(9, 4))
         self.title_label.bind("<ButtonPress-1>", self._drag_start)
         self.title_label.bind("<B1-Motion>", self._drag_move)
 
         close = tk.Button(
-            self.header,
-            text="×",
-            command=self.close_app,
-            bg="#151515",
-            fg="#dddddd",
-            activebackground="#333333",
-            activeforeground="#ffffff",
-            relief="flat",
-            bd=0,
-            width=3,
-            font=("DejaVu Sans", 12, "bold"),
-            takefocus=False,
+            self.header, text="×", command=self.close_app,
+            bg="#151515", fg="#dddddd", activebackground="#333333",
+            activeforeground="#ffffff", relief="flat", bd=0, width=3,
+            font=("DejaVu Sans", 12, "bold"), takefocus=False
         )
         close.pack(side="right")
 
         next_color = tk.Button(
-            self.header,
-            text="›",
-            command=lambda: self.change_color(1),
-            bg="#151515",
-            fg="#dddddd",
-            activebackground="#333333",
-            activeforeground="#ffffff",
-            relief="flat",
-            bd=0,
-            width=2,
-            font=("DejaVu Sans", 12, "bold"),
-            takefocus=False,
+            self.header, text="›", command=lambda: self.change_color(1),
+            bg="#151515", fg="#dddddd", activebackground="#333333",
+            activeforeground="#ffffff", relief="flat", bd=0, width=2,
+            font=("DejaVu Sans", 12, "bold"), takefocus=False
         )
         next_color.pack(side="right")
 
         self.swatch = tk.Label(
-            self.header,
-            text="●",
-            bg="#151515",
-            fg=PALETTE[self.color_index],
-            font=("DejaVu Sans", 11),
-            width=2,
+            self.header, text="●", bg="#151515", fg=PALETTE[self.color_index],
+            font=("DejaVu Sans", 11), width=2
         )
         self.swatch.pack(side="right")
 
         prev_color = tk.Button(
-            self.header,
-            text="‹",
-            command=lambda: self.change_color(-1),
-            bg="#151515",
-            fg="#dddddd",
-            activebackground="#333333",
-            activeforeground="#ffffff",
-            relief="flat",
-            bd=0,
-            width=2,
-            font=("DejaVu Sans", 12, "bold"),
-            takefocus=False,
+            self.header, text="‹", command=lambda: self.change_color(-1),
+            bg="#151515", fg="#dddddd", activebackground="#333333",
+            activeforeground="#ffffff", relief="flat", bd=0, width=2,
+            font=("DejaVu Sans", 12, "bold"), takefocus=False
         )
         prev_color.pack(side="right")
 
@@ -190,36 +158,23 @@ class BloomPetzMini(tk.Tk):
         self.line_labels: list[tk.Label] = []
         for i in range(4):
             label = tk.Label(
-                self.screen,
-                text=self.screen_lines[i],
-                bg="#000000",
-                fg=PALETTE[self.color_index],
-                font=FONT,
-                anchor="center",
-                justify="center",
-                padx=0,
-                pady=0,
+                self.screen, text=self.screen_lines[i], bg="#000000",
+                fg=PALETTE[self.color_index], font=FONT,
+                anchor="center", justify="center", padx=0, pady=0
             )
             label.place(relx=0.5, rely=(i + 0.5) / 4.0, anchor="center")
             self.line_labels.append(label)
 
     def _bind_keys(self):
         mapping = {
-            "Up": "UP",
-            "Down": "DOWN",
-            "Left": "LEFT",
-            "Right": "RIGHT",
-            "a": "A",
-            "A": "A",
-            "b": "B",
-            "B": "B",
+            "Up": "UP", "Down": "DOWN", "Left": "LEFT", "Right": "RIGHT",
+            "a": "A", "A": "A", "b": "B", "B": "B",
         }
         for keysym, bpkey in mapping.items():
             self.bind_all(f"<KeyPress-{keysym}>", lambda e, k=bpkey: self._key_press(k))
             self.bind_all(f"<KeyRelease-{keysym}>", lambda e, k=bpkey: self._key_release(k))
 
     def _key_press(self, key: str):
-        # Ignore OS key-repeat; BloomPetz has no hold behaviors.
         if key in self.key_down:
             return "break"
         self.key_down.add(key)
@@ -240,8 +195,7 @@ class BloomPetzMini(tk.Tk):
     def _load_color_index(self) -> int:
         try:
             with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-                value = int(json.load(f).get("color_index", 42))
-                return value % 128
+                return int(json.load(f).get("color_index", 42)) % 128
         except Exception:
             return 42
 
@@ -265,7 +219,7 @@ class BloomPetzMini(tk.Tk):
     def _set_connected(self, connected: bool):
         self.title_label.configure(
             text="BloomPetz" if connected else "BloomPetz ·",
-            fg="#d8d8d8" if connected else "#777777",
+            fg="#d8d8d8" if connected else "#777777"
         )
 
     def _open_candidate(self, port: str) -> serial.Serial | None:
@@ -281,23 +235,40 @@ class BloomPetzMini(tk.Tk):
             s.open()
             s.dtr = False
             s.rts = False
+
+            # Give native USB CDC a moment without toggling modem control lines.
+            time.sleep(0.15)
             try:
                 s.reset_input_buffer()
             except Exception:
                 pass
 
-            s.write(b"HELLO\n")
+            # Ask for identity AND a fresh screen. Accept any unique BloomPetz
+            # protocol record so one missed HELLO reply cannot trigger probe loops.
+            s.write(b"HELLO\nGET SCREEN\n")
             s.flush()
+
+            saw_bloompetz = False
             deadline = time.monotonic() + HANDSHAKE_TIMEOUT
             while time.monotonic() < deadline:
                 raw = s.readline()
                 if not raw:
                     continue
                 line = raw.decode("utf-8", errors="replace").rstrip("\r\n")
-                if line:
-                    self.rx.put(line)
-                if line.startswith("BP|IDENTITY|product=BloomPetz|"):
+                if not line:
+                    continue
+                self.rx.put(line)
+                if (
+                    line.startswith("BP|IDENTITY|product=BloomPetz|")
+                    or line.startswith("BP|BOOT|")
+                    or line.startswith("BP|SCREEN|")
+                ):
+                    saw_bloompetz = True
+                if saw_bloompetz and line.startswith("BP|SCREEN|"):
                     return s
+
+            if saw_bloompetz:
+                return s
             s.close()
             return None
         except Exception:
@@ -315,6 +286,8 @@ class BloomPetzMini(tk.Tk):
                     raw = self.ser.readline()
                     if raw:
                         self.rx.put(raw.decode("utf-8", errors="replace").rstrip("\r\n"))
+                    else:
+                        time.sleep(0.01)
                 except Exception:
                     self._drop_serial()
                 continue
@@ -322,21 +295,24 @@ class BloomPetzMini(tk.Tk):
             now = time.monotonic()
             ports = set(serial_ports())
 
+            # A real physical unplug is what rearms a port for future probing.
             for port in list(self.first_seen):
                 if port not in ports:
                     self.first_seen.pop(port, None)
-                    self.last_probe.pop(port, None)
+                    self.probed.discard(port)
 
             for port in ports:
                 self.first_seen.setdefault(port, now)
 
             if not programmer_running():
                 for port in sorted(ports):
+                    if port in self.probed:
+                        continue
                     if now - self.first_seen.get(port, now) < STABLE_SECONDS:
                         continue
-                    if now - self.last_probe.get(port, 0.0) < RETRY_SECONDS:
-                        continue
-                    self.last_probe[port] = now
+
+                    # EXACT Happy Jarz rule: probe once this plug-in session.
+                    self.probed.add(port)
                     s = self._open_candidate(port)
                     if s is None:
                         continue
@@ -379,8 +355,7 @@ class BloomPetzMini(tk.Tk):
     def _drain_rx(self):
         try:
             while True:
-                line = self.rx.get_nowait()
-                self._handle_line(line)
+                self._handle_line(self.rx.get_nowait())
         except queue.Empty:
             pass
         if not self.stop_event.is_set():
