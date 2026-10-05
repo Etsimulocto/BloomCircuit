@@ -33,6 +33,17 @@ The same six logical inputs are exposed in the Pi Mini controller as:
 
 Keyboard control in the Pi Mini uses the arrow keys plus A and B.
 
+The tested external 8BitDo controller mapping is:
+
+```text
+D-pad LEFT/RIGHT = Linux joystick axis 6
+D-pad UP/DOWN    = Linux joystick axis 7
+A                = button 0
+B                = button 1
+```
+
+The Pi Mini converts these to the same `KEY UP/DOWN/LEFT/RIGHT/A/B` serial commands used by the other controller paths.
+
 ## BLOOM SYSTEM launcher
 
 Boot now enters a shared launcher instead of going directly into BloomPetz.
@@ -45,6 +56,12 @@ DND
 ```
 
 The launcher also shows the host-supplied local clock/date. The Pi companion sends the current Unix time and UTC offset over the existing USB serial connection on connect and periodically afterward. No Wi-Fi credentials are required for time sync.
+
+Firmware command format:
+
+```text
+SET HOSTTIME <unix_epoch_seconds> <utc_offset_minutes>
+```
 
 BloomPetz can return to BLOOM SYSTEM from its menu, and DND can return from its own menu.
 
@@ -161,11 +178,33 @@ Current known-good behavior:
 - DND hides BloomPetz side-art lanes and the pet-name header
 - six clickable controller buttons: `↑ ↓ ← → A B`
 - keyboard controls: arrow keys + A/B
+- tested raw 8BitDo gamepad input via `/dev/input/js0`
 - controller colors follow the app's two-color theme
 - host clock is sent to firmware on connect and periodically while connected
 - physical controls remain primary
 
 Important display rule: the Pi companion mirrors the same logical 21 DND columns shown on the physical OLED. It should not expose a wider dungeon viewport than the hardware.
+
+Important implementation rule: the live `_handle_line()` must actually use `MIRROR_COLS = 21` and call the DND detection / mode-switch path for incoming `BP|SCREEN` frames. Merely having `_looks_like_dnd()` and `_set_dnd_mode()` helper functions somewhere in the file is not enough.
+
+## Pi serial-open rule: no second boot
+
+The ESP32-S3 previously appeared to boot twice when the Pi Mini launched. Hardware testing showed the sequence was:
+
+1. ESP32 boots once normally.
+2. Mini opens the USB CDC serial device.
+3. USB briefly disconnects/re-enumerates.
+4. ESP32 boots again.
+
+This was not two firmware images. The second boot was tied to serial attach/control-line behavior.
+
+The current proven Pi-side open pattern follows the working HAPPY JARZ controller and avoids explicit DTR/RTS manipulation:
+
+```python
+serial.Serial(port, BAUD, timeout=0.25, write_timeout=0.25)
+```
+
+Do not reintroduce manual `dtr` / `rts` toggling unless retested on the real ESP32-S3. With the current pattern, hardware testing confirmed: Mini opens, gamepad works, and there is no second boot.
 
 ## Display ownership rule
 
@@ -174,6 +213,36 @@ Only the active app/mode should repaint the OLED.
 This became important when the old BloomPetz side-art refresh service continued repainting shared `screenLines[]` while DND was using its own full-width renderer. The result was a visible DND/BLOOM SYSTEM strobe. The current architecture pauses that BloomPetz repaint path while DND owns the OLED.
 
 DND's full-width renderer also updates the shared mirror lines so the Pi app receives current DND frames.
+
+## Current Pi recovery / deployment rule
+
+The October 2026 recovery exposed a mixed-generation Mini file: current V3 helpers existed while older methods remained active, and several class methods had been deleted by earlier patching.
+
+Do not infer app generation from a few marker functions. Verify the active code path.
+
+Known-good verification points:
+
+```text
+MIRROR_COLS = 21
+_set_dnd_mode(...)
+_looks_like_dnd(...)
+_handle_line(...) uses 21 columns and invokes DND mode detection
+raw 8BitDo reader is active
+serial open does not manually toggle DTR/RTS
+host-time path sends SET HOSTTIME
+```
+
+If the Mini becomes structurally damaged, prefer rebuilding from the consolidated current source/tool and then reapplying the proven no-reset/gamepad fixes rather than restoring missing methods one at a time.
+
+Known authoritative Pi paths:
+
+```text
+~/BloomCircuit/BloomPetz/desktop/bloompetz_mini.py
+~/BloomCircuit/BloomPetz/desktop/bloompetz_plug_watch.py
+~/.config/autostart/bloompetz-plug-watch.desktop
+```
+
+The watcher launches the Mini from its own directory. An October 2026 audit confirmed one watcher process, one Mini process, and one Mini file under the user's home directory; the stale DND side-art issue was an active-method mismatch, not a hidden secondary copy.
 
 ## Known-good flashing target
 
@@ -199,6 +268,7 @@ Before upload, stop BloomPetz Mini so it does not own the serial device:
 
 ```bash
 pkill -f '[b]loompetz_mini.py' 2>/dev/null || true
+pkill -f '[b]loompetz_plug_watch.py' 2>/dev/null || true
 ```
 
 There is one physical ESP32 USB device. Linux may re-enumerate that same board as `/dev/ttyACM0` or `/dev/ttyACM1` after a reset. Resolve the currently existing device node instead of assuming one fixed number:
@@ -214,4 +284,21 @@ arduino-cli upload \
   bloompetz_v0_1
 ```
 
-Important: compile and upload are separate operations. A successful compile alone does not change the firmware currently running on the ESP32. After firmware uploads, restart the Pi companion if needed because flashing/resetting ends the previous serial session.
+Important: compile and upload are separate operations. A successful compile alone does not change the firmware currently running on the ESP32. After firmware uploads, restart the Pi companion because flashing/resetting ends the previous serial session.
+
+## Current bench acceptance test
+
+After a Pi rebuild or firmware deployment, verify the whole stack together:
+
+```text
+1. ESP32 boots once.
+2. Pi Mini opens automatically.
+3. Opening Mini does not cause a second ESP32 boot.
+4. Physical copper controls work.
+5. Keyboard controls work.
+6. 8BitDo D-pad and A/B work.
+7. BLOOM SYSTEM / BloomPetz use normal Mini chrome.
+8. DND uses the full 21-column mirror and hides side art/header.
+9. Pi DND layout matches the physical OLED logical frame.
+10. Host time/date appears and stays synchronized.
+```
