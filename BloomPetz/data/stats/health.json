@@ -1,4 +1,15 @@
 {
-  "_note": "Editable definitions for health/care state. Avoid punitive permanent-death mechanics.",
-  "stats": {}
+  "category": "Health",
+  "stats": [
+    "body_stability",
+    "circulation",
+    "digestion",
+    "healing",
+    "health",
+    "immune_strength",
+    "longevity",
+    "respiratory_health",
+    "sleep_quality",
+    "wellness"
+  ]
 }
