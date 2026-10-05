@@ -38,6 +38,10 @@ def main() -> None:
     creator = r'''
 
 // BLOOMPETZ_ASCII_CREATOR_V1
+// Explicit declarations: do not depend on Arduino's generated prototypes.
+static void drawHome();
+static void printStatus();
+
 // Printable ASCII only: codes 32 (space) through 126 (~). This preserves the
 // existing compact OLED font while still exposing every standard printable
 // character to the six physical controls.
