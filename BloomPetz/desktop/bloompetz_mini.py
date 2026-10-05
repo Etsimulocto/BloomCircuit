@@ -29,11 +29,11 @@ DISCONNECT_GRACE_SEC = 3.0
 CONFIG_PATH = os.path.expanduser("~/.config/bloompetz/mini.json")
 ASSIGNED_PORT = os.environ.get("BLOOMPETZ_PORT", "").strip()
 
-# Exactly 50% of the previous 384 x (192+30) window.
 SCREEN_W = 192
 SCREEN_H = 96
-HEADER_H = 15
+HEADER_H = 18
 FONT = ("DejaVu Sans Mono", 10, "bold")
+HEADER_FONT = ("DejaVu Sans", 7, "bold")
 
 
 def programmer_running() -> bool:
@@ -80,6 +80,7 @@ class BloomPetzMini(tk.Tk):
         self.connected_port: str | None = None
         self.key_down: set[str] = set()
         self.screen_lines = [" " * 16 for _ in range(4)]
+        self.pet_name = "NO PET"
         self.color_index = self._load_color_index()
         self._drag_x = self._drag_y = 0
 
@@ -98,49 +99,62 @@ class BloomPetzMini(tk.Tk):
         self.header.bind("<B1-Motion>", self._drag_move)
 
         self.title_label = tk.Label(
-            self.header, text="BP ·", bg="#151515", fg="#777777",
-            font=("DejaVu Sans", 6, "bold")
+            self.header, text=self.pet_name, bg="#151515", fg="#888888",
+            font=HEADER_FONT, anchor="w"
         )
         self.title_label.pack(side="left", padx=(4, 1))
         self.title_label.bind("<ButtonPress-1>", self._drag_start)
         self.title_label.bind("<B1-Motion>", self._drag_move)
 
-        close = tk.Label(self.header, text="×", bg="#151515", fg="#dddddd",
-                         width=2, font=("DejaVu Sans", 7, "bold"), cursor="hand2")
+        close = tk.Label(
+            self.header, text="×", bg="#151515", fg="#dddddd",
+            width=2, font=("DejaVu Sans", 9, "bold"), cursor="hand2"
+        )
         close.pack(side="right")
         close.bind("<Button-1>", self._close_click)
 
-        self.next_color = tk.Label(self.header, text="›", bg="#151515", fg="#dddddd",
-                                   width=2, font=("DejaVu Sans", 7, "bold"), cursor="hand2")
+        self.next_color = tk.Label(
+            self.header, text="▶", bg="#151515", fg="#eeeeee",
+            width=2, font=("DejaVu Sans", 8, "bold"), cursor="hand2"
+        )
         self.next_color.pack(side="right")
-        self.next_color.bind("<Button-1>", lambda e: self._color_click(1))
+        self.next_color.bind("<Button-1>", lambda _e: self._color_click(1))
 
-        self.swatch = tk.Label(self.header, text="●", bg="#151515",
-                               fg=PALETTE[self.color_index], font=("DejaVu Sans", 6), width=2)
-        self.swatch.pack(side="right")
+        self.color_label = tk.Label(
+            self.header, text="COLOR", bg="#151515", fg=PALETTE[self.color_index],
+            width=5, font=("DejaVu Sans", 7, "bold"), cursor="hand2"
+        )
+        self.color_label.pack(side="right")
+        self.color_label.bind("<Button-1>", lambda _e: self._color_click(1))
 
-        self.prev_color = tk.Label(self.header, text="‹", bg="#151515", fg="#dddddd",
-                                   width=2, font=("DejaVu Sans", 7, "bold"), cursor="hand2")
+        self.prev_color = tk.Label(
+            self.header, text="◀", bg="#151515", fg="#eeeeee",
+            width=2, font=("DejaVu Sans", 8, "bold"), cursor="hand2"
+        )
         self.prev_color.pack(side="right")
-        self.prev_color.bind("<Button-1>", lambda e: self._color_click(-1))
+        self.prev_color.bind("<Button-1>", lambda _e: self._color_click(-1))
 
         self.screen = tk.Frame(self, bg="#000000", width=SCREEN_W, height=SCREEN_H)
         self.screen.pack(fill="both", expand=True)
         self.screen.pack_propagate(False)
         self.line_labels = []
         for i in range(4):
-            label = tk.Label(self.screen, text=self.screen_lines[i], bg="#000000",
-                             fg=PALETTE[self.color_index], font=FONT,
-                             anchor="center", justify="center", padx=0, pady=0)
+            label = tk.Label(
+                self.screen, text=self.screen_lines[i], bg="#000000",
+                fg=PALETTE[self.color_index], font=FONT,
+                anchor="center", justify="center", padx=0, pady=0
+            )
             label.place(relx=0.5, rely=(i + 0.5) / 4.0, anchor="center")
             self.line_labels.append(label)
 
     def _bind_keys(self):
-        mapping = {"Up":"UP", "Down":"DOWN", "Left":"LEFT", "Right":"RIGHT",
-                   "a":"A", "A":"A", "b":"B", "B":"B"}
+        mapping = {
+            "Up":"UP", "Down":"DOWN", "Left":"LEFT", "Right":"RIGHT",
+            "a":"A", "A":"A", "b":"B", "B":"B"
+        }
         for keysym, bpkey in mapping.items():
-            self.bind_all(f"<KeyPress-{keysym}>", lambda e, k=bpkey: self._key_press(k))
-            self.bind_all(f"<KeyRelease-{keysym}>", lambda e, k=bpkey: self._key_release(k))
+            self.bind_all(f"<KeyPress-{keysym}>", lambda _e, k=bpkey: self._key_press(k))
+            self.bind_all(f"<KeyRelease-{keysym}>", lambda _e, k=bpkey: self._key_release(k))
 
     def _key_press(self, key: str):
         if key in self.key_down:
@@ -167,7 +181,7 @@ class BloomPetzMini(tk.Tk):
     def _color_click(self, delta: int):
         self.color_index = (self.color_index + delta) % 128
         color = PALETTE[self.color_index]
-        self.swatch.configure(fg=color)
+        self.color_label.configure(fg=color)
         for label in self.line_labels:
             label.configure(fg=color)
         self._save_color_index()
@@ -190,8 +204,10 @@ class BloomPetzMini(tk.Tk):
             pass
 
     def _set_connected(self, connected: bool):
-        self.title_label.configure(text="BP" if connected else "BP ·",
-                                   fg="#d8d8d8" if connected else "#777777")
+        self.title_label.configure(
+            text=self.pet_name,
+            fg="#d8d8d8" if connected else "#777777"
+        )
 
     def _choose_port(self) -> str | None:
         if ASSIGNED_PORT:
@@ -245,6 +261,7 @@ class BloomPetzMini(tk.Tk):
                 time.sleep(0.15)
                 self.send("HELLO")
                 self.send("GET SCREEN")
+                self.send("GET STATUS")
                 continue
 
             port = self.connected_port
@@ -285,6 +302,23 @@ class BloomPetzMini(tk.Tk):
         except Exception:
             pass
 
+    @staticmethod
+    def _fields(line: str) -> dict[str, str]:
+        out = {}
+        for part in line.split("|")[2:]:
+            if "=" in part:
+                k, v = part.split("=", 1)
+                out[k] = v
+        return out
+
+    def _update_pet_name_from_screen(self):
+        line2 = self.screen_lines[1].strip()
+        if not line2 or line2.lower().startswith("slot "):
+            self.pet_name = "NO PET"
+        else:
+            self.pet_name = line2.split()[0][:12]
+        self.title_label.configure(text=self.pet_name)
+
     def _drain_rx(self):
         try:
             while True:
@@ -302,20 +336,27 @@ class BloomPetzMini(tk.Tk):
             self.after(25, self._drain_rx)
 
     def _handle_line(self, line: str):
+        if line.startswith("BP|STATUS|"):
+            fields = self._fields(line)
+            name = fields.get("name", "").strip()
+            occupied = fields.get("occupied", "0") == "1"
+            self.pet_name = name[:12] if occupied and name else "NO PET"
+            self.title_label.configure(text=self.pet_name)
+            return
+
         if line.startswith("BP|BOOT|") or line.startswith("BP|IDENTITY|"):
             self._set_connected(True)
             return
+
         if not line.startswith("BP|SCREEN|"):
             return
-        fields = {}
-        for part in line.split("|")[2:]:
-            if "=" in part:
-                k, v = part.split("=", 1)
-                fields[k] = v
+
+        fields = self._fields(line)
         for i in range(4):
             text = fields.get(str(i+1), self.screen_lines[i])[:16].ljust(16)
             self.screen_lines[i] = text
             self.line_labels[i].configure(text=text)
+        self._update_pet_name_from_screen()
 
     def close_app(self):
         if not self.running:
