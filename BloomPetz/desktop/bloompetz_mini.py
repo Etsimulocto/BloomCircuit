@@ -1,17 +1,21 @@
 #!/usr/bin/env python3
 """BloomPetz Mini — half-size OLED mirror + keyboard controller.
 
-App-only color selector: changes this window's text color only.
+App-only themes:
+- 16 clearly distinct colors
+- each color click chooses a new random text/background pair
+- physical OLED is never changed
+
 Lifecycle follows HAPPY JARZ: open one assigned USB port, keep it, and close
 this app after the controller is physically gone for the disconnect grace.
 """
 from __future__ import annotations
 
-import colorsys
 import glob
 import json
 import os
 import queue
+import random
 import subprocess
 import threading
 import time
@@ -35,6 +39,27 @@ HEADER_H = 18
 FONT = ("DejaVu Sans Mono", 10, "bold")
 HEADER_FONT = ("DejaVu Sans", 7, "bold")
 
+# 16 deliberately different colors. 16 x 15 = 240 ordered text/background
+# combinations when identical foreground/background pairs are excluded.
+COLORS = [
+    "#000000",  # black
+    "#ffffff",  # white
+    "#ff2d2d",  # red
+    "#ff7a00",  # orange
+    "#ffd400",  # yellow
+    "#80ff00",  # lime
+    "#00d45a",  # green
+    "#00c7a8",  # teal
+    "#00e5ff",  # cyan
+    "#39a0ff",  # sky
+    "#3155ff",  # blue
+    "#7b3cff",  # violet
+    "#d43cff",  # purple
+    "#ff3cab",  # pink
+    "#9b9b9b",  # gray
+    "#8a4f20",  # brown
+]
+
 
 def programmer_running() -> bool:
     try:
@@ -53,15 +78,24 @@ def serial_ports() -> list[str]:
     return sorted(glob.glob("/dev/ttyACM*"))
 
 
-def make_palette() -> list[str]:
-    out = []
-    for i in range(128):
-        r, g, b = colorsys.hsv_to_rgb(i / 128.0, 0.72, 1.0)
-        out.append(f"#{int(r*255):02x}{int(g*255):02x}{int(b*255):02x}")
-    return out
+def rgb(hex_color: str) -> tuple[int, int, int]:
+    h = hex_color.lstrip("#")
+    return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
 
 
-PALETTE = make_palette()
+def brightness(hex_color: str) -> float:
+    r, g, b = rgb(hex_color)
+    return 0.299 * r + 0.587 * g + 0.114 * b
+
+
+# Keep random themes readable. They are still drawn from the 16-color set,
+# but avoid text/background pairs that are too similar in brightness.
+THEMES = [
+    (fg, bg)
+    for fg in COLORS
+    for bg in COLORS
+    if fg != bg and abs(brightness(fg) - brightness(bg)) >= 80
+]
 
 
 class BloomPetzMini(tk.Tk):
@@ -70,7 +104,6 @@ class BloomPetzMini(tk.Tk):
         self.title("BloomPetz Mini")
         self.geometry(f"{SCREEN_W}x{SCREEN_H + HEADER_H}")
         self.resizable(False, False)
-        self.configure(bg="#050505")
         self.overrideredirect(True)
 
         self.rx: queue.Queue[tuple] = queue.Queue()
@@ -81,9 +114,10 @@ class BloomPetzMini(tk.Tk):
         self.key_down: set[str] = set()
         self.screen_lines = [" " * 16 for _ in range(4)]
         self.pet_name = "NO PET"
-        self.color_index = self._load_color_index()
+        self.text_color, self.bg_color = self._load_theme()
         self._drag_x = self._drag_y = 0
 
+        self.configure(bg="#151515")
         self._build_ui()
         self._bind_keys()
         self.protocol("WM_DELETE_WINDOW", self.close_app)
@@ -99,7 +133,7 @@ class BloomPetzMini(tk.Tk):
         self.header.bind("<B1-Motion>", self._drag_move)
 
         self.title_label = tk.Label(
-            self.header, text=self.pet_name, bg="#151515", fg="#888888",
+            self.header, text=self.pet_name, bg="#151515", fg="#d8d8d8",
             font=HEADER_FONT, anchor="w"
         )
         self.title_label.pack(side="left", padx=(4, 1))
@@ -113,35 +147,38 @@ class BloomPetzMini(tk.Tk):
         close.pack(side="right")
         close.bind("<Button-1>", self._close_click)
 
+        # Big click targets for the tiny window. Both arrows choose another
+        # random theme; there is no slow 128-step hue wheel anymore.
         self.next_color = tk.Label(
             self.header, text="▶", bg="#151515", fg="#eeeeee",
-            width=2, font=("DejaVu Sans", 8, "bold"), cursor="hand2"
+            width=3, font=("DejaVu Sans", 8, "bold"), cursor="hand2"
         )
         self.next_color.pack(side="right")
-        self.next_color.bind("<Button-1>", lambda _e: self._color_click(1))
+        self.next_color.bind("<Button-1>", self._theme_click)
 
         self.color_label = tk.Label(
-            self.header, text="COLOR", bg="#151515", fg=PALETTE[self.color_index],
+            self.header, text="COLOR", bg="#151515", fg=self.text_color,
             width=5, font=("DejaVu Sans", 7, "bold"), cursor="hand2"
         )
         self.color_label.pack(side="right")
-        self.color_label.bind("<Button-1>", lambda _e: self._color_click(1))
+        self.color_label.bind("<Button-1>", self._theme_click)
 
         self.prev_color = tk.Label(
             self.header, text="◀", bg="#151515", fg="#eeeeee",
-            width=2, font=("DejaVu Sans", 8, "bold"), cursor="hand2"
+            width=3, font=("DejaVu Sans", 8, "bold"), cursor="hand2"
         )
         self.prev_color.pack(side="right")
-        self.prev_color.bind("<Button-1>", lambda _e: self._color_click(-1))
+        self.prev_color.bind("<Button-1>", self._theme_click)
 
-        self.screen = tk.Frame(self, bg="#000000", width=SCREEN_W, height=SCREEN_H)
+        self.screen = tk.Frame(self, bg=self.bg_color, width=SCREEN_W, height=SCREEN_H)
         self.screen.pack(fill="both", expand=True)
         self.screen.pack_propagate(False)
+
         self.line_labels = []
         for i in range(4):
             label = tk.Label(
-                self.screen, text=self.screen_lines[i], bg="#000000",
-                fg=PALETTE[self.color_index], font=FONT,
+                self.screen, text=self.screen_lines[i], bg=self.bg_color,
+                fg=self.text_color, font=FONT,
                 anchor="center", justify="center", padx=0, pady=0
             )
             label.place(relx=0.5, rely=(i + 0.5) / 4.0, anchor="center")
@@ -178,28 +215,38 @@ class BloomPetzMini(tk.Tk):
         self.close_app()
         return "break"
 
-    def _color_click(self, delta: int):
-        self.color_index = (self.color_index + delta) % 128
-        color = PALETTE[self.color_index]
-        self.color_label.configure(fg=color)
-        for label in self.line_labels:
-            label.configure(fg=color)
-        self._save_color_index()
+    def _theme_click(self, _event=None):
+        old = (self.text_color, self.bg_color)
+        choices = [t for t in THEMES if t != old]
+        self.text_color, self.bg_color = random.choice(choices or THEMES)
+        self._apply_theme()
+        self._save_theme()
         self.after_idle(self.focus_force)
         return "break"
 
-    def _load_color_index(self) -> int:
+    def _apply_theme(self):
+        self.screen.configure(bg=self.bg_color)
+        self.color_label.configure(fg=self.text_color)
+        for label in self.line_labels:
+            label.configure(fg=self.text_color, bg=self.bg_color)
+
+    def _load_theme(self) -> tuple[str, str]:
         try:
             with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-                return int(json.load(f).get("color_index", 42)) % 128
+                d = json.load(f)
+            fg = d.get("text_color")
+            bg = d.get("bg_color")
+            if (fg, bg) in THEMES:
+                return fg, bg
         except Exception:
-            return 42
+            pass
+        return "#00e5ff", "#000000"
 
-    def _save_color_index(self):
+    def _save_theme(self):
         try:
             os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
             with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-                json.dump({"color_index": self.color_index}, f)
+                json.dump({"text_color": self.text_color, "bg_color": self.bg_color}, f)
         except Exception:
             pass
 
@@ -311,14 +358,6 @@ class BloomPetzMini(tk.Tk):
                 out[k] = v
         return out
 
-    def _update_pet_name_from_screen(self):
-        line2 = self.screen_lines[1].strip()
-        if not line2 or line2.lower().startswith("slot "):
-            self.pet_name = "NO PET"
-        else:
-            self.pet_name = line2.split()[0][:12]
-        self.title_label.configure(text=self.pet_name)
-
     def _drain_rx(self):
         try:
             while True:
@@ -338,14 +377,16 @@ class BloomPetzMini(tk.Tk):
     def _handle_line(self, line: str):
         if line.startswith("BP|STATUS|"):
             fields = self._fields(line)
-            name = fields.get("name", "").strip()
             occupied = fields.get("occupied", "0") == "1"
+            name = fields.get("name", "").strip()
             self.pet_name = name[:12] if occupied and name else "NO PET"
             self.title_label.configure(text=self.pet_name)
             return
 
         if line.startswith("BP|BOOT|") or line.startswith("BP|IDENTITY|"):
             self._set_connected(True)
+            # Ask again after boot/identity so the header cannot stay stale.
+            self.send("GET STATUS")
             return
 
         if not line.startswith("BP|SCREEN|"):
@@ -356,7 +397,10 @@ class BloomPetzMini(tk.Tk):
             text = fields.get(str(i+1), self.screen_lines[i])[:16].ljust(16)
             self.screen_lines[i] = text
             self.line_labels[i].configure(text=text)
-        self._update_pet_name_from_screen()
+
+        # Screen updates often follow slot changes, so refresh the authoritative
+        # pet name whenever the screen changes.
+        self.send("GET STATUS")
 
     def close_app(self):
         if not self.running:
