@@ -1,0 +1,27 @@
+{
+  "_note": "Canonical mapping used by firmware save index 0..199. Each category occupies exactly 10 consecutive indexes, and the 10 stat names are read in the alphabetized order stored in that category JSON file. Do not reorder this category list after public saves exist; add save-format migration instead.",
+  "stats_per_category": 10,
+  "total_stats": 200,
+  "categories": [
+    {"index": 0, "offset": 0, "file": "bond_social.json", "name": "Bond / Social"},
+    {"index": 1, "offset": 10, "file": "courage_mental_strength.json", "name": "Courage / Mental Strength"},
+    {"index": 2, "offset": 20, "file": "intelligence.json", "name": "Intelligence"},
+    {"index": 3, "offset": 30, "file": "curiosity_discovery.json", "name": "Curiosity / Discovery"},
+    {"index": 4, "offset": 40, "file": "creativity.json", "name": "Creativity"},
+    {"index": 5, "offset": 50, "file": "strength_body.json", "name": "Strength / Body"},
+    {"index": 6, "offset": 60, "file": "defense.json", "name": "Defense"},
+    {"index": 7, "offset": 70, "file": "speed_movement.json", "name": "Speed / Movement"},
+    {"index": 8, "offset": 80, "file": "energy.json", "name": "Energy"},
+    {"index": 9, "offset": 90, "file": "health.json", "name": "Health"},
+    {"index": 10, "offset": 100, "file": "food_nutrition.json", "name": "Food / Nutrition"},
+    {"index": 11, "offset": 110, "file": "cleanliness_care.json", "name": "Cleanliness / Care"},
+    {"index": 12, "offset": 120, "file": "emotional.json", "name": "Emotional"},
+    {"index": 13, "offset": 130, "file": "personality.json", "name": "Personality"},
+    {"index": 14, "offset": 140, "file": "habits.json", "name": "Habits"},
+    {"index": 15, "offset": 150, "file": "fidget_input.json", "name": "Fidget / Input Personality"},
+    {"index": 16, "offset": 160, "file": "memory_sequence.json", "name": "Memory / Sequence Skills"},
+    {"index": 17, "offset": 170, "file": "luck_rare.json", "name": "Luck / Rare Traits"},
+    {"index": 18, "offset": 180, "file": "growth.json", "name": "Growth / Evolution"},
+    {"index": 19, "offset": 190, "file": "hidden.json", "name": "Weird / Hidden"}
+  ]
+}
