@@ -4,24 +4,49 @@
 
 BloomPetz is a small handcrafted desk companion that lives inside a wood-and-brass box. It combines a 128×64 OLED, six copper conductance touch wires, two lights, sound, a rechargeable battery, and an ESP32-S3 into a persistent digital pet platform.
 
-The device behaves like a tiny old-school game system with a living companion inside it. The pet idles, sleeps, reacts to touch, plays minigames, completes quests, accumulates statistics, and remembers its history indefinitely.
+The device behaves like a tiny old-school game system with a living companion inside it. The pet idles, reacts to touch, plays minigames, completes daily interactions, accumulates statistics, and remembers its history indefinitely.
+
+## Current Prototype Status
+
+BloomPetz is no longer only a treatment. The v0.1 vertical slice is running on the HAPPY JARZ ESP32-S3 platform.
+
+Current working pieces include:
+
+- ESP32-S3 SuperMini firmware
+- SSD1306 128×64 four-line OLED
+- six copper capacitive controls
+- two APA106 lights
+- three persistent pet slots
+- on-device CREATE PET / EDIT PET
+- printable-ASCII pet name, type, and symbol/art editing
+- eight daily developmental actions
+- Simon-style D-pad action challenge
+- food energy and treats
+- 200 persistent developmental floats
+- 20-category / 200-stat on-device browser
+- rotating pet sayings
+- HOME-screen live stat ticker with marquee behavior for long text
+- decorative scrolling particle art on the physical OLED
+- Raspberry Pi mirror/controller with matching side particles
+- USB screen/input protocol
+- ESP32 Preferences-backed persistence
 
 ## Existing Platform
 
-The Happy Jarz electronics platform already provides the foundation:
+The Happy Jarz electronics platform provides the foundation:
 
-- ESP32 controller
-- Four lines of text per screen
-- Scrolling menus
-- Minigame support
-- Infinite screensaver capability
-- Six fast copper conductance inputs
-- Two lights
-- Sound output
-- Rechargeable battery system
-- Small handmade enclosure format
+- ESP32-S3 controller
+- four lines of text per screen
+- scrolling menus
+- minigame support
+- screensaver capability
+- six fast copper conductance inputs
+- two lights
+- sound-output path
+- rechargeable-battery system
+- small handmade enclosure format
 
-BloomPetz is a software and content layer built on this working hardware.
+BloomPetz is a software and content layer built on this hardware.
 
 ## Controls
 
@@ -32,97 +57,132 @@ UP       DOWN       LEFT
 RIGHT    A          B
 ```
 
-The firmware should support tap, hold, repeated tap, and multi-touch combinations. Touch can mean navigation, petting, feeding, playing, confirming, or triggering secret behaviors depending on the current screen.
+Current firmware behavior uses qualified taps with one event per touch. Navigation and game behavior depend on the active screen.
 
-## Main Menu
+## Current Main Menu
+
+The working v0.1 hardware menu is:
 
 ```text
-PET
+FEED
+TREAT
+SLOT
+EDIT PET / CREATE PET
 STATS
-PLAY
-QUESTS
-COLLECTION
-SCREENSAVERS
-SETTINGS
 ```
 
-The menu system must remain readable on four lines and support scrolling. Every screen should be usable without a phone or computer.
+The 128×64 OLED shows three menu rows at once and reserves line 4 for controls. The selection scrolls vertically through all five items.
+
+Example lower menu view:
+
+```text
+  SLOT 1
+  EDIT PET
+> STATS
+A ENTER B BACK
+```
+
+The longer-term product may grow additional top-level sections such as PLAY, QUESTS, COLLECTION, SCREENSAVERS, and SETTINGS, but those are roadmap items rather than the current v0.1 hardware menu.
 
 ## Pet System
 
-Each pet is a data package containing:
+Each pet currently stores:
 
 - Name
-- Sprite frames
-- Idle animations
-- Personality
-- Needs and preferences
-- Sounds
-- Light reactions
-- Favorite minigames
-- Quest rules
-- Unlock conditions
-- Screensavers
-- Growth or bonding behavior
+- Type
+- one-line ASCII design/art
+- persistent ID and dates
+- lifetime action/touch/treat counters
+- food energy
+- daily treats and completed-action flags
+- 200 developmental stat values
 
-The first companion can be Lophire, the small blue and pink dragon. Additional pets should be interchangeable without changing the electronics or core firmware.
+Future pet packages can expand this with sprite frames, idle animations, personality content, sounds, favorite minigames, quest rules, unlock conditions, screensavers, and evolution behavior without changing the core electronics.
 
-The system should be designed for at least 50 simple pets and expandable content packs.
+The system should remain expandable to many pet types and content packs.
 
 ## Persistent Stats
 
-BloomPetz should maintain a long-term record containing roughly 200 statistics. The screen only displays the most useful ones; the full record is available through the companion app.
+BloomPetz currently maintains 200 developmental floats arranged as 20 canonical categories with 10 named stats each.
 
-Example categories:
+Canonical mapping lives in `data/stats/stat_manifest.json`; each category points to its corresponding JSON file. Index ordering is part of the save format and must not be casually reordered after public saves exist.
 
-- Hunger, thirst, energy, mood, and happiness
-- Total days alive
-- Total touches and interactions
-- Feeding and play counts
-- Minigame scores
-- Quest completions
-- Daily streaks
-- Friendship level
-- Favorite activity
-- Rare events discovered
-- Screensavers unlocked
-- Pets collected
-- Lifetime coins or resources
-- Time spent sleeping and playing
+Current categories include:
 
-Statistics should persist through power loss and firmware updates.
+- Bond / Social
+- Courage / Mental Strength
+- Intelligence
+- Curiosity / Discovery
+- Creativity
+- Strength / Body
+- Defense
+- Speed / Movement
+- Energy
+- Health
+- Food / Nutrition
+- Cleanliness / Care
+- Emotional
+- Personality
+- Habits
+- Fidget / Input Personality
+- Memory / Sequence Skills
+- Luck / Rare Traits
+- Growth / Evolution
+- Weird / Hidden
+
+The full model is viewable directly on the device through the STATS browser. The companion app can later provide richer graphs, sorting, history, and comparisons.
+
+## Home Screen
+
+Current HOME layout:
+
+1. Pet art/symbol alternating with short pet sayings; long sayings marquee.
+2. Pet name alternating with live stat/value text; long stat strings marquee.
+3. Current daily action.
+4. A/B controls plus rotating compact energy/treat/action status.
+
+Decorative particles scroll down the left/right OLED gutters and matching lanes are present in the Pi mirror app.
 
 ## Pet Care Loop
 
-The pet should have simple needs that create reasons to return:
+The current daily loop uses eight actions:
 
-- Feed the pet
-- Give it water
-- Play a minigame
-- Let it rest
-- Complete a daily quest
-- Discover a screensaver
-- Check its mood and stats
+- CHECK
+- CLEAN
+- PET
+- PLAY
+- REST
+- SCRATCH
+- SOCIALIZE
+- TRAIN
 
-Needs should create personality and reactions without making the device stressful or demanding.
+A successful first completion for the day applies 25 developmental-stat rolls, with favored categories depending on the action. Gain scales with response speed from approximately 0.0001 to 0.0050 per roll.
+
+Each rewarded action costs 12.5 energy. Replaying an action later that day is allowed for fun but does not award the daily developmental reward again.
+
+Feeding is intentionally simple: food only refills when empty, restoring energy to 100. Treats are capped at three per day and each rolls one random developmental stat. Midnight resets daily actions and treats but not food energy.
+
+The design goal remains non-punitive: needs should create personality and reasons to return without making the device stressful or demanding.
 
 ## Minigames
 
-The existing minigame system becomes the active play layer. Initial games can include:
+The current active-play slice uses a randomized three-direction Simon-style sequence controlled by the D-pad touch inputs.
+
+Future games can include:
 
 - Catch the falling item
-- Memory sequence
+- Expanded memory sequences
 - Tap timing
 - Dodge the obstacle
 - Bubblefire practice
 - Treasure hunt
 - Pet reaction challenge
 
-Each game should award score, coins, friendship, or unlock progress.
+Games can award development, score, unlocks, or collection progress depending on the future content layer.
 
 ## Screensavers
 
-Screensavers are a major part of the product identity. They should run indefinitely while the pet is idle or sleeping.
+Screensavers remain a major product direction. They should be able to run indefinitely while the pet is idle or sleeping.
 
 Possible screensavers include:
 
@@ -137,11 +197,13 @@ Possible screensavers include:
 - Seasonal scenes
 - Rare hidden animations
 
-Screensavers can be bundled with pets or released as separate content packs.
+The current prototype already has the rendering/control foundation needed for later screensaver content.
 
 ## Lights and Sound
 
-The two lights provide a second emotional channel outside the display:
+The two APA106 lights provide a second emotional channel outside the display. Current firmware already uses light feedback during calibration and action play.
+
+Future uses include:
 
 - Mood indicator
 - Hunger or alert state
@@ -151,31 +213,33 @@ The two lights provide a second emotional channel outside the display:
 - Rare event effect
 - Damage, surprise, or bubblefire reaction
 
-Sound should include short reusable effects: chirps, menu clicks, confirmation tones, sleep sounds, quest rewards, warnings, and minigame effects.
+Sound remains part of the platform direction for chirps, menu clicks, confirmation tones, sleep sounds, rewards, warnings, and minigame effects.
 
 ## Companion App
 
-The companion app is optional. BloomPetz must remain playable offline, while the app expands the experience.
+BloomPetz remains playable from the physical device. The companion app is additive rather than required.
 
-The app can provide:
+The current Raspberry Pi mini app:
 
-- Pet naming and customization
-- Full statistics
-- Backups and restore
-- New pets
-- New sprite packs
-- Screensaver packs
-- Quest packs
-- Firmware updates
-- GitHub project updates
-- Device settings
-- Community content later
+- mirrors the four OLED lines over USB
+- accepts keyboard arrows plus A/B through the same firmware input path
+- uses app-only readable color themes
+- mirrors decorative side-particle lanes
+- can auto-launch when the board is connected
 
-The app should communicate with the ESP32 over Wi-Fi or Bluetooth, with the Raspberry Pi acting as an optional local hub.
+Future app functions can include:
+
+- pet library/archive
+- full statistical history and graphs
+- backup/restore
+- pet/content installation
+- firmware updates
+- device settings
+- community content
 
 ## Update Model
 
-The ESP32 firmware contains the core engine. Pet and content packages should be separated from the engine wherever possible.
+The ESP32 firmware contains the core engine. Pet and content packages should stay separated from the engine wherever practical.
 
 Recommended layers:
 
@@ -187,6 +251,8 @@ Recommended layers:
 6. Save data
 
 This lets new pets and content ship without redesigning the hardware.
+
+During prototype development, the working local firmware may contain hardware integrations ahead of the repository's baseline sketch. Patch helpers in `tools/` exist specifically to modify that known-good local sketch without replacing it wholesale.
 
 ## Physical Product
 
@@ -214,30 +280,31 @@ The first product should use the existing Happy Jarz board and enclosure languag
 
 The hardware stays consistent while the personality, artwork, and software create different products.
 
-## First Build Milestone
+## Current Vertical-Slice Milestone
 
-The first complete prototype should include:
+Already working or substantially demonstrated:
 
-1. Boot screen
-2. Pet selection
-3. Pet naming
-4. Animated idle state
-5. Touch navigation
-6. One minigame
-7. One daily quest
-8. Mood and hunger stats
+1. Persistent pet slots
+2. On-device pet creation and editing
+3. Touch navigation
+4. Simon-style action minigame
+5. Eight daily developmental actions
+6. Food and treats
+7. 200-stat developmental save model
+8. On-device STATS browser
 9. Persistent save data
-10. Two light reactions
-11. Sound effects
-12. One screensaver
-13. Firmware update path
+10. APA106 light reactions
+11. Four-line OLED UI
+12. Rotating sayings and live stat ticker
+13. Pi mirror/controller
+14. USB diagnostics and control path
 
-Once this vertical slice works, additional pets and content become repeatable production work instead of new hardware projects.
+Next expansion work can focus on richer pet behavior, idle animation, sound, quests, screensavers, evolution, archival `.bloompet` files, and additional minigames rather than rebuilding the hardware/UI foundation.
 
 ## Product Promise
 
 BloomPetz is a tiny object that remembers.
 
-It sits beside the user, reacts to touch, plays, rests, collects experiences, and slowly becomes a companion. The electronics are already proven through the Happy Jarz platform. The project now needs the software world: pets, stats, quests, minigames, screensavers, and updates.
+It sits beside the user, reacts to touch, plays, rests, collects experiences, and slowly becomes a companion. The electronics and core v0.1 interaction loop are now functioning on the Happy Jarz platform. The next phase is expanding the software world: pets, behaviors, quests, minigames, screensavers, sound, evolution, and content packs.
 
-The first BloomPetz is not just a gadget. It is the beginning of a small living game platform.
+BloomPetz is not just a gadget. It is the beginning of a small living game platform.
