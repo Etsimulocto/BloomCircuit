@@ -1,0 +1,15 @@
+{
+  "category": "Habits",
+  "stats": [
+    "care_habit",
+    "consistency",
+    "discipline",
+    "habit_memory",
+    "interaction_habit",
+    "morning_affinity",
+    "night_affinity",
+    "play_habit",
+    "rest_habit",
+    "routine_strength"
+  ]
+}
