@@ -1,0 +1,15 @@
+{
+  "category": "Strength / Body",
+  "stats": [
+    "body_control",
+    "constitution",
+    "durability",
+    "endurance",
+    "muscle",
+    "physical_condition",
+    "power",
+    "recovery",
+    "stamina",
+    "strength"
+  ]
+}
