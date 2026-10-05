@@ -1,0 +1,16 @@
+{
+  "_note": "Human-readable mirror of the v0.1 firmware weighting map. Each action strongly favors four 10-stat categories for 80% of rolls; 20% of rolls may hit any of the 200 developmental stats. Keep this file authoritative when tuning and then sync generated/compiled firmware data.",
+  "weighted_roll_chance": 0.80,
+  "global_roll_chance": 0.20,
+  "stat_rolls_per_rewarded_action": 25,
+  "actions": {
+    "CHECK": ["Intelligence", "Curiosity / Discovery", "Health", "Memory / Sequence Skills"],
+    "CLEAN": ["Health", "Cleanliness / Care", "Habits", "Emotional"],
+    "PET": ["Bond / Social", "Emotional", "Personality", "Fidget / Input Personality"],
+    "PLAY": ["Speed / Movement", "Courage / Mental Strength", "Creativity", "Fidget / Input Personality"],
+    "REST": ["Energy", "Health", "Emotional", "Habits"],
+    "SCRATCH": ["Bond / Social", "Emotional", "Fidget / Input Personality", "Personality"],
+    "SOCIALIZE": ["Bond / Social", "Emotional", "Personality", "Creativity"],
+    "TRAIN": ["Courage / Mental Strength", "Intelligence", "Strength / Body", "Memory / Sequence Skills"]
+  }
+}
