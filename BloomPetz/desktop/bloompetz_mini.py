@@ -1,26 +1,17 @@
 #!/usr/bin/env python3
 """BloomPetz Mini — tiny OLED mirror + keyboard controller.
 
-UI contract:
-- mirrors the device's 4 x 16-character OLED screen
-- keyboard arrows map to UP/DOWN/LEFT/RIGHT
-- keyboard A/B map to the two BloomPetz action keys
-- no hold/repeat behavior: one firmware key event per physical key press
-- only visible app controls are previous/next screen color and Close
-
-Serial behavior follows the proven HAPPY JARZ desktop path:
-- identify the controller by BP protocol, never by a hard-coded ttyACM number
-- open USB CDC with DTR/RTS false so connecting does not intentionally reset it
-- wait for a USB port to be stable before probing
-- probe a stable device ONCE per physical plug-in session
-- do not grab serial while arduino-cli/esptool is running
-- tolerate unplug/replug and reconnect while the window stays open
+Uses the proven HAPPY JARZ serial pattern:
+- wait for a stable /dev/ttyACM* device
+- open it once with DTR/RTS false
+- keep that handle until the device actually disappears
+- tolerate brief USB hiccups with a disconnect grace period
+- never run a separate probe/open/close discovery cycle
 """
 
 from __future__ import annotations
 
 import colorsys
-import datetime as dt
 import glob
 import json
 import os
@@ -36,9 +27,9 @@ except ImportError as exc:
     raise SystemExit("pyserial is required: sudo apt install -y python3-serial") from exc
 
 BAUD = 115200
-POLL_SECONDS = 0.25
+POLL_SECONDS = 0.20
 STABLE_SECONDS = 2.0
-HANDSHAKE_TIMEOUT = 1.5
+DISCONNECT_GRACE_SEC = 3.0
 CONFIG_PATH = os.path.expanduser("~/.config/bloompetz/mini.json")
 
 SCREEN_W = 384
@@ -85,26 +76,24 @@ class BloomPetzMini(tk.Tk):
         self.configure(bg="#050505")
         self.overrideredirect(True)
 
-        self.rx: queue.Queue[str] = queue.Queue()
-        self.stop_event = threading.Event()
+        self.rx: queue.Queue[tuple] = queue.Queue()
+        self.running = True
         self.ser: serial.Serial | None = None
         self.ser_lock = threading.Lock()
         self.connected_port: str | None = None
-        self.first_seen: dict[str, float] = {}
-        self.probed: set[str] = set()
         self.key_down: set[str] = set()
         self.screen_lines = [" " * 16 for _ in range(4)]
         self.color_index = self._load_color_index()
-
         self._drag_x = 0
         self._drag_y = 0
+
         self._build_ui()
         self._bind_keys()
         self.protocol("WM_DELETE_WINDOW", self.close_app)
 
-        threading.Thread(target=self._connection_loop, daemon=True).start()
+        threading.Thread(target=self._serial_worker, daemon=True).start()
         self.after(25, self._drain_rx)
-        self.after(100, self.focus_force)
+        self.after(120, self.focus_force)
 
     def _build_ui(self):
         self.header = tk.Frame(self, bg="#151515", height=HEADER_H)
@@ -121,21 +110,19 @@ class BloomPetzMini(tk.Tk):
         self.title_label.bind("<ButtonPress-1>", self._drag_start)
         self.title_label.bind("<B1-Motion>", self._drag_move)
 
-        close = tk.Button(
+        tk.Button(
             self.header, text="×", command=self.close_app,
             bg="#151515", fg="#dddddd", activebackground="#333333",
             activeforeground="#ffffff", relief="flat", bd=0, width=3,
             font=("DejaVu Sans", 12, "bold"), takefocus=False
-        )
-        close.pack(side="right")
+        ).pack(side="right")
 
-        next_color = tk.Button(
+        tk.Button(
             self.header, text="›", command=lambda: self.change_color(1),
             bg="#151515", fg="#dddddd", activebackground="#333333",
             activeforeground="#ffffff", relief="flat", bd=0, width=2,
             font=("DejaVu Sans", 12, "bold"), takefocus=False
-        )
-        next_color.pack(side="right")
+        ).pack(side="right")
 
         self.swatch = tk.Label(
             self.header, text="●", bg="#151515", fg=PALETTE[self.color_index],
@@ -143,13 +130,12 @@ class BloomPetzMini(tk.Tk):
         )
         self.swatch.pack(side="right")
 
-        prev_color = tk.Button(
+        tk.Button(
             self.header, text="‹", command=lambda: self.change_color(-1),
             bg="#151515", fg="#dddddd", activebackground="#333333",
             activeforeground="#ffffff", relief="flat", bd=0, width=2,
             font=("DejaVu Sans", 12, "bold"), takefocus=False
-        )
-        prev_color.pack(side="right")
+        ).pack(side="right")
 
         self.screen = tk.Frame(self, bg="#000000", width=SCREEN_W, height=SCREEN_H)
         self.screen.pack(fill="both", expand=True)
@@ -222,112 +208,87 @@ class BloomPetzMini(tk.Tk):
             fg="#d8d8d8" if connected else "#777777"
         )
 
-    def _open_candidate(self, port: str) -> serial.Serial | None:
-        s = None
-        try:
-            s = serial.Serial()
-            s.port = port
-            s.baudrate = BAUD
-            s.timeout = 0.12
-            s.write_timeout = 0.25
-            s.dtr = False
-            s.rts = False
-            s.open()
-            s.dtr = False
-            s.rts = False
+    def _choose_port(self) -> str | None:
+        ports = serial_ports()
+        return ports[0] if ports else None
 
-            # Give native USB CDC a moment without toggling modem control lines.
-            time.sleep(0.15)
-            try:
-                s.reset_input_buffer()
-            except Exception:
-                pass
+    def _open_port(self, port: str) -> serial.Serial:
+        s = serial.Serial()
+        s.port = port
+        s.baudrate = BAUD
+        s.timeout = 0.25
+        s.write_timeout = 0.25
+        s.dtr = False
+        s.rts = False
+        s.open()
+        s.dtr = False
+        s.rts = False
+        return s
 
-            # Ask for identity AND a fresh screen. Accept any unique BloomPetz
-            # protocol record so one missed HELLO reply cannot trigger probe loops.
-            s.write(b"HELLO\nGET SCREEN\n")
-            s.flush()
+    def _serial_worker(self):
+        seen_since: dict[str, float] = {}
 
-            saw_bloompetz = False
-            deadline = time.monotonic() + HANDSHAKE_TIMEOUT
-            while time.monotonic() < deadline:
-                raw = s.readline()
-                if not raw:
-                    continue
-                line = raw.decode("utf-8", errors="replace").rstrip("\r\n")
-                if not line:
-                    continue
-                self.rx.put(line)
-                if (
-                    line.startswith("BP|IDENTITY|product=BloomPetz|")
-                    or line.startswith("BP|BOOT|")
-                    or line.startswith("BP|SCREEN|")
-                ):
-                    saw_bloompetz = True
-                if saw_bloompetz and line.startswith("BP|SCREEN|"):
-                    return s
-
-            if saw_bloompetz:
-                return s
-            s.close()
-            return None
-        except Exception:
-            try:
-                if s is not None:
-                    s.close()
-            except Exception:
-                pass
-            return None
-
-    def _connection_loop(self):
-        while not self.stop_event.is_set():
-            if self.ser is not None:
-                try:
-                    raw = self.ser.readline()
-                    if raw:
-                        self.rx.put(raw.decode("utf-8", errors="replace").rstrip("\r\n"))
-                    else:
-                        time.sleep(0.01)
-                except Exception:
-                    self._drop_serial()
+        while self.running:
+            if programmer_running():
+                time.sleep(POLL_SECONDS)
                 continue
 
-            now = time.monotonic()
-            ports = set(serial_ports())
+            if self.ser is None:
+                port = self._choose_port()
+                if port is None:
+                    seen_since.clear()
+                    self.rx.put(("status", False))
+                    time.sleep(POLL_SECONDS)
+                    continue
 
-            # A real physical unplug is what rearms a port for future probing.
-            for port in list(self.first_seen):
-                if port not in ports:
-                    self.first_seen.pop(port, None)
-                    self.probed.discard(port)
+                now = time.monotonic()
+                seen_since.setdefault(port, now)
+                if now - seen_since[port] < STABLE_SECONDS:
+                    time.sleep(POLL_SECONDS)
+                    continue
 
-            for port in ports:
-                self.first_seen.setdefault(port, now)
+                try:
+                    s = self._open_port(port)
+                except Exception:
+                    time.sleep(0.5)
+                    continue
 
-            if not programmer_running():
-                for port in sorted(ports):
-                    if port in self.probed:
-                        continue
-                    if now - self.first_seen.get(port, now) < STABLE_SECONDS:
-                        continue
+                with self.ser_lock:
+                    self.ser = s
+                    self.connected_port = port
 
-                    # EXACT Happy Jarz rule: probe once this plug-in session.
-                    self.probed.add(port)
-                    s = self._open_candidate(port)
-                    if s is None:
-                        continue
-                    with self.ser_lock:
-                        self.ser = s
-                        self.connected_port = port
-                    self.rx.put("APP|CONNECTED")
-                    self._send_initial_state()
-                    break
+                self.rx.put(("status", True))
+                time.sleep(0.15)
+                self.send("HELLO")
+                self.send("GET SCREEN")
+                continue
 
-            time.sleep(POLL_SECONDS)
+            port = self.connected_port
+            if not port:
+                self._drop_serial()
+                continue
 
-    def _send_initial_state(self):
-        self.send(f"SET DATE {dt.date.today().isoformat()}")
-        self.send("GET SCREEN")
+            if not os.path.exists(port):
+                missing_since = time.monotonic()
+                while self.running and not os.path.exists(port):
+                    if time.monotonic() - missing_since >= DISCONNECT_GRACE_SEC:
+                        self._drop_serial()
+                        break
+                    time.sleep(POLL_SECONDS)
+                continue
+
+            s = self.ser
+            try:
+                raw = s.readline() if s else b""
+            except Exception:
+                self._drop_serial()
+                time.sleep(POLL_SECONDS)
+                continue
+
+            if raw:
+                line = raw.decode("utf-8", errors="replace").rstrip("\r\n")
+                if line:
+                    self.rx.put(("line", line))
 
     def _drop_serial(self):
         with self.ser_lock:
@@ -339,7 +300,7 @@ class BloomPetzMini(tk.Tk):
                 s.close()
         except Exception:
             pass
-        self.rx.put("APP|DISCONNECTED")
+        self.rx.put(("status", False))
 
     def send(self, command: str):
         with self.ser_lock:
@@ -355,19 +316,22 @@ class BloomPetzMini(tk.Tk):
     def _drain_rx(self):
         try:
             while True:
-                self._handle_line(self.rx.get_nowait())
+                item = self.rx.get_nowait()
+                kind = item[0]
+                if kind == "status":
+                    self._set_connected(bool(item[1]))
+                elif kind == "line":
+                    self._handle_line(item[1])
         except queue.Empty:
             pass
-        if not self.stop_event.is_set():
+        if self.running:
             self.after(25, self._drain_rx)
 
     def _handle_line(self, line: str):
-        if line == "APP|CONNECTED":
+        if line.startswith("BP|BOOT|") or line.startswith("BP|IDENTITY|"):
             self._set_connected(True)
             return
-        if line == "APP|DISCONNECTED":
-            self._set_connected(False)
-            return
+
         if not line.startswith("BP|SCREEN|"):
             return
 
@@ -376,13 +340,14 @@ class BloomPetzMini(tk.Tk):
             if "=" in part:
                 key, value = part.split("=", 1)
                 fields[key] = value
+
         for i in range(4):
             text = fields.get(str(i + 1), self.screen_lines[i])[:16].ljust(16)
             self.screen_lines[i] = text
             self.line_labels[i].configure(text=text)
 
     def close_app(self):
-        self.stop_event.set()
+        self.running = False
         self._drop_serial()
         self.destroy()
 
