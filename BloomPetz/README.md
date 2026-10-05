@@ -138,7 +138,7 @@ A pet save currently stores identity, history counters, food state, daily state,
 
 ## DND current hardware slice
 
-DND is now playable from BLOOM SYSTEM.
+DND is now a real playable subsystem inside BLOOM SYSTEM rather than a placeholder.
 
 Current physical layout uses the full 21-character OLED width:
 
@@ -155,15 +155,60 @@ Current playable behavior includes:
 - D-pad movement
 - tap A, then direction within about 700 ms for directional attack
 - B opens DND menu
-- Rat, Goblin, and Skeleton autonomous movement
 - collision-triggered combat/interactions
-- chest, trap, gold, potion, and door interactions
+- chest, trap, gold, potion, weapon, and door interactions
 - d20-style event/roll feed
 - rotating status HUD
 - Character / Inventory / Symbols / System Menu entries
 - return to BLOOM SYSTEM
 
-The starter room currently uses a real 14 x 4 map viewport. DND gameplay and persistence are still early-stage; the current goal is to prove the hardware movement/combat loop before expanding systems.
+### DND economy and inventory
+
+Gold is now spendable instead of being only a score/counter.
+
+The Inventory path includes a shop backed by a 48-item authored catalog. The shop presents four randomized offers at a time and rerolls when the player enters a new room, preventing repeated menu-open rerolls.
+
+Current item categories include:
+
+- weapons
+- armor
+- healing items
+- stat/charm items
+
+Purchases deduct gold and apply their gameplay effects immediately. Weapons replace the active weapon, armor increases AC, healing items restore HP, and charms can modify STR, DEX, and/or maximum HP. Purchased item names are retained in the compact inventory history.
+
+### DND content depth
+
+The current content target is 48 entries for the major reusable content pools:
+
+```text
+48 authored items
+48 enemy species
+48 symbol/entity reference entries
+48 room themes
+```
+
+The 48 room themes sit on top of the eight proven geometry archetypes. Theme variety is intentionally separated from room-generation geometry so the map generator remains stable while content variety grows.
+
+The 48 enemy species are a possible-species pool, not 48 simultaneous monsters. The active enemy array stays intentionally small because the physical display is only 128x64 and the current viewport is 14 x 4 map cells. Deeper rooms progressively unlock higher enemy tiers while some lower-tier creatures can continue appearing later.
+
+The Symbols browser has been expanded from the original 15 entries to a 48-entry entity/reference catalog covering map objects, loot, hazards, enemies, and special entities.
+
+### DND player progression
+
+Player HP is no longer effectively capped at the original 18/18 starting value.
+
+The player still begins at 18 HP, but XP-driven level progression can now increase maximum HP and gradually improve combat stats. Current progression affects:
+
+- level
+- maximum HP
+- STR
+- DEX
+- AC
+
+Death still returns the player to room 1 and halves carried gold, but HP restores to the player's current progressed maximum rather than forcing the character permanently back to an 18-HP ceiling.
+
+The starter room uses a real 14 x 4 map viewport. DND gameplay and persistence are still evolving, but the hardware movement/combat/economy/content loop is now established.
 
 ## Raspberry Pi companion
 
@@ -264,6 +309,13 @@ arduino-cli compile \
   bloompetz_v0_1
 ```
 
+The October 2026 expanded DND content build compiled at:
+
+```text
+Sketch uses 430874 bytes (32%) of program storage space.
+Global variables use 30192 bytes (9%) of dynamic memory.
+```
+
 Before upload, stop BloomPetz Mini so it does not own the serial device:
 
 ```bash
@@ -301,4 +353,10 @@ After a Pi rebuild or firmware deployment, verify the whole stack together:
 8. DND uses the full 21-column mirror and hides side art/header.
 9. Pi DND layout matches the physical OLED logical frame.
 10. Host time/date appears and stays synchronized.
+11. Inventory opens the DND shop.
+12. Shop shows four offers and buying deducts gold.
+13. Entering a new room rerolls shop stock.
+14. Symbols browser reports 48 entries.
+15. Deeper rooms can draw from progressively higher enemy tiers.
+16. Player maximum HP can grow beyond the initial 18 through progression/items.
 ```
