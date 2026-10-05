@@ -478,6 +478,191 @@ Treat flash/reset as a serial-session boundary. Restart the desktop watcher/app 
 
 ---
 
+## One physical ESP32 can re-enumerate as a different ACM node
+
+### Problem
+After reset/flash, Linux sometimes exposed the same physical ESP32 as `/dev/ttyACM0` and other times as `/dev/ttyACM1`.
+
+This looked like a port-selection problem even though there was only one connected board.
+
+### Working rule
+Resolve the device that actually exists at upload time:
+
+```bash
+PORT=$(ls /dev/ttyACM* 2>/dev/null | head -n1)
+```
+
+### Lesson
+A changed ACM number is a Linux device-node rename, not necessarily a second physical port.
+
+---
+
+## `pkill && upload` can silently stop the chain
+
+### Problem
+A combined command used:
+
+```bash
+pkill -f '[b]loompetz_mini.py' && arduino-cli upload ...
+```
+
+If BloomPetz Mini was not running, `pkill` returned non-zero and the `&&` chain stopped before upload.
+
+### Correct pattern
+
+```bash
+pkill -f '[b]loompetz_mini.py' 2>/dev/null || true
+```
+
+Then upload separately.
+
+### Lesson
+Cleanup commands that may legitimately find nothing should not gate the actual build/flash step.
+
+---
+
+## Ownership guards accidentally inserted into prototypes / wrong functions
+
+### Problem
+A renderer-ownership patch searched for a function signature such as `static void drawHome()` and matched a forward declaration. It then inserted the guard at the next `{`, which belonged to an unrelated function.
+
+A second version inserted a DND guard into the middle of a multiline function parameter list.
+
+### Symptoms
+Compiler errors included:
+- `return-statement with no value` inside a non-void function
+- malformed `dndRenderFull(...)` arguments
+- `expected identifier before 'if'`
+
+### Lesson
+When patching C++/Arduino functions:
+- distinguish declarations from definitions
+- include the opening brace in exact single-line matches when possible
+- explicitly support multiline function signatures
+- never assume the next `{` belongs to the function you matched
+- validate the generated function body before writing
+
+---
+
+## BLOOM SYSTEM / DND screen flicker was not a mode bug
+
+### Problem
+Entering DND produced rapid alternation between DND and the BLOOM SYSTEM menu.
+
+Renderer guards and `uiMode` assignments looked correct, which initially suggested state corruption.
+
+### Actual cause
+The old BloomPetz side-art service independently refreshed the OLED about every 120 ms using the shared `screenLines[]` buffer:
+
+```cpp
+physicalOledRender(screenLines[0], screenLines[1], screenLines[2], screenLines[3]);
+```
+
+DND also rendered about every 120 ms using its own full-width renderer. `screenLines[]` still contained the previous launcher frame, so the two render paths took turns drawing different screens.
+
+### Fix
+Pause the BloomPetz side-art repaint path while DND owns the OLED.
+
+### Lesson
+A screen flicker does not necessarily mean state is oscillating. Multiple background render services can fight over the same framebuffer/display while `uiMode` remains correct.
+
+Trace every `sendBuffer()`, physical renderer, and timed redraw path before assuming a state-machine bug.
+
+---
+
+## Full-width DND bypassed the Pi mirror buffer
+
+### Problem
+The physical OLED correctly showed DND, but the Pi companion remained stuck on the previous BLOOM SYSTEM frame.
+
+### Cause
+DND's full-width renderer wrote directly to U8g2 and bypassed the normal `renderDisplay()` path that updates `screenLines[]` and emits `BP|SCREEN`.
+
+### Fix
+DND's renderer now also updates the shared mirror rows and emits a new frame only when the four rows actually change.
+
+### Lesson
+When adding a specialized physical renderer, preserve any side channels owned by the old renderer: mirror state, serial telemetry, accessibility output, logging, etc.
+
+---
+
+## DND and BloomPetz need different display chrome
+
+### Problem
+The Pi companion originally kept BloomPetz side particles and the pet-name header visible while DND was running.
+
+### Current contract
+- BloomPetz/System may use the normal companion chrome
+- DND hides pet name and side-art lanes
+- DND owns the full logical screen width
+- returning to System/Petz restores the normal chrome
+
+### Lesson
+A shared launcher can host multiple apps, but each app should own its presentation state explicitly.
+
+---
+
+## DND geometry evolved from 4+12 to 7+14
+
+### Original prototype
+- 4-column HUD
+- 12-column map
+- 16 columns total through the old BloomPetz renderer
+
+### Current proven layout
+- 7-column HUD
+- 14-column map
+- 21 logical columns total
+- four rows
+- no separator column
+- full-width physical OLED renderer
+
+### Lesson
+Do not keep stale screen geometry in specs after hardware proves a better allocation. Treat width/height as an interface contract shared by firmware, renderer, map data, and companion app.
+
+---
+
+## Pi mirror width is not the same thing as logical game width
+
+### Problem
+The 21-column DND frame filled the physical OLED, but initially left apparent empty space in the 192 px Pi window.
+
+A later hard-coded larger desktop font overcorrected and clipped the last two map columns, so the OLED showed 14 map columns while the Pi showed only 12.
+
+### Final approach
+Keep the logical width fixed at 21 columns and measure the local monospaced font at runtime. Choose the largest size where a 21-character sample fits inside the Pi mirror width.
+
+### Lesson
+Never infer extra logical columns from unused desktop pixels.
+
+The physical OLED and Pi companion should display the same game geometry. Desktop rendering should scale to fit that geometry instead of changing it.
+
+---
+
+## Pi companion accumulated patch layers and needed consolidation
+
+### Problem
+Repeated local patches changed the Pi companion while GitHub's checked-in `desktop/bloompetz_mini.py` still represented the old BloomPetz-only app. Later patches were targeting assumptions about previously patched local state.
+
+### Result
+The Mini app was rebuilt/consolidated into one known-good System/Petz/DND-aware implementation.
+
+Current behavior includes:
+- 21-column DND mirror
+- DND-specific chrome removal
+- six clickable `↑ ↓ ← → A B` controls
+- keyboard arrow keys + A/B
+- themed controller buttons
+- USB host-time sync
+- measured 21-column font fit
+
+### Lesson
+Patch-lasagna eventually becomes more expensive than a controlled consolidation pass.
+
+When a small companion app has accumulated many sequential structural patches, rebuild that app from the known working requirements instead of stacking another patch on top.
+
+---
+
 # Project-wide lessons
 
 The hardest part of this project was not ESP32 programming itself. The recurring difficulty came from:
@@ -488,6 +673,8 @@ The hardest part of this project was not ESP32 programming itself. The recurring
 - Arduino `.ino` preprocessing
 - patch scripts matching inactive code
 - compile/upload being separate steps
+- background services competing for hardware ownership
+- companion-app geometry drifting from physical hardware geometry
 
 ## Rules for the next game build
 
@@ -496,12 +683,15 @@ The hardest part of this project was not ESP32 programming itself. The recurring
 3. Prefer exact anchors over broad regex replacements.
 4. Put shared C++ types in headers early.
 5. Separate state machines cleanly by UI mode.
-6. Keep display row ownership explicit.
+6. Keep display row and framebuffer ownership explicit.
 7. Search every write path when changing game balance.
 8. Compile before upload.
 9. Upload before claiming device behavior changed.
 10. Physically test before calling a feature finished.
 11. Preserve hardware-proven transports instead of swapping libraries casually.
 12. Periodically consolidate prototype code before layering on another major game.
+13. When a new renderer bypasses an old renderer, explicitly preserve mirror/telemetry side effects.
+14. Keep logical screen geometry shared between hardware and companion apps; scale pixels, not game coordinates.
+15. Treat every timed background renderer as a potential ownership conflict.
 
-Tomorrow's D&D game should start from these lessons instead of relearning them.
+The next BLOOM SYSTEM game should start from these lessons instead of relearning them.
