@@ -38,6 +38,9 @@ SCREEN_H = 96
 HEADER_H = 18
 FONT = ("DejaVu Sans Mono", 10, "bold")
 HEADER_FONT = ("DejaVu Sans", 7, "bold")
+SIDE_W = 18
+SIDE_PARTICLES = 8
+SIDE_TICK_MS = 120
 
 # 16 deliberately different colors. 16 x 15 = 240 ordered text/background
 # combinations when identical foreground/background pairs are excluded.
@@ -116,6 +119,8 @@ class BloomPetzMini(tk.Tk):
         self.pet_name = "NO PET"
         self.text_color, self.bg_color = self._load_theme()
         self._drag_x = self._drag_y = 0
+        self.side_left = [self._new_particle(True) for _ in range(SIDE_PARTICLES)]
+        self.side_right = [self._new_particle(True) for _ in range(SIDE_PARTICLES)]
 
         self.configure(bg="#151515")
         self._build_ui()
@@ -124,6 +129,15 @@ class BloomPetzMini(tk.Tk):
         threading.Thread(target=self._serial_worker, daemon=True).start()
         self.after(25, self._drain_rx)
         self.after(100, self.focus_force)
+        self.after(SIDE_TICK_MS, self._animate_side_art)
+
+    def _new_particle(self, start_anywhere: bool = False) -> dict:
+        return {
+            "x": random.randint(2, SIDE_W - 3),
+            "y": random.randint(0, SCREEN_H) if start_anywhere else random.randint(-24, -2),
+            "speed": random.randint(1, 4),
+            "shape": random.randint(0, 4),
+        }
 
     def _build_ui(self):
         self.header = tk.Frame(self, bg="#151515", height=HEADER_H)
@@ -147,8 +161,6 @@ class BloomPetzMini(tk.Tk):
         close.pack(side="right")
         close.bind("<Button-1>", self._close_click)
 
-        # Big click targets for the tiny window. Both arrows choose another
-        # random theme; there is no slow 128-step hue wheel anymore.
         self.next_color = tk.Label(
             self.header, text="▶", bg="#151515", fg="#eeeeee",
             width=3, font=("DejaVu Sans", 8, "bold"), cursor="hand2"
@@ -174,6 +186,18 @@ class BloomPetzMini(tk.Tk):
         self.screen.pack(fill="both", expand=True)
         self.screen.pack_propagate(False)
 
+        self.left_art = tk.Canvas(
+            self.screen, width=SIDE_W, height=SCREEN_H,
+            bg=self.bg_color, highlightthickness=0, bd=0
+        )
+        self.left_art.place(x=0, y=0)
+
+        self.right_art = tk.Canvas(
+            self.screen, width=SIDE_W, height=SCREEN_H,
+            bg=self.bg_color, highlightthickness=0, bd=0
+        )
+        self.right_art.place(x=SCREEN_W - SIDE_W, y=0)
+
         self.line_labels = []
         for i in range(4):
             label = tk.Label(
@@ -183,6 +207,46 @@ class BloomPetzMini(tk.Tk):
             )
             label.place(relx=0.5, rely=(i + 0.5) / 4.0, anchor="center")
             self.line_labels.append(label)
+
+        self._draw_side_art()
+
+    def _draw_particle(self, canvas: tk.Canvas, p: dict):
+        x, y = p["x"], p["y"]
+        c = self.text_color
+        shape = p["shape"]
+        if shape == 0:
+            canvas.create_rectangle(x, y, x + 1, y + 1, fill=c, outline=c)
+        elif shape == 1:
+            canvas.create_line(x - 2, y, x + 2, y, fill=c)
+            canvas.create_line(x, y - 2, x, y + 2, fill=c)
+        elif shape == 2:
+            canvas.create_oval(x - 1, y - 1, x + 2, y + 2, outline=c)
+        elif shape == 3:
+            canvas.create_line(x - 2, y - 2, x + 2, y + 2, fill=c)
+        else:
+            canvas.create_rectangle(x - 1, y - 1, x + 1, y + 1, fill=c, outline=c)
+
+    def _draw_side_art(self):
+        if not hasattr(self, "left_art"):
+            return
+        for canvas in (self.left_art, self.right_art):
+            canvas.delete("all")
+            canvas.configure(bg=self.bg_color)
+        for p in self.side_left:
+            self._draw_particle(self.left_art, p)
+        for p in self.side_right:
+            self._draw_particle(self.right_art, p)
+
+    def _animate_side_art(self):
+        if not self.running:
+            return
+        for particles in (self.side_left, self.side_right):
+            for i, p in enumerate(particles):
+                p["y"] += p["speed"]
+                if p["y"] > SCREEN_H + 4:
+                    particles[i] = self._new_particle(False)
+        self._draw_side_art()
+        self.after(SIDE_TICK_MS, self._animate_side_art)
 
     def _bind_keys(self):
         mapping = {
@@ -229,6 +293,7 @@ class BloomPetzMini(tk.Tk):
         self.color_label.configure(fg=self.text_color)
         for label in self.line_labels:
             label.configure(fg=self.text_color, bg=self.bg_color)
+        self._draw_side_art()
 
     def _load_theme(self) -> tuple[str, str]:
         try:
@@ -385,7 +450,6 @@ class BloomPetzMini(tk.Tk):
 
         if line.startswith("BP|BOOT|") or line.startswith("BP|IDENTITY|"):
             self._set_connected(True)
-            # Ask again after boot/identity so the header cannot stay stale.
             self.send("GET STATUS")
             return
 
@@ -398,8 +462,6 @@ class BloomPetzMini(tk.Tk):
             self.screen_lines[i] = text
             self.line_labels[i].configure(text=text)
 
-        # Screen updates often follow slot changes, so refresh the authoritative
-        # pet name whenever the screen changes.
         self.send("GET STATUS")
 
     def close_app(self):
