@@ -1,0 +1,29 @@
+{
+  "_note": "Calendar-day reset rules and anti-overfeeding behavior.",
+  "day_reset": {
+    "time": "00:00 local device time",
+    "resets": [
+      "daily action completion flags",
+      "daily per-source developmental gain caps",
+      "daily treat count"
+    ],
+    "does_not_reset": [
+      "food/energy remaining",
+      "lifetime counters",
+      "pet age/history",
+      "developmental stat values",
+      "personality",
+      "habits"
+    ]
+  },
+  "meal_rule": {
+    "target": "One meaningful full meal per day is normally enough to fund all eight daily actions.",
+    "anti_midnight_overfeed": "Crossing midnight does not empty the pet's stomach or force food/energy to zero. Remaining food/energy carries over.",
+    "extra_feed_behavior": "If the pet is still sufficiently full, an additional feed gives only a reaction and does not stack energy, duplicate meal growth, or exceed 100."
+  },
+  "treat_rule": {
+    "max_per_calendar_day": 3,
+    "growth": "Each accepted treat can roll weighted random developmental stat micro-growth.",
+    "after_limit": "Further treats are refused with a pet reaction until the next calendar-day reset."
+  }
+}
