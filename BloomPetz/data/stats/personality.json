@@ -1,4 +1,15 @@
 {
-  "_note": "Editable definitions for emergent personality traits. User does not directly assign these values.",
-  "stats": {}
+  "category": "Personality",
+  "stats": [
+    "assertiveness",
+    "gentleness",
+    "goofiness",
+    "independence",
+    "mischief",
+    "obedience",
+    "seriousness",
+    "shyness",
+    "stubbornness",
+    "temperament"
+  ]
 }
