@@ -1,4 +1,32 @@
 {
-  "_note": "Editable definitions for current-care needs. Values are placeholders until mechanics are finalized.",
-  "stats": {}
+  "_note": "Current-care needs for the BloomPetz daily loop.",
+  "food_energy": {
+    "min": 0.0,
+    "max": 100.0,
+    "action_cost": 12.5,
+    "full_meal_restore": 100.0,
+    "states": {
+      "full": [76.0, 100.0],
+      "good": [51.0, 75.9999],
+      "peckish": [26.0, 50.9999],
+      "hungry": [0.0001, 25.9999],
+      "empty": [0.0, 0.0]
+    },
+    "rules": [
+      "Each completed daily action costs 12.5 food/energy points (1/8 of a full pool).",
+      "At 0 food/energy, developmental actions are blocked until the pet is fed.",
+      "A full meal restores the pool to 100 when the pet has actually spent enough of the previous meal.",
+      "The stomach does not reset at midnight; remaining food/energy carries across calendar days.",
+      "Extra feeding while still full does not grant additional growth or stack food beyond 100."
+    ]
+  },
+  "treats": {
+    "daily_limit": 3,
+    "rules": [
+      "Treats do not replace the daily meal.",
+      "Each accepted treat can apply randomized developmental stat micro-growth using the same weighted stat system as actions.",
+      "Treat number 4 and beyond are refused until the next daily reset.",
+      "Treat counters reset at midnight local device time."
+    ]
+  }
 }
