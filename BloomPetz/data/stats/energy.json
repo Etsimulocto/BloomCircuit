@@ -1,0 +1,15 @@
+{
+  "category": "Energy",
+  "stats": [
+    "activity_drive",
+    "burst_energy",
+    "energy",
+    "energy_control",
+    "energy_recovery",
+    "enthusiasm",
+    "metabolic_efficiency",
+    "rest_efficiency",
+    "vitality",
+    "wakefulness"
+  ]
+}
