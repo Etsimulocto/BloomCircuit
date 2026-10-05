@@ -1,14 +1,10 @@
 #!/usr/bin/env python3
-"""BloomPetz Mini — tiny OLED mirror + keyboard controller.
+"""BloomPetz Mini — half-size OLED mirror + keyboard controller.
 
-Uses the proven HAPPY JARZ serial pattern:
-- wait for a stable /dev/ttyACM* device
-- open it once with DTR/RTS false
-- keep that handle until the device actually disappears
-- tolerate brief USB hiccups with a disconnect grace period
-- never run a separate probe/open/close discovery cycle
+App-only color selector: changes this window's text color only.
+Lifecycle follows HAPPY JARZ: open one assigned USB port, keep it, and close
+this app after the controller is physically gone for the disconnect grace.
 """
-
 from __future__ import annotations
 
 import colorsys
@@ -31,11 +27,13 @@ POLL_SECONDS = 0.20
 STABLE_SECONDS = 2.0
 DISCONNECT_GRACE_SEC = 3.0
 CONFIG_PATH = os.path.expanduser("~/.config/bloompetz/mini.json")
+ASSIGNED_PORT = os.environ.get("BLOOMPETZ_PORT", "").strip()
 
-SCREEN_W = 384
-SCREEN_H = 192
-HEADER_H = 30
-FONT = ("DejaVu Sans Mono", 20, "bold")
+# Exactly 50% of the previous 384 x (192+30) window.
+SCREEN_W = 192
+SCREEN_H = 96
+HEADER_H = 15
+FONT = ("DejaVu Sans Mono", 10, "bold")
 
 
 def programmer_running() -> bool:
@@ -58,8 +56,7 @@ def serial_ports() -> list[str]:
 def make_palette() -> list[str]:
     out = []
     for i in range(128):
-        h = i / 128.0
-        r, g, b = colorsys.hsv_to_rgb(h, 0.72, 1.0)
+        r, g, b = colorsys.hsv_to_rgb(i / 128.0, 0.72, 1.0)
         out.append(f"#{int(r*255):02x}{int(g*255):02x}{int(b*255):02x}")
     return out
 
@@ -84,16 +81,14 @@ class BloomPetzMini(tk.Tk):
         self.key_down: set[str] = set()
         self.screen_lines = [" " * 16 for _ in range(4)]
         self.color_index = self._load_color_index()
-        self._drag_x = 0
-        self._drag_y = 0
+        self._drag_x = self._drag_y = 0
 
         self._build_ui()
         self._bind_keys()
         self.protocol("WM_DELETE_WINDOW", self.close_app)
-
         threading.Thread(target=self._serial_worker, daemon=True).start()
         self.after(25, self._drain_rx)
-        self.after(120, self.focus_force)
+        self.after(100, self.focus_force)
 
     def _build_ui(self):
         self.header = tk.Frame(self, bg="#151515", height=HEADER_H)
@@ -103,59 +98,46 @@ class BloomPetzMini(tk.Tk):
         self.header.bind("<B1-Motion>", self._drag_move)
 
         self.title_label = tk.Label(
-            self.header, text="BloomPetz ·", bg="#151515", fg="#777777",
-            font=("DejaVu Sans", 9, "bold")
+            self.header, text="BP ·", bg="#151515", fg="#777777",
+            font=("DejaVu Sans", 6, "bold")
         )
-        self.title_label.pack(side="left", padx=(9, 4))
+        self.title_label.pack(side="left", padx=(4, 1))
         self.title_label.bind("<ButtonPress-1>", self._drag_start)
         self.title_label.bind("<B1-Motion>", self._drag_move)
 
-        close = tk.Label(
-            self.header, text="×", bg="#151515", fg="#dddddd",
-            width=3, font=("DejaVu Sans", 12, "bold"), cursor="hand2"
-        )
+        close = tk.Label(self.header, text="×", bg="#151515", fg="#dddddd",
+                         width=2, font=("DejaVu Sans", 7, "bold"), cursor="hand2")
         close.pack(side="right")
         close.bind("<Button-1>", self._close_click)
 
-        self.next_color = tk.Label(
-            self.header, text="›", bg="#151515", fg="#dddddd",
-            width=2, font=("DejaVu Sans", 12, "bold"), cursor="hand2"
-        )
+        self.next_color = tk.Label(self.header, text="›", bg="#151515", fg="#dddddd",
+                                   width=2, font=("DejaVu Sans", 7, "bold"), cursor="hand2")
         self.next_color.pack(side="right")
         self.next_color.bind("<Button-1>", lambda e: self._color_click(1))
 
-        self.swatch = tk.Label(
-            self.header, text="●", bg="#151515", fg=PALETTE[self.color_index],
-            font=("DejaVu Sans", 11), width=2
-        )
+        self.swatch = tk.Label(self.header, text="●", bg="#151515",
+                               fg=PALETTE[self.color_index], font=("DejaVu Sans", 6), width=2)
         self.swatch.pack(side="right")
 
-        self.prev_color = tk.Label(
-            self.header, text="‹", bg="#151515", fg="#dddddd",
-            width=2, font=("DejaVu Sans", 12, "bold"), cursor="hand2"
-        )
+        self.prev_color = tk.Label(self.header, text="‹", bg="#151515", fg="#dddddd",
+                                   width=2, font=("DejaVu Sans", 7, "bold"), cursor="hand2")
         self.prev_color.pack(side="right")
         self.prev_color.bind("<Button-1>", lambda e: self._color_click(-1))
 
         self.screen = tk.Frame(self, bg="#000000", width=SCREEN_W, height=SCREEN_H)
         self.screen.pack(fill="both", expand=True)
         self.screen.pack_propagate(False)
-
-        self.line_labels: list[tk.Label] = []
+        self.line_labels = []
         for i in range(4):
-            label = tk.Label(
-                self.screen, text=self.screen_lines[i], bg="#000000",
-                fg=PALETTE[self.color_index], font=FONT,
-                anchor="center", justify="center", padx=0, pady=0
-            )
+            label = tk.Label(self.screen, text=self.screen_lines[i], bg="#000000",
+                             fg=PALETTE[self.color_index], font=FONT,
+                             anchor="center", justify="center", padx=0, pady=0)
             label.place(relx=0.5, rely=(i + 0.5) / 4.0, anchor="center")
             self.line_labels.append(label)
 
     def _bind_keys(self):
-        mapping = {
-            "Up": "UP", "Down": "DOWN", "Left": "LEFT", "Right": "RIGHT",
-            "a": "A", "A": "A", "b": "B", "B": "B",
-        }
+        mapping = {"Up":"UP", "Down":"DOWN", "Left":"LEFT", "Right":"RIGHT",
+                   "a":"A", "A":"A", "b":"B", "B":"B"}
         for keysym, bpkey in mapping.items():
             self.bind_all(f"<KeyPress-{keysym}>", lambda e, k=bpkey: self._key_press(k))
             self.bind_all(f"<KeyRelease-{keysym}>", lambda e, k=bpkey: self._key_release(k))
@@ -176,14 +158,20 @@ class BloomPetzMini(tk.Tk):
         self._drag_y = event.y_root - self.winfo_y()
 
     def _drag_move(self, event):
-        self.geometry(f"+{event.x_root - self._drag_x}+{event.y_root - self._drag_y}")
+        self.geometry(f"+{event.x_root-self._drag_x}+{event.y_root-self._drag_y}")
 
     def _close_click(self, _event=None):
         self.close_app()
         return "break"
 
     def _color_click(self, delta: int):
-        self.change_color(delta)
+        self.color_index = (self.color_index + delta) % 128
+        color = PALETTE[self.color_index]
+        self.swatch.configure(fg=color)
+        for label in self.line_labels:
+            label.configure(fg=color)
+        self._save_color_index()
+        self.after_idle(self.focus_force)
         return "break"
 
     def _load_color_index(self) -> int:
@@ -201,22 +189,13 @@ class BloomPetzMini(tk.Tk):
         except Exception:
             pass
 
-    def change_color(self, delta: int):
-        self.color_index = (self.color_index + delta) % 128
-        color = PALETTE[self.color_index]
-        self.swatch.configure(fg=color)
-        for label in self.line_labels:
-            label.configure(fg=color)
-        self._save_color_index()
-        self.after_idle(self.focus_force)
-
     def _set_connected(self, connected: bool):
-        self.title_label.configure(
-            text="BloomPetz" if connected else "BloomPetz ·",
-            fg="#d8d8d8" if connected else "#777777"
-        )
+        self.title_label.configure(text="BP" if connected else "BP ·",
+                                   fg="#d8d8d8" if connected else "#777777")
 
     def _choose_port(self) -> str | None:
+        if ASSIGNED_PORT:
+            return ASSIGNED_PORT if os.path.exists(ASSIGNED_PORT) else None
         ports = serial_ports()
         return ports[0] if ports else None
 
@@ -234,8 +213,7 @@ class BloomPetzMini(tk.Tk):
         return s
 
     def _serial_worker(self):
-        seen_since: dict[str, float] = {}
-
+        seen_since = None
         while self.running:
             if programmer_running():
                 time.sleep(POLL_SECONDS)
@@ -244,27 +222,25 @@ class BloomPetzMini(tk.Tk):
             if self.ser is None:
                 port = self._choose_port()
                 if port is None:
-                    seen_since.clear()
-                    self.rx.put(("status", False))
+                    if ASSIGNED_PORT:
+                        self.rx.put(("quit",))
+                        return
+                    seen_since = None
                     time.sleep(POLL_SECONDS)
                     continue
-
-                now = time.monotonic()
-                seen_since.setdefault(port, now)
-                if now - seen_since[port] < STABLE_SECONDS:
+                if seen_since is None:
+                    seen_since = time.monotonic()
+                if time.monotonic() - seen_since < STABLE_SECONDS:
                     time.sleep(POLL_SECONDS)
                     continue
-
                 try:
                     s = self._open_port(port)
                 except Exception:
-                    time.sleep(0.5)
+                    time.sleep(0.4)
                     continue
-
                 with self.ser_lock:
                     self.ser = s
                     self.connected_port = port
-
                 self.rx.put(("status", True))
                 time.sleep(0.15)
                 self.send("HELLO")
@@ -273,42 +249,30 @@ class BloomPetzMini(tk.Tk):
 
             port = self.connected_port
             if not port:
-                self._drop_serial()
-                continue
+                self.rx.put(("quit",))
+                return
 
             if not os.path.exists(port):
                 missing_since = time.monotonic()
                 while self.running and not os.path.exists(port):
                     if time.monotonic() - missing_since >= DISCONNECT_GRACE_SEC:
-                        self._drop_serial()
-                        break
+                        self.rx.put(("quit",))
+                        return
                     time.sleep(POLL_SECONDS)
                 continue
 
-            s = self.ser
             try:
-                raw = s.readline() if s else b""
+                raw = self.ser.readline() if self.ser else b""
             except Exception:
-                self._drop_serial()
+                if not os.path.exists(port):
+                    self.rx.put(("quit",))
+                    return
                 time.sleep(POLL_SECONDS)
                 continue
-
             if raw:
                 line = raw.decode("utf-8", errors="replace").rstrip("\r\n")
                 if line:
                     self.rx.put(("line", line))
-
-    def _drop_serial(self):
-        with self.ser_lock:
-            s = self.ser
-            self.ser = None
-            self.connected_port = None
-        try:
-            if s is not None:
-                s.close()
-        except Exception:
-            pass
-        self.rx.put(("status", False))
 
     def send(self, command: str):
         with self.ser_lock:
@@ -316,20 +280,22 @@ class BloomPetzMini(tk.Tk):
         if s is None or not s.is_open:
             return
         try:
-            s.write((command.strip() + "\n").encode("utf-8"))
+            s.write((command.strip()+"\n").encode("utf-8"))
             s.flush()
         except Exception:
-            self._drop_serial()
+            pass
 
     def _drain_rx(self):
         try:
             while True:
                 item = self.rx.get_nowait()
-                kind = item[0]
-                if kind == "status":
+                if item[0] == "status":
                     self._set_connected(bool(item[1]))
-                elif kind == "line":
+                elif item[0] == "line":
                     self._handle_line(item[1])
+                elif item[0] == "quit":
+                    self.close_app()
+                    return
         except queue.Empty:
             pass
         if self.running:
@@ -339,24 +305,30 @@ class BloomPetzMini(tk.Tk):
         if line.startswith("BP|BOOT|") or line.startswith("BP|IDENTITY|"):
             self._set_connected(True)
             return
-
         if not line.startswith("BP|SCREEN|"):
             return
-
-        fields: dict[str, str] = {}
+        fields = {}
         for part in line.split("|")[2:]:
             if "=" in part:
-                key, value = part.split("=", 1)
-                fields[key] = value
-
+                k, v = part.split("=", 1)
+                fields[k] = v
         for i in range(4):
-            text = fields.get(str(i + 1), self.screen_lines[i])[:16].ljust(16)
+            text = fields.get(str(i+1), self.screen_lines[i])[:16].ljust(16)
             self.screen_lines[i] = text
             self.line_labels[i].configure(text=text)
 
     def close_app(self):
+        if not self.running:
+            return
         self.running = False
-        self._drop_serial()
+        with self.ser_lock:
+            s = self.ser
+            self.ser = None
+        try:
+            if s:
+                s.close()
+        except Exception:
+            pass
         self.destroy()
 
 
