@@ -1,0 +1,15 @@
+{
+  "category": "Speed / Movement",
+  "stats": [
+    "agility",
+    "balance",
+    "coordination",
+    "dexterity",
+    "grace",
+    "mobility",
+    "precision",
+    "reaction_time",
+    "reflex",
+    "speed"
+  ]
+}
