@@ -1,0 +1,15 @@
+{
+  "category": "Cleanliness / Care",
+  "stats": [
+    "care_awareness",
+    "care_tolerance",
+    "cleanliness",
+    "environmental_comfort",
+    "grooming",
+    "hygiene",
+    "maintenance",
+    "routine_acceptance",
+    "self_care",
+    "tidiness"
+  ]
+}
