@@ -55,13 +55,17 @@ BLOOMPETZ
 DND
 ```
 
-The launcher also shows the host-supplied local clock/date. The Pi companion sends the current Unix time and UTC offset over the existing USB serial connection on connect and periodically afterward. No Wi-Fi credentials are required for time sync.
+The launcher also shows the host-supplied local clock/date. The Pi companion sends the current Unix time and UTC offset over the existing USB serial connection immediately after the live serial connection is established and refreshes it every 60 seconds. No Wi-Fi credentials are required for time sync.
 
 Firmware command format:
 
 ```text
 SET HOSTTIME <unix_epoch_seconds> <utc_offset_minutes>
 ```
+
+The no-double-boot serial fix and host-time sync are separate requirements. The ESP32 should boot once, the Mini should open serial without manual DTR/RTS toggling, and the Mini must still explicitly send `SET HOSTTIME` on that surviving connection. Hardware testing confirmed this combination works.
+
+The firmware also stores the latest synchronized epoch/offset in ESP32 Preferences and restores it as a battery/offline fallback. USB host time remains authoritative whenever the Pi reconnects. Without a hardware RTC, the ESP32 cannot measure elapsed time while completely unpowered, so the persisted clock is a fallback rather than a true power-off clock.
 
 BloomPetz can return to BLOOM SYSTEM from its menu, and DND can return from its own menu.
 
@@ -225,7 +229,8 @@ Current known-good behavior:
 - keyboard controls: arrow keys + A/B
 - tested raw 8BitDo gamepad input via `/dev/input/js0`
 - controller colors follow the app's two-color theme
-- host clock is sent to firmware on connect and periodically while connected
+- opens serial without causing the old second ESP32 boot
+- sends `SET HOSTTIME` immediately on the working serial connection and refreshes it every 60 seconds
 - physical controls remain primary
 
 Important display rule: the Pi companion mirrors the same logical 21 DND columns shown on the physical OLED. It should not expose a wider dungeon viewport than the hardware.
@@ -249,7 +254,9 @@ The current proven Pi-side open pattern follows the working HAPPY JARZ controlle
 serial.Serial(port, BAUD, timeout=0.25, write_timeout=0.25)
 ```
 
-Do not reintroduce manual `dtr` / `rts` toggling unless retested on the real ESP32-S3. With the current pattern, hardware testing confirmed: Mini opens, gamepad works, and there is no second boot.
+Do not reintroduce manual `dtr` / `rts` toggling unless retested on the real ESP32-S3. With the current pattern, hardware testing confirmed: Mini opens, gamepad works, host time sync works, and there is no second boot.
+
+A key lesson from the clock bug: the old accidental second boot had also been masking a missing host-time send. Removing the reset was correct, but the surviving connection path then needed its own explicit `SET HOSTTIME`. Do not use a reset as a synchronization mechanism.
 
 ## Display ownership rule
 
@@ -274,10 +281,11 @@ _looks_like_dnd(...)
 _handle_line(...) uses 21 columns and invokes DND mode detection
 raw 8BitDo reader is active
 serial open does not manually toggle DTR/RTS
-host-time path sends SET HOSTTIME
+host-time path sends SET HOSTTIME on the live connection
+host time refreshes every 60 seconds
 ```
 
-If the Mini becomes structurally damaged, prefer rebuilding from the consolidated current source/tool and then reapplying the proven no-reset/gamepad fixes rather than restoring missing methods one at a time.
+If the Mini becomes structurally damaged, prefer rebuilding from the consolidated current source/tool and then reapplying the proven no-reset/gamepad/time-sync fixes rather than restoring missing methods one at a time.
 
 Known authoritative Pi paths:
 
@@ -309,11 +317,11 @@ arduino-cli compile \
   bloompetz_v0_1
 ```
 
-The October 2026 expanded DND content build compiled at:
+The October 2026 expanded DND + persistent clock fallback build compiled at:
 
 ```text
-Sketch uses 430874 bytes (32%) of program storage space.
-Global variables use 30192 bytes (9%) of dynamic memory.
+Sketch uses 432270 bytes (32%) of program storage space.
+Global variables use 30200 bytes (9%) of dynamic memory.
 ```
 
 Before upload, stop BloomPetz Mini so it does not own the serial device:
@@ -346,17 +354,19 @@ After a Pi rebuild or firmware deployment, verify the whole stack together:
 1. ESP32 boots once.
 2. Pi Mini opens automatically.
 3. Opening Mini does not cause a second ESP32 boot.
-4. Physical copper controls work.
-5. Keyboard controls work.
-6. 8BitDo D-pad and A/B work.
-7. BLOOM SYSTEM / BloomPetz use normal Mini chrome.
-8. DND uses the full 21-column mirror and hides side art/header.
-9. Pi DND layout matches the physical OLED logical frame.
-10. Host time/date appears and stays synchronized.
-11. Inventory opens the DND shop.
-12. Shop shows four offers and buying deducts gold.
-13. Entering a new room rerolls shop stock.
-14. Symbols browser reports 48 entries.
-15. Deeper rooms can draw from progressively higher enemy tiers.
-16. Player maximum HP can grow beyond the initial 18 through progression/items.
+4. Host time/date appears without requiring a reset/re-enumeration cycle.
+5. Host time continues refreshing while USB is connected.
+6. Physical copper controls work.
+7. Keyboard controls work.
+8. 8BitDo D-pad and A/B work.
+9. BLOOM SYSTEM / BloomPetz use normal Mini chrome.
+10. DND uses the full 21-column mirror and hides side art/header.
+11. Pi DND layout matches the physical OLED logical frame.
+12. Inventory opens the DND shop.
+13. Shop shows four offers and buying deducts gold.
+14. Entering a new room rerolls shop stock.
+15. Symbols browser reports 48 entries.
+16. Deeper rooms can draw from progressively higher enemy tiers.
+17. Player maximum HP can grow beyond the initial 18 through progression/items.
+18. After a successful USB time sync, battery/offline boot can restore the last persisted clock value.
 ```
