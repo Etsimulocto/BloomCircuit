@@ -131,6 +131,32 @@ The correct screen path must build 21-column rows and call DND detection for eac
 
 A file containing V3 helper functions is **not enough** to prove the live handler is V3.
 
+## ESP32 persistence boundary
+
+The Pi Mini does not own BloomPetz or DND save data. Active game state is authoritative on the ESP32.
+
+The current firmware uses one versioned/checksummed Preferences blob:
+
+```text
+bloomsys/state
+```
+
+That one record contains all three complete pet slots, the active pet slot, and durable DND progression/economy/equipment/inventory/shop state.
+
+This separation is intentional:
+
+```text
+Pi Mini
+  = mirror + controls + host time
+
+ESP32
+  = active simulation + authoritative BLOOM SYSTEM save
+```
+
+The desktop layer may later back up/archive `.bloompet` data, but it should not become a hidden second source of truth for the live pet or DND run.
+
+DND resume regenerates transient room/map/enemy state while preserving durable RPG progression. The Pi should simply mirror whatever frame firmware emits after resume rather than reconstructing DND state itself.
+
 ## Authoritative Pi paths
 
 Known working local layout:
@@ -173,6 +199,26 @@ Preferred recovery:
 8. Verify on hardware: one boot, Mini opens, gamepad works, DND has no side art, 21-column mirror matches OLED, and host time appears without a second boot.
 
 A Python syntax check only proves syntax. It does not prove the active runtime path is current.
+
+## October 2026 stable integration checkpoint
+
+The Pi-side contract is now intentionally small and stable:
+
+```text
+USB CDC serial without reset side effects
++ 21-column authoritative screen mirror
++ keyboard/clickable/raw-8BitDo input forwarding
++ explicit host-time handoff every 60 seconds
+```
+
+The corresponding firmware build with unified BLOOM SYSTEM persistence compiled cleanly twice on October 5, 2026 at:
+
+```text
+Sketch uses 434182 bytes (33%) of program storage space.
+Global variables use 36288 bytes (11%) of dynamic memory.
+```
+
+Compile success does not prove a physical flash occurred; firmware upload must still be confirmed separately by upload output.
 
 ## Planned expansion
 
