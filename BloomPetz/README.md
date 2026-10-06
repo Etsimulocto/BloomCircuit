@@ -134,11 +134,51 @@ Each successful first completion for the day applies weighted developmental grow
 
 Feeding only refills an empty stomach to 100. Treats are limited to three per day and each rolls developmental growth into one random stat. Midnight resets daily action/treat flags but does not reset food energy.
 
-## Storage model
+## Unified BLOOM SYSTEM storage model
 
-The physical device supports three active pet slots. PC/Raspberry Pi storage may later archive unlimited `.bloompet` files.
+The ESP32 now uses one authoritative Preferences blob for the complete BLOOM SYSTEM runtime state:
 
-A pet save currently stores identity, history counters, food state, daily state, and all 200 developmental floats in ESP32 Preferences-backed persistent storage.
+```text
+namespace: bloomsys
+key:       state
+```
+
+Conceptually the record is:
+
+```text
+BloomSystemSaveV1
+├── format magic / version / size / checksum
+├── active pet slot
+├── complete PetSave slot 1
+├── complete PetSave slot 2
+├── complete PetSave slot 3
+└── durable DND state
+```
+
+Each `PetSave` still contains the full pet identity, history counters, food state, daily state, and all 200 developmental floats. Existing BloomPetz mutation paths continue to call `saveSlot()`, but `saveSlot()` is now a compatibility wrapper that updates the unified BLOOM SYSTEM blob rather than maintaining an independent per-slot persistence system.
+
+The first unified-save boot is migration-safe: the existing legacy pet loader gets the opportunity to recover the current pet records first. If no valid unified blob exists yet, that recovered in-RAM state is written into `bloomsys/state` rather than intentionally starting from blank pets.
+
+The unified record is versioned and checksummed so later format changes can be handled as explicit migrations.
+
+Durable DND fields in the same blob include:
+
+- HP / maximum HP
+- STR / DEX / AC
+- XP / level
+- gold / keys
+- current room / deepest room
+- current weapon
+- compact purchased-item inventory
+- current four-item shop stock
+- shop room/index state
+- room theme index
+
+Transient combat state is intentionally not serialized. Enemy positions/HP, event timers, OLED marquee timers, and the live generated map are rebuilt when DND resumes. The durable RPG progression survives; the active room scene is safely regenerated.
+
+Save boundaries currently include existing BloomPetz mutation saves, return to BLOOM SYSTEM, DND new-game initialization, and a 30-second DND checkpoint while the game is active.
+
+The device still supports three active pet slots. A future PC/Raspberry Pi archive may store unlimited `.bloompet` files independently of the active device save.
 
 ## DND current hardware slice
 
@@ -165,10 +205,11 @@ Current playable behavior includes:
 - rotating status HUD
 - Character / Inventory / Symbols / System Menu entries
 - return to BLOOM SYSTEM
+- durable progression resumes after leaving DND and reopening it
 
 ### DND economy and inventory
 
-Gold is now spendable instead of being only a score/counter.
+Gold is spendable instead of being only a score/counter.
 
 The Inventory path includes a shop backed by a 48-item authored catalog. The shop presents four randomized offers at a time and rerolls when the player enters a new room, preventing repeated menu-open rerolls.
 
@@ -179,7 +220,7 @@ Current item categories include:
 - healing items
 - stat/charm items
 
-Purchases deduct gold and apply their gameplay effects immediately. Weapons replace the active weapon, armor increases AC, healing items restore HP, and charms can modify STR, DEX, and/or maximum HP. Purchased item names are retained in the compact inventory history.
+Purchases deduct gold and apply their gameplay effects immediately. Weapons replace the active weapon, armor increases AC, healing items restore HP, and charms can modify STR, DEX, and/or maximum HP. Purchased item names are retained in the compact inventory history and are included in the unified save record.
 
 ### DND content depth
 
@@ -212,7 +253,7 @@ The player still begins at 18 HP, but XP-driven level progression can now increa
 
 Death still returns the player to room 1 and halves carried gold, but HP restores to the player's current progressed maximum rather than forcing the character permanently back to an 18-HP ceiling.
 
-The starter room uses a real 14 x 4 map viewport. DND gameplay and persistence are still evolving, but the hardware movement/combat/economy/content loop is now established.
+The starter room uses a real 14 x 4 map viewport. The hardware movement/combat/economy/content loop and durable-resume model are now established.
 
 ## Raspberry Pi companion
 
@@ -317,12 +358,14 @@ arduino-cli compile \
   bloompetz_v0_1
 ```
 
-The October 2026 expanded DND + persistent clock fallback build compiled at:
+The October 5, 2026 unified BLOOM SYSTEM persistence build compiled cleanly twice at:
 
 ```text
-Sketch uses 432270 bytes (32%) of program storage space.
-Global variables use 30200 bytes (9%) of dynamic memory.
+Sketch uses 434182 bytes (33%) of program storage space. Maximum is 1310720 bytes.
+Global variables use 36288 bytes (11%) of dynamic memory, leaving 291392 bytes for local variables. Maximum is 327680 bytes.
 ```
+
+That compile confirms the unified save migration is syntactically/build-valid. Compile and flash remain separate operations; do not treat a clean build as proof that a particular physical ESP32 has been updated until upload output confirms it.
 
 Before upload, stop BloomPetz Mini so it does not own the serial device:
 
@@ -344,7 +387,7 @@ arduino-cli upload \
   bloompetz_v0_1
 ```
 
-Important: compile and upload are separate operations. A successful compile alone does not change the firmware currently running on the ESP32. After firmware uploads, restart the Pi companion because flashing/resetting ends the previous serial session.
+After firmware uploads, restart the Pi companion because flashing/resetting ends the previous serial session.
 
 ## Current bench acceptance test
 
@@ -368,5 +411,31 @@ After a Pi rebuild or firmware deployment, verify the whole stack together:
 15. Symbols browser reports 48 entries.
 16. Deeper rooms can draw from progressively higher enemy tiers.
 17. Player maximum HP can grow beyond the initial 18 through progression/items.
-18. After a successful USB time sync, battery/offline boot can restore the last persisted clock value.
+18. BloomPetz mutations survive returning to BLOOM SYSTEM and reopening the pet.
+19. All three pet slots remain represented by the unified save record.
+20. DND HP/stats/XP/gold/room/weapon/inventory/shop progression survives returning to BLOOM SYSTEM and reopening DND.
+21. DND transient room enemies/map regenerate safely on resume rather than being raw-memory serialized.
+22. After a successful USB time sync, battery/offline boot can restore the last persisted clock value.
 ```
+
+## October 2026 milestone
+
+The current architecture is now coherent end-to-end:
+
+```text
+ESP32-S3 hardware
+  ├── six capacitive gamepad inputs
+  ├── OLED
+  ├── two APA106 LEDs
+  └── one versioned BLOOM SYSTEM save blob
+         ├── three complete BloomPetz slots
+         └── durable DND progression
+
+Raspberry Pi Mini
+  ├── no-reset USB serial
+  ├── OLED mirror
+  ├── keyboard / clickable / 8BitDo controls
+  └── authoritative host-time handoff
+```
+
+At this point the major platform pieces are working and integrated. Future work should prefer content, polish, testing, migration/versioning, and optional expansion over casual rewrites of the proven hardware, serial, display-ownership, clock, or save layers.
