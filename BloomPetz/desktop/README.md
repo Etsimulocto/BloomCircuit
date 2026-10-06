@@ -15,7 +15,7 @@ The Raspberry Pi companion is a working mirror/controller for the HAPPY JARZ Blo
 - keyboard arrow + A/B controls routed into the same firmware input path as the physical touch controls
 - raw Linux joystick support for the proven 8BitDo controller mapping
 - compact Pi desktop window with app-only color themes
-- host time sync over USB serial
+- proven host-time sync over USB serial without causing a second ESP32 boot
 - disconnect handling suitable for plug/unplug use
 
 `bloompetz_plug_watch.py` and `install_bloompetz_autostart.sh` provide the Raspberry Pi auto-launch path.
@@ -83,7 +83,7 @@ Do not reintroduce code that explicitly drives `dtr` / `rts` before or after `op
 
 There is one physical ESP32. Linux may re-enumerate it as `/dev/ttyACM0` or `/dev/ttyACM1`; that does not mean two boards are present.
 
-## Host time sync
+## Host time sync — proven no-reset path
 
 The Pi supplies local time to firmware over the existing USB serial connection. The firmware command format is:
 
@@ -91,7 +91,24 @@ The Pi supplies local time to firmware over the existing USB serial connection. 
 SET HOSTTIME <unix_epoch_seconds> <utc_offset_minutes>
 ```
 
-The intended Mini behavior is to send host time after connection and periodically while connected. No Wi-Fi credentials are required for the device clock/date display.
+Hardware testing exposed an important interaction between the old double-boot bug and clock sync: the accidental second USB reset also created a second initialization opportunity, so host time appeared to work while the serial-open path was still wrong. After the double boot was removed, the Mini could connect normally but the clock stayed blank because the surviving connect path was no longer sending `SET HOSTTIME`.
+
+The proven fix is **not** to restore the reset. Keep the no-reset serial-open behavior and explicitly send host time from the live serial connection immediately after the serial object is assigned. The current repair also refreshes host time every 60 seconds.
+
+Current known-good behavior:
+
+```text
+1. ESP32 boots once.
+2. Mini opens serial without manual DTR/RTS toggling.
+3. Mini sends SET HOSTTIME on that same live connection.
+4. BLOOM SYSTEM shows the correct local time/date.
+5. Mini refreshes host time every 60 seconds.
+6. No second ESP32 boot is required for clock sync.
+```
+
+This was repaired with the anchorless V4 host-time patch because earlier repair scripts targeted stale Mini method shapes. The lesson is to patch the current live connection point, not a remembered `HELLO` block.
+
+The ESP32 firmware also persists the most recently synchronized clock in Preferences for battery/offline fallback. USB host time remains authoritative whenever the Pi is connected. Without a hardware RTC, a completely unpowered ESP32 cannot know how much time elapsed while power was absent; the persisted value is a fallback, not a true powered-off clock.
 
 ## DND mirror ownership
 
@@ -149,10 +166,11 @@ Preferred recovery:
 1. Stop Mini and watcher.
 2. Rebuild the Pi Mini from the consolidated current source/tool.
 3. Reapply only proven hardware-specific fixes such as no-reset serial open and raw 8BitDo input.
-4. Run `python3 -m py_compile`.
-5. Launch Mini directly once and watch terminal output.
-6. Restart the watcher only after direct launch is clean.
-7. Verify on hardware: one boot, Mini opens, gamepad works, DND has no side art, 21-column mirror matches OLED, host time appears.
+4. Verify the live connection path still sends `SET HOSTTIME`; no-reset serial and host-time sync are separate requirements.
+5. Run `python3 -m py_compile`.
+6. Launch Mini directly once and watch terminal output.
+7. Restart the watcher only after direct launch is clean.
+8. Verify on hardware: one boot, Mini opens, gamepad works, DND has no side art, 21-column mirror matches OLED, and host time appears without a second boot.
 
 A Python syntax check only proves syntax. It does not prove the active runtime path is current.
 
