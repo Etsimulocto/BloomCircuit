@@ -193,14 +193,26 @@ static void renderYoke(uint32_t nowMs) {
   // Diagonals naturally blend between two neighboring bulbs.  Direction also
   // changes color so the motion is readable even when brightness is similar:
   // TOP=cyan, RIGHT=red/orange, BOTTOM=magenta, LEFT=blue.
-  float x=constrain(tiltY/35.0f,-1.0f,1.0f);  // +x = RIGHT
-  float y=constrain(-tiltX/35.0f,-1.0f,1.0f); // +y = TOP
+  // Installed board orientation: invert both axes so the lit side follows
+  // the physical direction the stand is moved/tilted.
+  // Use a broad 70-degree full-scale range so ordinary handling does not
+  // instantly slam the output to maximum.
+  float x=constrain(-tiltY/70.0f,-1.0f,1.0f); // +x = RIGHT
+  float y=constrain( tiltX/70.0f,-1.0f,1.0f); // +y = TOP
   float mag=constrain(sqrtf(x*x+y*y),0.0f,1.0f);
 
-  // Soft center glow when level.
-  for (int i=0;i<4;i++) leds[i]={0,10,8};
+  // Soft center glow when level. A generous dead zone prevents jitter and
+  // gives users room to move the stand without every tiny motion firing.
+  for (int i=0;i<4;i++) leds[i]={0,8,7};
 
-  if (mag < 0.05f) return;
+  const float deadZone=0.12f;
+  if (mag < deadZone) return;
+
+  // Remap the remaining travel to 0..1 and use a soft curve. This gives a
+  // wide sensory range instead of jumping from dim straight to full.
+  float active=(mag-deadZone)/(1.0f-deadZone);
+  active=constrain(active,0.0f,1.0f);
+  active=active*active*(3.0f-2.0f*active);
 
   // Dot product against each cardinal direction gives a smooth directional
   // weight.  Squaring makes the selected side feel more "joystick-like".
@@ -211,13 +223,13 @@ static void renderYoke(uint32_t nowMs) {
   for (int i=0;i<4;i++) {
     float w=max(0.0f,x*vx[i]+y*vy[i]);
     w=w*w;
-    float value=0.05f + 0.95f*w*mag;
+    float value=0.04f + 0.78f*w*active;
     leds[i]=hsv(hue[i],0.95f,constrain(value,0.0f,1.0f));
   }
 
   // A fast shove/tilt gives the selected direction a brief brightness kick.
-  if (motionEnergy>8.0f) {
-    float kick=constrain((motionEnergy-8.0f)/30.0f,0.0f,0.35f);
+  if (motionEnergy>18.0f) {
+    float kick=constrain((motionEnergy-18.0f)/55.0f,0.0f,0.18f);
     for (int i=0;i<4;i++) {
       float w=max(0.0f,x*vx[i]+y*vy[i]);
       if (w>0.0f) {
@@ -289,14 +301,16 @@ static void renderMotionLights(uint32_t nowMs) {
   else if (mode==2) renderComet(nowMs);
   else renderAurora(nowMs);
 
-  // Shake/pickup burst overlays a brief white-gold flash.
-  if (shakePulse>0.01f) {
-    Rgb burst={255,210,150};
-    for(auto &p:leds) addRgb(p,burst,shakePulse*0.55f);
-    shakePulse*=0.90f;
+  // YOKE is intended as an accessible sensory response: preserve the
+  // directional color even during rough handling instead of washing all four
+  // bulbs toward white. Other modes keep only a restrained warm motion pulse.
+  if (mode!=0 && shakePulse>0.01f) {
+    Rgb burst={120,72,28};
+    for(auto &p:leds) addRgb(p,burst,shakePulse*0.18f);
   }
+  shakePulse*=0.88f;
 
-  showLeds(48);
+  showLeds(mode==0 ? 42 : 46);
 }
 
 // ---------------- tiny OLED text ----------------
@@ -378,7 +392,7 @@ static void serviceTouch(){
 void setup(){
   Serial.begin(115200);
   delay(150);
-  Serial.println("BML|IDENTITY|device=BloomMotionLights|fw=0.2.0|mode0=YOKE");
+  Serial.println("BML|IDENTITY|device=BloomMotionLights|fw=0.2.1|mode0=YOKE_WIDE");
 
   Wire.begin(PIN_SDA,PIN_SCL,400000);
   bool ledOk=initLeds();
@@ -424,7 +438,7 @@ void loop(){
       float targetEnergy=min(80.0f,gyroMag*0.20f+impact*70.0f);
       motionEnergy=0.90f*motionEnergy+0.10f*targetEnergy;
 
-      if(impact>0.30f || gyroMag>130.0f) shakePulse=1.0f;
+      if(impact>0.75f || gyroMag>220.0f) shakePulse=1.0f;
     }
   }
 
