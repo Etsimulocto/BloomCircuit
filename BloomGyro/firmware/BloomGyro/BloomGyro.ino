@@ -69,7 +69,7 @@ struct ImuSample;
 
 // ---------------------------- Identity ----------------------------
 static const char *BG_VERSION = "0.1.1";
-static const char *BG_BUILD = "FASTBUS5HZ";
+static const char *BG_BUILD = "RAWSCALE";
 
 // ---------------------------- Hardware map ------------------------
 static constexpr uint8_t PIN_SDA       = 8;
@@ -85,10 +85,11 @@ static constexpr uint8_t LED_COUNT = 4;
 static constexpr float GYRO_SCALE = 131.0f;   // nominal LSB/(deg/s), +/-250 dps
 static float gyroScaleRuntime = GYRO_SCALE;
 static constexpr float ACC_SCALE  = 16384.0f; // LSB/g, +/-2g
-// Repeated 90-degree checks now land at about 70 degrees in both directions.
-// That is a consistent scale error, so apply 90/70 = 1.285714 to Z yaw.
+// With the shared I2C bus restored to 400 kHz and OLED refresh reduced,
+// the previous ~70-at-90 undercount disappears. The 1.285714 correction
+// now over-scales the sweep by about 25-35%, so use the MPU's native scale.
 // Sign and adaptive stationary bias handling remain separate.
-static constexpr float GYRO_Z_CAL = 1.285714f;
+static constexpr float GYRO_Z_CAL = 1.000000f;
 static constexpr float COMP_ALPHA = 0.985f;
 static constexpr float ZERO_DEADBAND_DEG = 2.0f;
 static constexpr float GYRO_STILL_DPS = 0.8f;
@@ -675,7 +676,7 @@ void setup() {
     oledClear();
     oledText(25,0,"BLOOM GYRO");
     oledText(28,3,"FW 0.1.1");
-    oledText(13,5,"FAST BUS 5HZ");
+    oledText(19,5,"RAW SCALE");
     delay(1800);
   }
 
