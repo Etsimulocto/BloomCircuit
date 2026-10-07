@@ -129,3 +129,41 @@ The installed sensor has no magnetometer, so Z remains relative yaw rather than 
 The final bench test confirmed correct yaw behavior in all directions after restoring the bus to 400 kHz, slowing OLED refresh to 5 Hz, and returning Z to the native `1.0` scale.
 
 The earlier "90 degrees reads about 70" behavior was traced to sampling/timing during the slower shared-bus diagnostic configuration, not to the OLED and IMU sharing SDA/SCL.
+
+
+## Accelerometer / LED sensory-play notes
+
+BloomMotionLights reuses this same IMU and four-LED hardware as a motion-reactive sensory test.
+
+Useful IMU roles:
+
+- X/Y gravity tilt for directional lighting
+- acceleration magnitude for pickup/shake/impact
+- gyro rates for twists, flicks, and motion energy
+- no magnetometer required for these effects
+
+The current four-light physical layout is sufficient for a yoke-style interaction:
+
+~~~text
+            TOP / LED0
+                ^
+                |
+LEFT / LED3 <-- + --> RIGHT / LED1
+                |
+                v
+           BOTTOM / LED2
+~~~
+
+Current preferred sensory behavior:
+
+- all four idle in soft blue
+- movement toward a direction crossfades that bulb toward warm gold
+- diagonals blend adjacent bulbs
+- full-scale response is around 45 degrees of tilt
+- center dead zone is around 6%
+- no white flash overlay in the main YOKE mode
+- fast movement should remain colorful and directional rather than saturating to white
+
+Bench testing showed that response tuning matters as much as sensor accuracy for sensory use. A too-wide tilt scale can feel unresponsive, while an overly sensitive motion/flash layer can wash out the directional effect.
+
+See `firmware/BloomMotionLights/README.md` for the current motion-light behavior and tuning notes.
