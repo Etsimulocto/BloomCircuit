@@ -69,7 +69,7 @@ struct ImuSample;
 
 // ---------------------------- Identity ----------------------------
 static const char *BG_VERSION = "0.1.1";
-static const char *BG_BUILD = "RAWSCALE";
+static const char *BG_BUILD = "ARC4";
 
 // ---------------------------- Hardware map ------------------------
 static constexpr uint8_t PIN_SDA       = 8;
@@ -515,10 +515,18 @@ static bool zeroTouchPressed() {
 static void renderLightRing(float zDeg) {
   clearLeds();
 
-  // Physical heading repeats every 360 degrees.  Use wrapped heading only
-  // for the "back at zero" test, while keeping the unwrapped sign for color.
-  float wrapped = wrap180(zDeg);
-  bool atZero = fabsf(wrapped) <= ZERO_DEADBAND_DEG &&
+  // Four LEDs work better as a quarter-turn progress arc than as a single
+  // moving dot.  Each LED represents 90 degrees of rotation from ZERO.
+  //
+  //   CW  +90  = 1 red LED
+  //   CW +180  = 2 red LEDs
+  //   CW +270  = 3 red LEDs
+  //   CW +360  = 4 red LEDs
+  //
+  // Counter-clockwise fills the same way in blue, but walks the physical ring
+  // in the opposite direction.  This makes 180 degrees visibly look like
+  // "half a turn" even with only four bulbs.
+  bool atZero = fabsf(zDeg) <= ZERO_DEADBAND_DEG &&
                 fabsf(lastGzDps) <= GYRO_STILL_DPS;
 
   if (atZero) {
@@ -528,25 +536,35 @@ static void renderLightRing(float zDeg) {
     return;
   }
 
-  // Position always wraps around the four-LED ring.
-  // Positive = clockwise/red, negative = counter-clockwise/blue.
-  float ringAngle = fmodf(zDeg, 360.0f);
-  if (ringAngle < 0) ringAngle += 360.0f;
+  float mag = fabsf(zDeg);
 
-  float sector = ringAngle / 90.0f;
-  int i0 = ((int)floorf(sector)) & 3;
-  int i1 = (i0 + 1) & 3;
-  float frac = sector - floorf(sector);
+  // Show progress within the current 360-degree revolution.  Exact positive
+  // multiples of 360 stay fully lit instead of instantly appearing empty.
+  float turn = fmodf(mag, 360.0f);
+  if (turn < 0.01f && mag >= 359.0f) turn = 360.0f;
 
-  uint8_t a = scale8(1.0f-frac);
-  uint8_t b = scale8(frac);
+  float quarters = turn / 90.0f;  // 0..4
+  int full = (int)floorf(quarters);
+  float frac = quarters - (float)full;
+  if (full > 4) full = 4;
 
-  if (zDeg > 0) {
-    ledFrame[i0] = {a,0,0};
-    ledFrame[i1] = {b,0,0};
-  } else {
-    ledFrame[i0] = {0,0,a};
-    ledFrame[i1] = {0,0,b};
+  // Physical order from TOP:
+  // CW  : LED0 -> LED1 -> LED2 -> LED3
+  // CCW : LED0 -> LED3 -> LED2 -> LED1
+  const uint8_t cwOrder[4]  = {0,1,2,3};
+  const uint8_t ccwOrder[4] = {0,3,2,1};
+  const uint8_t *order = zDeg >= 0.0f ? cwOrder : ccwOrder;
+
+  for (int i=0; i<full && i<4; ++i) {
+    if (zDeg >= 0.0f) ledFrame[order[i]] = {90,0,0};
+    else              ledFrame[order[i]] = {0,0,90};
+  }
+
+  // Fade in the next quarter so 45 degrees is visibly half of one LED.
+  if (full < 4 && frac > 0.0f) {
+    uint8_t v = scale8(frac, 90);
+    if (zDeg >= 0.0f) ledFrame[order[full]] = {v,0,0};
+    else              ledFrame[order[full]] = {0,0,v};
   }
 
   ledBrightness=65;
@@ -676,7 +694,7 @@ void setup() {
     oledClear();
     oledText(25,0,"BLOOM GYRO");
     oledText(28,3,"FW 0.1.1");
-    oledText(19,5,"RAW SCALE");
+    oledText(25,5,"ARC4");
     delay(1800);
   }
 
