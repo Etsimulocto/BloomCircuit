@@ -351,3 +351,14 @@ BloomCircuit is intentionally a wiring-map and fabrication-documentation tool. I
 The validated bench configuration uses a shared 400 kHz I2C bus for the OLED and IMU, a reduced 5 Hz OLED refresh so display traffic does not starve IMU sampling, and the MPU native yaw scale (`ZCAL=1.0`). The guided Simon calibration confirmed correct rotation in all directions after those timing fixes.
 
 See `BloomGyro/README.md` for wiring, flashing, calibration, desktop logging, and diagnostic details.
+
+
+### BloomMotionLights — accelerometer-driven sensory LEDs
+
+`BloomGyro/firmware/BloomMotionLights/` is a standalone ESP32-S3 motion-light playground built from the validated BloomGyro IMU layer.
+
+It demonstrates that a basic 6-axis accelerometer/gyro can drive useful sensory lighting without a magnetometer. The current preferred YOKE mode maps X/Y tilt onto four APA106 bulbs arranged top/right/bottom/left: all four idle soft blue, while movement toward a side crossfades that bulb toward warm gold. Diagonal movement blends neighboring bulbs.
+
+Bench tuning established a practical sensory range of roughly 45 degrees full-scale with a small center dead zone and a soft early-response curve. White shake overlays were removed from the main YOKE mode so energetic handling keeps clear directional color instead of washing all four bulbs out.
+
+See `BloomGyro/firmware/BloomMotionLights/README.md` for accelerometer roles, LED behavior, compile/upload steps, and sensory-design lessons.
