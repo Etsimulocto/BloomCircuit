@@ -74,7 +74,7 @@ class BloomGyroMini(tk.Tk):
         self.connected_port: str | None = None
         self.port_seen_since: dict[str, float] = {}
 
-        self.values = {"x": 0.0, "y": 0.0, "z": 0.0, "gz_dps": 0.0, "touch": 0}
+        self.values = {"x": 0.0, "y": 0.0, "z": 0.0, "gz_dps": 0.0, "touch": 0, "still": 0, "bz": 0.0}
         self.boot = {"oled": "?", "mpu": "?", "led": "?"}
         self.whoami = "?"
         self.samples = 0
@@ -94,7 +94,7 @@ class BloomGyroMini(tk.Tk):
         self.log = csv.writer(self.log_file)
         self.log.writerow([
             "local_time_iso", "monotonic_s", "event", "x_deg", "y_deg", "z_deg",
-            "gz_dps", "touch", "port", "oled_ok", "mpu_ok", "led_ok", "detail"
+            "gz_dps", "touch", "still", "gyro_bias_z_raw", "port", "oled_ok", "mpu_ok", "led_ok", "detail"
         ])
         self.log_file.flush()
 
@@ -592,7 +592,8 @@ class BloomGyroMini(tk.Tk):
                 f"{time.monotonic():.3f}", event,
                 f"{self.values['x']:.3f}", f"{self.values['y']:.3f}",
                 f"{self.values['z']:.3f}", f"{self.values['gz_dps']:.3f}",
-                self.values["touch"], self.connected_port or "",
+                self.values["touch"], self.values["still"], f"{self.values['bz']:.3f}",
+                self.connected_port or "",
                 self.boot["oled"], self.boot["mpu"], self.boot["led"], detail
             ])
             self.log_file.flush()
@@ -609,6 +610,8 @@ class BloomGyroMini(tk.Tk):
             self.values["z"] = self._f(f, "z")
             self.values["gz_dps"] = self._f(f, "gz_dps")
             self.values["touch"] = self._i(f, "touch")
+            self.values["still"] = self._i(f, "still")
+            self.values["bz"] = self._f(f, "bz")
             self.samples += 1
             self.recent_samples.append({
                 "t": time.monotonic(),
@@ -629,6 +632,10 @@ class BloomGyroMini(tk.Tk):
                     self.values[key] = self._f(f, key)
             if "touch" in f:
                 self.values["touch"] = self._i(f, "touch")
+            if "still" in f:
+                self.values["still"] = self._i(f, "still")
+            if "bz" in f:
+                self.values["bz"] = self._f(f, "bz")
             self._update_readout()
             return
 
@@ -671,7 +678,9 @@ class BloomGyroMini(tk.Tk):
         for key in ("x", "y", "z"):
             self.axis_labels[key].configure(text=f"{self.values[key]:+06.1f}°")
         self.gz_lbl.configure(text=f"Z RATE   {self.values['gz_dps']:+07.2f}°/s")
-        self.touch_lbl.configure(text=f"TOUCH    {self.values['touch']}")
+        self.touch_lbl.configure(
+            text=f"TOUCH    {self.values['touch']}   STILL {self.values['still']}   BZ {self.values['bz']:+.1f}"
+        )
         self.sample_lbl.configure(text=f"{self.samples} samples")
         if self.cal_window is not None and self.cal_window.winfo_exists():
             self.cal_live_lbl.configure(
