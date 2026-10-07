@@ -195,24 +195,24 @@ static void renderYoke(uint32_t nowMs) {
   // TOP=cyan, RIGHT=red/orange, BOTTOM=magenta, LEFT=blue.
   // Installed board orientation: invert both axes so the lit side follows
   // the physical direction the stand is moved/tilted.
-  // Use a broad 70-degree full-scale range so ordinary handling does not
-  // instantly slam the output to maximum.
-  float x=constrain(-tiltX/70.0f,-1.0f,1.0f); // invert X so its positive movement follows the upward physical direction
-  float y=constrain(-tiltY/70.0f,-1.0f,1.0f); // Y already follows the upward physical direction
+  // Sensory-yoke range: visible response starts quickly, but full output
+  // still takes a meaningful tilt. About 45 degrees reaches full-scale.
+  float x=constrain(-tiltX/45.0f,-1.0f,1.0f);
+  float y=constrain(-tiltY/45.0f,-1.0f,1.0f);
   float mag=constrain(sqrtf(x*x+y*y),0.0f,1.0f);
 
   // Soft blue idle on all four bulbs. Direction is communicated by WHICH
   // bulb changes, not by assigning each direction a different base color.
   for (int i=0;i<4;i++) leds[i]={0,18,42};
 
-  const float deadZone=0.12f;
+  const float deadZone=0.06f;
   if (mag < deadZone) return;
 
-  // Remap the remaining travel to 0..1 and use a soft curve. This gives a
-  // wide sensory range instead of jumping from dim straight to full.
+  // Remap the remaining travel to 0..1. Use a gentle ease-out so small
+  // movements are obvious immediately while large movements still have room.
   float active=(mag-deadZone)/(1.0f-deadZone);
   active=constrain(active,0.0f,1.0f);
-  active=active*active*(3.0f-2.0f*active);
+  active=1.0f-(1.0f-active)*(1.0f-active);
 
   // Dot product against each cardinal direction gives a smooth directional
   // weight.  Squaring makes the selected side feel more "joystick-like".
@@ -222,7 +222,6 @@ static void renderYoke(uint32_t nowMs) {
 
   for (int i=0;i<4;i++) {
     float w=max(0.0f,x*vx[i]+y*vy[i]);
-    w=w*w;
 
     // Keep inactive bulbs blue. As a direction becomes active, crossfade that
     // bulb from blue toward warm gold and increase its brightness.
@@ -400,7 +399,7 @@ static void serviceTouch(){
 void setup(){
   Serial.begin(115200);
   delay(150);
-  Serial.println("BML|IDENTITY|device=BloomMotionLights|fw=0.2.4|mode0=YOKE_BLUE_GOLD");
+  Serial.println("BML|IDENTITY|device=BloomMotionLights|fw=0.2.5|mode0=YOKE_RESPONSIVE");
 
   Wire.begin(PIN_SDA,PIN_SCL,400000);
   bool ledOk=initLeds();
@@ -432,8 +431,8 @@ void loop(){
 
       float rawTiltX=atan2f(ay,az)*180.0f/PI;
       float rawTiltY=atan2f(-ax,sqrtf(ay*ay+az*az))*180.0f/PI;
-      tiltX=0.88f*tiltX+0.12f*rawTiltX;
-      tiltY=0.88f*tiltY+0.12f*rawTiltY;
+      tiltX=0.72f*tiltX+0.28f*rawTiltX;
+      tiltY=0.72f*tiltY+0.28f*rawTiltY;
 
       gxDps=((float)s.gx-biasX)/GYRO_SCALE;
       gyDps=((float)s.gy-biasY)/GYRO_SCALE;
