@@ -94,3 +94,35 @@ Watcher log:
 ```text
 ~/.local/share/bloomgyro/plug_watch.log
 ```
+
+
+## Simon Says calibration logger
+
+BloomGyro Mini now includes a **SIMON CAL** button for guided hardware calibration.
+
+The calibration run walks through a fixed sequence and asks the operator to hold each requested pose before pressing **CAPTURE / NEXT**:
+
+- flat / still baseline
+- clockwise 90°
+- return to zero
+- counterclockwise 90°
+- return to zero
+- clockwise 180°
+- return to zero
+- counterclockwise 180°
+- return to zero
+- front edge up about 45°
+- back edge up about 45°
+- right edge up about 45°
+- left edge up about 45°
+
+The first step sends the normal BloomGyro `ZERO` command automatically.
+
+Each capture averages the most recent live samples instead of using one instantaneous reading. The calibration session produces both:
+
+```text
+~/.local/share/bloomgyro/logs/bloomgyro_cal_YYYYMMDD_HHMMSS.csv
+~/.local/share/bloomgyro/logs/bloomgyro_cal_YYYYMMDD_HHMMSS.txt
+```
+
+The CSV contains target motion, averaged X/Y/Z, Z rate, touch value, sample count, and min/max values for each axis. The TXT is a compact human-readable report intended to be easy to paste or upload for firmware scale/axis correction.
