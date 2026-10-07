@@ -265,6 +265,12 @@ static float zeroX=0, zeroY=0, zeroZ=0;
 static float lastGzDps=0;
 static uint32_t lastSensorUs=0;
 
+// Hardware status is declared here because setZero() may run before the
+// setup/loop section and needs to guard optional display/light writes.
+static bool oledOk=false;
+static bool mpuOk=false;
+static bool ledOk=false;
+
 static int16_t be16(const uint8_t *p) {
   return (int16_t)((uint16_t)p[0] << 8 | p[1]);
 }
@@ -488,10 +494,6 @@ static void renderDisplay() {
 }
 
 // ---------------------------- Setup / loop ------------------------
-static bool oledOk=false;
-static bool mpuOk=false;
-static bool ledOk=false;
-
 static char serialCmd[40] = {};
 static uint8_t serialCmdLen = 0;
 
