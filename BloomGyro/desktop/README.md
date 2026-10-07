@@ -70,3 +70,27 @@ BLOOMGYRO_PORT=/dev/ttyACM0 python3 desktop/bloomgyro_mini.py
 ```
 
 Normally this is unnecessary; the app prefers an Espressif `/dev/serial/by-id/` path when available.
+
+
+## Automatic plug / unplug behavior
+
+Install the desktop watcher once:
+
+```bash
+cd ~/BloomCircuit/BloomGyro/desktop
+bash install_bloomgyro_autostart.sh
+```
+
+After installation:
+
+- plugging in a controller running **BloomGyro** opens BloomGyro Mini automatically
+- the watcher identifies the firmware by its `BG|IDENTITY|device=BloomGyro` response, so other Espressif boards are not intentionally claimed
+- unplugging that BloomGyro closes the Mini automatically after a short disconnect grace
+- brief ESP32-S3 USB re-enumeration is tolerated
+- the watcher starts automatically at Raspberry Pi desktop login
+
+Watcher log:
+
+```text
+~/.local/share/bloomgyro/plug_watch.log
+```
