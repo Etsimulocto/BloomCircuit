@@ -81,8 +81,12 @@ static constexpr uint8_t MPU_ADDR  = 0x68;
 static constexpr uint8_t LED_COUNT = 4;
 
 // ---------------------------- Timing / filter ---------------------
-static constexpr float GYRO_SCALE = 131.0f;   // LSB/(deg/s), +/-250 dps
+static constexpr float GYRO_SCALE = 131.0f;   // nominal LSB/(deg/s), +/-250 dps
 static constexpr float ACC_SCALE  = 16384.0f; // LSB/g, +/-2g
+// Bench calibration for this installed 0x70 MPU-6500-class module.
+// Physical 90 deg rotation measured about 70 deg before correction:
+// 90 / 70 = 1.285714.  X/Y remain gravity-corrected separately.
+static constexpr float GYRO_Z_CAL = 1.285714f;
 static constexpr float COMP_ALPHA = 0.985f;
 static constexpr float ZERO_DEADBAND_DEG = 2.0f;
 static constexpr float GYRO_STILL_DPS = 0.8f;
@@ -352,7 +356,7 @@ static void updateOrientation(const ImuSample &s, float dt) {
 
   float gx = ((float)s.gx - gyroBiasX) / GYRO_SCALE;
   float gy = ((float)s.gy - gyroBiasY) / GYRO_SCALE;
-  float gz = ((float)s.gz - gyroBiasZ) / GYRO_SCALE;
+  float gz = (((float)s.gz - gyroBiasZ) / GYRO_SCALE) * GYRO_Z_CAL;
   lastGzDps = gz;
 
   float accX = atan2f(ay, az) * 180.0f / PI;
