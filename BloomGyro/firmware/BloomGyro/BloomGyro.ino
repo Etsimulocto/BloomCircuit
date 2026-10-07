@@ -69,7 +69,7 @@ struct ImuSample;
 
 // ---------------------------- Identity ----------------------------
 static const char *BG_VERSION = "0.1.1";
-static const char *BG_BUILD = "ZCAL1286";
+static const char *BG_BUILD = "MPUCFG100K";
 
 // ---------------------------- Hardware map ------------------------
 static constexpr uint8_t PIN_SDA       = 8;
@@ -83,6 +83,7 @@ static constexpr uint8_t LED_COUNT = 4;
 
 // ---------------------------- Timing / filter ---------------------
 static constexpr float GYRO_SCALE = 131.0f;   // nominal LSB/(deg/s), +/-250 dps
+static float gyroScaleRuntime = GYRO_SCALE;
 static constexpr float ACC_SCALE  = 16384.0f; // LSB/g, +/-2g
 // Repeated 90-degree checks now land at about 70 degrees in both directions.
 // That is a consistent scale error, so apply 90/70 = 1.285714 to Z yaw.
@@ -330,10 +331,28 @@ static bool mpuInit() {
   delay(20);
   i2cWriteReg(MPU_ADDR, 0x19, 0x04); // 1kHz/(1+4)=200Hz
   i2cWriteReg(MPU_ADDR, 0x1A, 0x03); // DLPF ~44Hz accel / ~42Hz gyro
-  i2cWriteReg(MPU_ADDR, 0x1B, 0x00); // +/-250 dps
-  i2cWriteReg(MPU_ADDR, 0x1C, 0x00); // +/-2g
+  i2cWriteReg(MPU_ADDR, 0x1B, 0x00); // GYRO_CONFIG: FS_SEL=0, +/-250 dps
+  i2cWriteReg(MPU_ADDR, 0x1C, 0x00); // ACCEL_CONFIG: +/-2g
+  delay(5);
+
+  uint8_t pwr1 = i2cReadReg(MPU_ADDR, 0x6B);
+  uint8_t smpl = i2cReadReg(MPU_ADDR, 0x19);
+  uint8_t cfg  = i2cReadReg(MPU_ADDR, 0x1A);
   uint8_t gyroCfg = i2cReadReg(MPU_ADDR, 0x1B);
-  Serial.printf("BG|IMU|gyro_config=0x%02X|z_cal=%.6f\n", gyroCfg, GYRO_Z_CAL);
+  uint8_t accelCfg = i2cReadReg(MPU_ADDR, 0x1C);
+
+  uint8_t fsSel = (gyroCfg >> 3) & 0x03;
+  float gyroScaleReadback = fsSel == 0 ? 131.0f :
+                            fsSel == 1 ? 65.5f :
+                            fsSel == 2 ? 32.8f : 16.4f;
+  gyroScaleRuntime = gyroScaleReadback;
+
+  Serial.printf("BG|IMUCFG|pwr1=0x%02X|smpl=0x%02X|cfg=0x%02X|gyro=0x%02X|accel=0x%02X|fs_sel=%u|scale=%.1f|i2c_khz=100|z_cal=%.6f\n",
+                pwr1, smpl, cfg, gyroCfg, accelCfg, fsSel, gyroScaleReadback, GYRO_Z_CAL);
+
+  if (gyroCfg != 0x00) {
+    Serial.printf("BG|WARN|gyro_config_unexpected=0x%02X\n", gyroCfg);
+  }
   return true;
 }
 
@@ -373,9 +392,9 @@ static void updateOrientation(const ImuSample &s, float dt) {
   float az = (float)s.az / ACC_SCALE;
 
   // First compute rates from the current bias estimate.
-  float gx = ((float)s.gx - gyroBiasX) / GYRO_SCALE;
-  float gy = ((float)s.gy - gyroBiasY) / GYRO_SCALE;
-  float gzNative = ((float)s.gz - gyroBiasZ) / GYRO_SCALE;
+  float gx = ((float)s.gx - gyroBiasX) / gyroScaleRuntime;
+  float gy = ((float)s.gy - gyroBiasY) / gyroScaleRuntime;
+  float gzNative = ((float)s.gz - gyroBiasZ) / gyroScaleRuntime;
 
   // Detect true stillness using both gravity magnitude and gyro quietness.
   float amag = sqrtf(ax*ax + ay*ay + az*az);
@@ -395,7 +414,7 @@ static void updateOrientation(const ImuSample &s, float dt) {
       // motionless. Freeze this immediately when motion begins.
       gyroBiasZ = (1.0f - BIAS_LEARN_ALPHA) * gyroBiasZ +
                   BIAS_LEARN_ALPHA * (float)s.gz;
-      gzNative = ((float)s.gz - gyroBiasZ) / GYRO_SCALE;
+      gzNative = ((float)s.gz - gyroBiasZ) / gyroScaleRuntime;
     }
   } else {
     gyroStill = false;
@@ -608,7 +627,7 @@ void setup() {
   delay(200);
   Serial.printf("BG|IDENTITY|device=BloomGyro|fw=%s|format=bloomcore/v1.3\n", BG_VERSION);
 
-  Wire.begin(PIN_SDA, PIN_SCL, 400000);
+  Wire.begin(PIN_SDA, PIN_SCL, 100000);
 
   ledOk = initApa106Rmt();
   oledOk = oledInit();
