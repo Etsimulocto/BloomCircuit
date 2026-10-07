@@ -83,11 +83,11 @@ static constexpr uint8_t LED_COUNT = 4;
 // ---------------------------- Timing / filter ---------------------
 static constexpr float GYRO_SCALE = 131.0f;   // nominal LSB/(deg/s), +/-250 dps
 static constexpr float ACC_SCALE  = 16384.0f; // LSB/g, +/-2g
-// Simon calibration for this installed 0x70 MPU-6500-class module.
-// 90-degree trials measured about 70-74 degrees and 180-degree trials about
-// 142-149 degrees. A 1.24 multiplier is the combined bench correction.
-// X/Y remain gravity-corrected separately.
-static constexpr float GYRO_Z_CAL = 1.240000f;
+// Keep the raw manufacturer scale while collecting a full angle sweep.
+// The earlier 1.24 empirical multiplier came from too few hand-positioned
+// points and is intentionally removed; calibration data should diagnose the
+// curve before any global correction is applied.
+static constexpr float GYRO_Z_CAL = 1.000000f;
 static constexpr float COMP_ALPHA = 0.985f;
 static constexpr float ZERO_DEADBAND_DEG = 2.0f;
 static constexpr float GYRO_STILL_DPS = 0.8f;
@@ -357,8 +357,9 @@ static void updateOrientation(const ImuSample &s, float dt) {
 
   float gx = ((float)s.gx - gyroBiasX) / GYRO_SCALE;
   float gy = ((float)s.gy - gyroBiasY) / GYRO_SCALE;
-  // Bench calibration: clockwise rotation should be positive/red.
-  // The installed 0x70 IMU reports the opposite Z sign, so invert it here.
+  // Clockwise rotation is defined as positive/red for BloomGyro.
+  // The installed 0x70 IMU reports the opposite native Z sign, so invert
+  // direction only. Scale remains raw while the sweep calibration is run.
   float gz = -(((float)s.gz - gyroBiasZ) / GYRO_SCALE) * GYRO_Z_CAL;
   lastGzDps = gz;
 
