@@ -201,9 +201,9 @@ static void renderYoke(uint32_t nowMs) {
   float y=constrain(-tiltY/70.0f,-1.0f,1.0f); // Y already follows the upward physical direction
   float mag=constrain(sqrtf(x*x+y*y),0.0f,1.0f);
 
-  // Soft center glow when level. A generous dead zone prevents jitter and
-  // gives users room to move the stand without every tiny motion firing.
-  for (int i=0;i<4;i++) leds[i]={0,8,7};
+  // Soft blue idle on all four bulbs. Direction is communicated by WHICH
+  // bulb changes, not by assigning each direction a different base color.
+  for (int i=0;i<4;i++) leds[i]={0,18,42};
 
   const float deadZone=0.12f;
   if (mag < deadZone) return;
@@ -218,13 +218,21 @@ static void renderYoke(uint32_t nowMs) {
   // weight.  Squaring makes the selected side feel more "joystick-like".
   const float vx[4]={0,1,0,-1};
   const float vy[4]={1,0,-1,0};
-  const float hue[4]={185.0f,18.0f,305.0f,225.0f};
+  const float activeHue=48.0f; // warm gold for every direction
 
   for (int i=0;i<4;i++) {
     float w=max(0.0f,x*vx[i]+y*vy[i]);
     w=w*w;
-    float value=0.04f + 0.78f*w*active;
-    leds[i]=hsv(hue[i],0.95f,constrain(value,0.0f,1.0f));
+
+    // Keep inactive bulbs blue. As a direction becomes active, crossfade that
+    // bulb from blue toward warm gold and increase its brightness.
+    float strength=constrain(w*active,0.0f,1.0f);
+    Rgb idle={0,18,42};
+    Rgb hot=hsv(activeHue,0.92f,0.82f);
+
+    leds[i].r=u8(idle.r*(1.0f-strength)+hot.r*strength);
+    leds[i].g=u8(idle.g*(1.0f-strength)+hot.g*strength);
+    leds[i].b=u8(idle.b*(1.0f-strength)+hot.b*strength);
   }
 
   // A fast shove/tilt gives the selected direction a brief brightness kick.
@@ -233,7 +241,7 @@ static void renderYoke(uint32_t nowMs) {
     for (int i=0;i<4;i++) {
       float w=max(0.0f,x*vx[i]+y*vy[i]);
       if (w>0.0f) {
-        Rgb boost=hsv(hue[i],0.65f,kick*w);
+        Rgb boost=hsv(activeHue,0.65f,kick*w);
         addRgb(leds[i],boost,1.0f);
       }
     }
@@ -392,7 +400,7 @@ static void serviceTouch(){
 void setup(){
   Serial.begin(115200);
   delay(150);
-  Serial.println("BML|IDENTITY|device=BloomMotionLights|fw=0.2.3|mode0=YOKE_X_INV");
+  Serial.println("BML|IDENTITY|device=BloomMotionLights|fw=0.2.4|mode0=YOKE_BLUE_GOLD");
 
   Wire.begin(PIN_SDA,PIN_SCL,400000);
   bool ledOk=initLeds();
