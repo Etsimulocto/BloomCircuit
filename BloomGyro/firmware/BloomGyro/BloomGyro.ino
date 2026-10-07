@@ -91,6 +91,11 @@ static constexpr float GYRO_Z_CAL = 1.000000f;
 static constexpr float COMP_ALPHA = 0.985f;
 static constexpr float ZERO_DEADBAND_DEG = 2.0f;
 static constexpr float GYRO_STILL_DPS = 0.8f;
+static constexpr float STILL_ACCEL_TOL_G = 0.06f;   // |a|-1g tolerance for stillness
+static constexpr float STILL_GYRO_XY_DPS = 1.5f;    // X/Y quiet threshold
+static constexpr float STILL_GYRO_Z_DPS  = 2.5f;    // Z quiet threshold
+static constexpr uint32_t STILL_HOLD_MS  = 450;     // must be still before learning bias
+static constexpr float BIAS_LEARN_ALPHA  = 0.0025f; // slow EMA while stationary
 
 static constexpr uint32_t SENSOR_PERIOD_US = 5000;  // 200 Hz
 static constexpr uint32_t DISPLAY_PERIOD_MS = 50;   // 20 Hz
@@ -268,6 +273,8 @@ static float gyroBiasX=0, gyroBiasY=0, gyroBiasZ=0;
 static float angleX=0, angleY=0, angleZ=0;
 static float zeroX=0, zeroY=0, zeroZ=0;
 static float lastGzDps=0;
+static bool gyroStill=false;
+static uint32_t gyroStillSinceMs=0;
 static uint32_t lastSensorUs=0;
 
 // Hardware status is declared here because setZero() may run before the
@@ -355,12 +362,39 @@ static void updateOrientation(const ImuSample &s, float dt) {
   float ay = (float)s.ay / ACC_SCALE;
   float az = (float)s.az / ACC_SCALE;
 
+  // First compute rates from the current bias estimate.
   float gx = ((float)s.gx - gyroBiasX) / GYRO_SCALE;
   float gy = ((float)s.gy - gyroBiasY) / GYRO_SCALE;
+  float gzNative = ((float)s.gz - gyroBiasZ) / GYRO_SCALE;
+
+  // Detect true stillness using both gravity magnitude and gyro quietness.
+  float amag = sqrtf(ax*ax + ay*ay + az*az);
+  bool accelStill = fabsf(amag - 1.0f) <= STILL_ACCEL_TOL_G;
+  bool gyroQuiet = fabsf(gx) <= STILL_GYRO_XY_DPS &&
+                   fabsf(gy) <= STILL_GYRO_XY_DPS &&
+                   fabsf(gzNative) <= STILL_GYRO_Z_DPS;
+  bool stillNow = accelStill && gyroQuiet;
+  uint32_t nowMs = millis();
+
+  if (stillNow) {
+    if (!gyroStill) {
+      gyroStill = true;
+      gyroStillSinceMs = nowMs;
+    } else if ((uint32_t)(nowMs - gyroStillSinceMs) >= STILL_HOLD_MS) {
+      // Slowly follow thermal / time-varying zero-rate drift only while
+      // motionless. Freeze this immediately when motion begins.
+      gyroBiasZ = (1.0f - BIAS_LEARN_ALPHA) * gyroBiasZ +
+                  BIAS_LEARN_ALPHA * (float)s.gz;
+      gzNative = ((float)s.gz - gyroBiasZ) / GYRO_SCALE;
+    }
+  } else {
+    gyroStill = false;
+    gyroStillSinceMs = 0;
+  }
+
   // Clockwise rotation is defined as positive/red for BloomGyro.
-  // The installed 0x70 IMU reports the opposite native Z sign, so invert
-  // direction only. Scale remains raw while the sweep calibration is run.
-  float gz = -(((float)s.gz - gyroBiasZ) / GYRO_SCALE) * GYRO_Z_CAL;
+  // Native Z sign on this installed 0x70 module is opposite that convention.
+  float gz = -(gzNative) * GYRO_Z_CAL;
   lastGzDps = gz;
 
   float accX = atan2f(ay, az) * 180.0f / PI;
@@ -511,9 +545,10 @@ static char serialCmd[40] = {};
 static uint8_t serialCmdLen = 0;
 
 static void sendStatus() {
-  Serial.printf("BG|STATUS|oled=%u|mpu=%u|led=%u|x=%.2f|y=%.2f|z=%.2f|gz_dps=%.2f|touch=%lu\n",
+  Serial.printf("BG|STATUS|oled=%u|mpu=%u|led=%u|x=%.2f|y=%.2f|z=%.2f|gz_dps=%.2f|touch=%lu|still=%u|bz=%.2f\n",
                 oledOk?1:0,mpuOk?1:0,ledOk?1:0,
-                relX(),relY(),relZ(),lastGzDps,(unsigned long)touchRead(PIN_ZERO));
+                relX(),relY(),relZ(),lastGzDps,(unsigned long)touchRead(PIN_ZERO),
+                gyroStill?1:0,gyroBiasZ);
 }
 
 static void handleSerialCommand(const char *cmd) {
@@ -645,8 +680,9 @@ void loop() {
 
   if (nowMs-lastSerialMs >= SERIAL_PERIOD_MS) {
     lastSerialMs=nowMs;
-    Serial.printf("BG|ANGLES|x=%.2f|y=%.2f|z=%.2f|gz_dps=%.2f|touch=%lu\n",
-                  relX(),relY(),relZ(),lastGzDps,(unsigned long)touchRead(PIN_ZERO));
+    Serial.printf("BG|ANGLES|x=%.2f|y=%.2f|z=%.2f|gz_dps=%.2f|touch=%lu|still=%u|bz=%.2f\n",
+                  relX(),relY(),relZ(),lastGzDps,(unsigned long)touchRead(PIN_ZERO),
+                  gyroStill?1:0,gyroBiasZ);
   }
 
   delay(1);
