@@ -83,11 +83,10 @@ static constexpr uint8_t LED_COUNT = 4;
 // ---------------------------- Timing / filter ---------------------
 static constexpr float GYRO_SCALE = 131.0f;   // nominal LSB/(deg/s), +/-250 dps
 static constexpr float ACC_SCALE  = 16384.0f; // LSB/g, +/-2g
-// Keep the raw manufacturer scale while collecting a full angle sweep.
-// The earlier 1.24 empirical multiplier came from too few hand-positioned
-// points and is intentionally removed; calibration data should diagnose the
-// curve before any global correction is applied.
-static constexpr float GYRO_Z_CAL = 1.000000f;
+// Repeated 90-degree checks now land at about 70 degrees in both directions.
+// That is a consistent scale error, so apply 90/70 = 1.285714 to Z yaw.
+// Sign and adaptive stationary bias handling remain separate.
+static constexpr float GYRO_Z_CAL = 1.285714f;
 static constexpr float COMP_ALPHA = 0.985f;
 static constexpr float ZERO_DEADBAND_DEG = 2.0f;
 static constexpr float GYRO_STILL_DPS = 0.8f;
@@ -135,6 +134,14 @@ static void i2cWriteReg(uint8_t addr, uint8_t reg, uint8_t value) {
   Wire.write(reg);
   Wire.write(value);
   Wire.endTransmission();
+}
+
+static uint8_t i2cReadReg(uint8_t addr, uint8_t reg) {
+  Wire.beginTransmission(addr);
+  Wire.write(reg);
+  if (Wire.endTransmission(false) != 0) return 0xFF;
+  if (Wire.requestFrom((int)addr, 1, true) != 1) return 0xFF;
+  return Wire.read();
 }
 
 static bool i2cPresent(uint8_t addr) {
@@ -324,6 +331,8 @@ static bool mpuInit() {
   i2cWriteReg(MPU_ADDR, 0x1A, 0x03); // DLPF ~44Hz accel / ~42Hz gyro
   i2cWriteReg(MPU_ADDR, 0x1B, 0x00); // +/-250 dps
   i2cWriteReg(MPU_ADDR, 0x1C, 0x00); // +/-2g
+  uint8_t gyroCfg = i2cReadReg(MPU_ADDR, 0x1B);
+  Serial.printf("BG|IMU|gyro_config=0x%02X|z_cal=%.6f\n", gyroCfg, GYRO_Z_CAL);
   return true;
 }
 
