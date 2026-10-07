@@ -344,9 +344,10 @@ There is no warranty; verify wiring and component pinouts against the actual har
 
 BloomCircuit is intentionally a wiring-map and fabrication-documentation tool. It does not currently replace KiCad, SPICE, PCB DRC, or a datasheet. The goal is to make a physical maker circuit easy to understand, reproduce, and engrave.
 
-
 ## BloomGyro
 
-`BloomGyro/` is the standalone ESP32-S3 + MPU-6050 motion visualizer. It shows relative X/Y/Z angles on the SSD1306 OLED and drives a four-APA106 spatial light ring where green is zero, red is positive rotation, and blue is negative rotation. GPIO1 is the capacitive ZERO control.
+`BloomGyro/` is the standalone ESP32-S3 + MPU-6500-class motion visualizer. The installed IMU reports `WHO_AM_I=0x70`. BloomGyro shows relative X/Y/Z angles on the SSD1306 OLED and drives a four-APA106 spatial light ring where green is zero, red is positive rotation, and blue is negative rotation.
 
-See `BloomGyro/README.md` for wiring, build, flash, and diagnostic details.
+The validated bench configuration uses a shared 400 kHz I2C bus for the OLED and IMU, a reduced 5 Hz OLED refresh so display traffic does not starve IMU sampling, and the MPU native yaw scale (`ZCAL=1.0`). The guided Simon calibration confirmed correct rotation in all directions after those timing fixes.
+
+See `BloomGyro/README.md` for wiring, flashing, calibration, desktop logging, and diagnostic details.
