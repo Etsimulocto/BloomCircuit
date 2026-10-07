@@ -343,3 +343,10 @@ There is no warranty; verify wiring and component pinouts against the actual har
 ## Scope
 
 BloomCircuit is intentionally a wiring-map and fabrication-documentation tool. It does not currently replace KiCad, SPICE, PCB DRC, or a datasheet. The goal is to make a physical maker circuit easy to understand, reproduce, and engrave.
+
+
+## BloomGyro
+
+`BloomGyro/` is the standalone ESP32-S3 + MPU-6050 motion visualizer. It shows relative X/Y/Z angles on the SSD1306 OLED and drives a four-APA106 spatial light ring where green is zero, red is positive rotation, and blue is negative rotation. GPIO1 is the capacitive ZERO control.
+
+See `BloomGyro/README.md` for wiring, build, flash, and diagnostic details.
