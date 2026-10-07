@@ -69,7 +69,7 @@ struct ImuSample;
 
 // ---------------------------- Identity ----------------------------
 static const char *BG_VERSION = "0.1.1";
-static const char *BG_BUILD = "MPUCFG100K";
+static const char *BG_BUILD = "HOLDLOCK";
 
 // ---------------------------- Hardware map ------------------------
 static constexpr uint8_t PIN_SDA       = 8;
@@ -93,10 +93,10 @@ static constexpr float COMP_ALPHA = 0.985f;
 static constexpr float ZERO_DEADBAND_DEG = 2.0f;
 static constexpr float GYRO_STILL_DPS = 0.8f;
 static constexpr float STILL_ACCEL_TOL_G = 0.06f;   // |a|-1g tolerance for stillness
-static constexpr float STILL_GYRO_XY_DPS = 1.5f;    // X/Y quiet threshold
-static constexpr float STILL_GYRO_Z_DPS  = 2.5f;    // Z quiet threshold
-static constexpr uint32_t STILL_HOLD_MS  = 450;     // must be still before learning bias
-static constexpr float BIAS_LEARN_ALPHA  = 0.0025f; // slow EMA while stationary
+static constexpr float STILL_GYRO_XY_DPS = 0.8f;    // X/Y quiet threshold
+static constexpr float STILL_GYRO_Z_DPS  = 0.35f;   // Z must be genuinely motionless
+static constexpr uint32_t STILL_HOLD_MS  = 700;      // must be still before learning bias
+static constexpr float BIAS_LEARN_ALPHA  = 0.0015f; // gentle EMA while stationary
 
 static constexpr uint32_t SENSOR_PERIOD_US = 5000;  // 200 Hz
 static constexpr uint32_t DISPLAY_PERIOD_MS = 50;   // 20 Hz
@@ -405,13 +405,14 @@ static void updateOrientation(const ImuSample &s, float dt) {
   bool stillNow = accelStill && gyroQuiet;
   uint32_t nowMs = millis();
 
+  bool confirmedStill = false;
   if (stillNow) {
     if (!gyroStill) {
       gyroStill = true;
       gyroStillSinceMs = nowMs;
     } else if ((uint32_t)(nowMs - gyroStillSinceMs) >= STILL_HOLD_MS) {
-      // Slowly follow thermal / time-varying zero-rate drift only while
-      // motionless. Freeze this immediately when motion begins.
+      confirmedStill = true;
+      // Learn the zero-rate bias only after the rig has been genuinely still.
       gyroBiasZ = (1.0f - BIAS_LEARN_ALPHA) * gyroBiasZ +
                   BIAS_LEARN_ALPHA * (float)s.gz;
       gzNative = ((float)s.gz - gyroBiasZ) / gyroScaleRuntime;
@@ -423,7 +424,9 @@ static void updateOrientation(const ImuSample &s, float dt) {
 
   // Clockwise rotation is defined as positive/red for BloomGyro.
   // Native Z sign on this installed 0x70 module is opposite that convention.
-  float gz = -(gzNative) * GYRO_Z_CAL;
+  // Once stillness is confirmed, clamp yaw rate to exactly zero so a held
+  // heading cannot creep from residual gyro bias.
+  float gz = confirmedStill ? 0.0f : (-(gzNative) * GYRO_Z_CAL);
   lastGzDps = gz;
 
   float accX = atan2f(ay, az) * 180.0f / PI;
@@ -672,7 +675,7 @@ void setup() {
     oledClear();
     oledText(25,0,"BLOOM GYRO");
     oledText(28,3,"FW 0.1.1");
-    oledText(19,5,"ZCAL 1.286");
+    oledText(19,5,"HOLD LOCK");
     delay(1800);
   }
 
