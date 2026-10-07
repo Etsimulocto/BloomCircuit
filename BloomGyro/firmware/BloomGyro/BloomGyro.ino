@@ -69,7 +69,7 @@ struct ImuSample;
 
 // ---------------------------- Identity ----------------------------
 static const char *BG_VERSION = "0.1.1";
-static const char *BG_BUILD = "ARC4";
+static const char *BG_BUILD = "TRAIL4";
 
 // ---------------------------- Hardware map ------------------------
 static constexpr uint8_t PIN_SDA       = 8;
@@ -515,59 +515,75 @@ static bool zeroTouchPressed() {
 static void renderLightRing(float zDeg) {
   clearLeds();
 
-  // Four LEDs work better as a quarter-turn progress arc than as a single
-  // moving dot.  Each LED represents 90 degrees of rotation from ZERO.
-  //
-  //   CW  +90  = 1 red LED
-  //   CW +180  = 2 red LEDs
-  //   CW +270  = 3 red LEDs
-  //   CW +360  = 4 red LEDs
-  //
-  // Counter-clockwise fills the same way in blue, but walks the physical ring
-  // in the opposite direction.  This makes 180 degrees visibly look like
-  // "half a turn" even with only four bulbs.
   bool atZero = fabsf(zDeg) <= ZERO_DEADBAND_DEG &&
                 fabsf(lastGzDps) <= GYRO_STILL_DPS;
 
   if (atZero) {
-    for (auto &p : ledFrame) p = {0,80,0};
-    ledBrightness=40;
+    for (auto &p : ledFrame) p = {0,55,0};
+    ledBrightness=32;
     writeApa106();
     return;
   }
 
+  // Four-light "head + trail" display.
+  //
+  // The previous ARC4 fill kept LED0 fully lit once the turn passed 90 deg,
+  // which made that first bulb visually dominate and could also increase
+  // total LED current as more bulbs accumulated.  This version keeps one
+  // bright moving head, fades toward the next quadrant, and leaves only a
+  // dim trail behind it.  That makes 180/270/full-turn motion readable while
+  // keeping current roughly bounded.
   float mag = fabsf(zDeg);
+  float ringAngle = fmodf(mag, 360.0f);
+  if (ringAngle < 0.0f) ringAngle += 360.0f;
 
-  // Show progress within the current 360-degree revolution.  Exact positive
-  // multiples of 360 stay fully lit instead of instantly appearing empty.
-  float turn = fmodf(mag, 360.0f);
-  if (turn < 0.01f && mag >= 359.0f) turn = 360.0f;
+  // Exact full-turn multiples get a brief/easy-to-read "all around" state
+  // instead of looking identical to a fresh zero.
+  bool fullTurnMark = mag >= 359.0f &&
+                      (ringAngle <= 2.0f || ringAngle >= 358.0f);
 
-  float quarters = turn / 90.0f;  // 0..4
-  int full = (int)floorf(quarters);
-  float frac = quarters - (float)full;
-  if (full > 4) full = 4;
-
-  // Physical order from TOP:
-  // CW  : LED0 -> LED1 -> LED2 -> LED3
-  // CCW : LED0 -> LED3 -> LED2 -> LED1
   const uint8_t cwOrder[4]  = {0,1,2,3};
   const uint8_t ccwOrder[4] = {0,3,2,1};
   const uint8_t *order = zDeg >= 0.0f ? cwOrder : ccwOrder;
 
-  for (int i=0; i<full && i<4; ++i) {
-    if (zDeg >= 0.0f) ledFrame[order[i]] = {90,0,0};
-    else              ledFrame[order[i]] = {0,0,90};
+  if (fullTurnMark) {
+    for (int i=0; i<4; ++i) {
+      if (zDeg >= 0.0f) ledFrame[i] = {28,0,0};
+      else              ledFrame[i] = {0,0,28};
+    }
+    ledBrightness=36;
+    writeApa106();
+    return;
   }
 
-  // Fade in the next quarter so 45 degrees is visibly half of one LED.
-  if (full < 4 && frac > 0.0f) {
-    uint8_t v = scale8(frac, 90);
-    if (zDeg >= 0.0f) ledFrame[order[full]] = {v,0,0};
-    else              ledFrame[order[full]] = {0,0,v};
+  float sector = ringAngle / 90.0f;      // 0..4
+  int head = ((int)floorf(sector)) & 3;  // current quadrant
+  int next = (head + 1) & 3;
+  float frac = sector - floorf(sector);
+
+  // Dim trail on quadrants already passed in this revolution.
+  int passed = (int)floorf(sector);
+  for (int i=0; i<passed && i<4; ++i) {
+    uint8_t idx = order[i];
+    if (zDeg >= 0.0f) ledFrame[idx] = {12,0,0};
+    else              ledFrame[idx] = {0,0,12};
   }
 
-  ledBrightness=65;
+  // Bright moving head crossfades into the next physical quadrant.
+  uint8_t a = scale8(1.0f-frac, 70);
+  uint8_t b = scale8(frac, 70);
+  uint8_t h0 = order[head];
+  uint8_t h1 = order[next];
+
+  if (zDeg >= 0.0f) {
+    ledFrame[h0].r = max(ledFrame[h0].r, a);
+    ledFrame[h1].r = max(ledFrame[h1].r, b);
+  } else {
+    ledFrame[h0].b = max(ledFrame[h0].b, a);
+    ledFrame[h1].b = max(ledFrame[h1].b, b);
+  }
+
+  ledBrightness=38;
   writeApa106();
 }
 
@@ -694,7 +710,7 @@ void setup() {
     oledClear();
     oledText(25,0,"BLOOM GYRO");
     oledText(28,3,"FW 0.1.1");
-    oledText(25,5,"ARC4");
+    oledText(22,5,"TRAIL4");
     delay(1800);
   }
 
