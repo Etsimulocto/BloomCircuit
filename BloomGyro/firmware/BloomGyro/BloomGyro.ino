@@ -68,7 +68,8 @@ struct ImuSample;
 #endif
 
 // ---------------------------- Identity ----------------------------
-static const char *BG_VERSION = "0.1.0";
+static const char *BG_VERSION = "0.1.1";
+static const char *BG_BUILD = "ZCAL1286";
 
 // ---------------------------- Hardware map ------------------------
 static constexpr uint8_t PIN_SDA       = 8;
@@ -554,10 +555,10 @@ static char serialCmd[40] = {};
 static uint8_t serialCmdLen = 0;
 
 static void sendStatus() {
-  Serial.printf("BG|STATUS|oled=%u|mpu=%u|led=%u|x=%.2f|y=%.2f|z=%.2f|gz_dps=%.2f|touch=%lu|still=%u|bz=%.2f\n",
+  Serial.printf("BG|STATUS|oled=%u|mpu=%u|led=%u|x=%.2f|y=%.2f|z=%.2f|gz_dps=%.2f|touch=%lu|still=%u|bz=%.2f|build=%s|z_cal=%.6f\n",
                 oledOk?1:0,mpuOk?1:0,ledOk?1:0,
                 relX(),relY(),relZ(),lastGzDps,(unsigned long)touchRead(PIN_ZERO),
-                gyroStill?1:0,gyroBiasZ);
+                gyroStill?1:0,gyroBiasZ,BG_BUILD,GYRO_Z_CAL);
 }
 
 static void handleSerialCommand(const char *cmd) {
@@ -580,7 +581,7 @@ static void handleSerialCommand(const char *cmd) {
   }
 
   if (!strcasecmp(cmd, "HELLO")) {
-    Serial.printf("BG|IDENTITY|device=BloomGyro|fw=%s|format=bloomcore/v1.3\n", BG_VERSION);
+    Serial.printf("BG|IDENTITY|device=BloomGyro|fw=%s|build=%s|z_cal=%.6f|format=bloomcore/v1.3\n", BG_VERSION, BG_BUILD, GYRO_Z_CAL);
     sendStatus();
     return;
   }
@@ -646,6 +647,15 @@ void setup() {
 
   calibrateTouch();
   setZero();
+
+  // Visible proof that the latest calibrated firmware is actually running.
+  if (oledOk) {
+    oledClear();
+    oledText(25,0,"BLOOM GYRO");
+    oledText(28,3,"FW 0.1.1");
+    oledText(19,5,"ZCAL 1.286");
+    delay(1800);
+  }
 
   lastSensorUs=micros();
   renderDisplay();
