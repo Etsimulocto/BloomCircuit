@@ -197,8 +197,8 @@ static void renderYoke(uint32_t nowMs) {
   // the physical direction the stand is moved/tilted.
   // Use a broad 70-degree full-scale range so ordinary handling does not
   // instantly slam the output to maximum.
-  float x=constrain(-tiltY/70.0f,-1.0f,1.0f); // +x = RIGHT
-  float y=constrain( tiltX/70.0f,-1.0f,1.0f); // +y = TOP
+  float x=constrain( tiltX/70.0f,-1.0f,1.0f); // +x = RIGHT
+  float y=constrain(-tiltY/70.0f,-1.0f,1.0f); // +y = TOP
   float mag=constrain(sqrtf(x*x+y*y),0.0f,1.0f);
 
   // Soft center glow when level. A generous dead zone prevents jitter and
@@ -392,7 +392,7 @@ static void serviceTouch(){
 void setup(){
   Serial.begin(115200);
   delay(150);
-  Serial.println("BML|IDENTITY|device=BloomMotionLights|fw=0.2.1|mode0=YOKE_WIDE");
+  Serial.println("BML|IDENTITY|device=BloomMotionLights|fw=0.2.2|mode0=YOKE_XY_FIXED");
 
   Wire.begin(PIN_SDA,PIN_SCL,400000);
   bool ledOk=initLeds();
