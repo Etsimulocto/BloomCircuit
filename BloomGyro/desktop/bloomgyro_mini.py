@@ -26,6 +26,7 @@ except ImportError as exc:
 BAUD = 115200
 POLL_SECONDS = 0.20
 STABLE_SECONDS = 0.8
+DISCONNECT_GRACE_SEC = 3.0
 ASSIGNED_PORT = os.environ.get("BLOOMGYRO_PORT", "").strip()
 LOG_DIR = Path(os.environ.get(
     "BLOOMGYRO_LOG_DIR",
@@ -266,6 +267,18 @@ class BloomGyroMini(tk.Tk):
                     pass
                 self.rx.put(("status", False, port))
                 self.port_seen_since.clear()
+
+                # When launched by the plug watcher, the assigned path represents
+                # this exact BloomGyro. Brief USB re-enumeration is tolerated;
+                # a real unplug closes the Mini automatically.
+                if ASSIGNED_PORT:
+                    missing_since = time.monotonic()
+                    while self.running and not os.path.exists(ASSIGNED_PORT):
+                        if time.monotonic() - missing_since >= DISCONNECT_GRACE_SEC:
+                            self.rx.put(("quit",))
+                            return
+                        time.sleep(POLL_SECONDS)
+
                 time.sleep(0.35)
                 continue
 
@@ -406,6 +419,9 @@ class BloomGyroMini(tk.Tk):
                     self._set_connected(bool(item[1]), item[2])
                 elif item[0] == "line":
                     self._handle_line(item[1])
+                elif item[0] == "quit":
+                    self.close_app()
+                    return
         except queue.Empty:
             pass
         if self.running:
