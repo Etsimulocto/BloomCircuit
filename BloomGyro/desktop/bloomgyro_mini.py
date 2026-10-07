@@ -194,19 +194,33 @@ class BloomGyroMini(tk.Tk):
         self.port_lbl.pack(fill="x", padx=11)
 
     CAL_STEPS = [
-        ("FLAT / STILL", "Keep the whole rig flat and still.", "BASE", 0),
-        ("CLOCKWISE 90°", "Turn the whole rig clockwise exactly 90°, keep it flat, then hold still.", "Z", 90),
-        ("BACK TO ZERO", "Return to the original zero heading and hold still.", "Z", 0),
-        ("COUNTERCLOCKWISE 90°", "Turn counterclockwise exactly 90°, keep it flat, then hold still.", "Z", -90),
-        ("BACK TO ZERO", "Return to the original zero heading and hold still.", "Z", 0),
-        ("CLOCKWISE 180°", "Turn clockwise exactly 180°, keep it flat, then hold still.", "Z", 180),
-        ("BACK TO ZERO", "Return to the original zero heading and hold still.", "Z", 0),
-        ("COUNTERCLOCKWISE 180°", "Turn counterclockwise exactly 180°, keep it flat, then hold still.", "Z", -180),
-        ("BACK TO ZERO", "Return to the original zero heading and hold still.", "Z", 0),
-        ("FRONT EDGE UP 45°", "Lift the FRONT edge about 45°, hold the heading, then hold still.", "TILT", 45),
-        ("BACK EDGE UP 45°", "Lift the BACK edge about 45°, then hold still.", "TILT", 45),
-        ("RIGHT EDGE UP 45°", "Lift the RIGHT edge about 45°, then hold still.", "TILT", 45),
-        ("LEFT EDGE UP 45°", "Lift the LEFT edge about 45°, then hold still.", "TILT", 45),
+        ("FLAT / STILL", "Keep the whole rig flat and still. This starts a fresh zero.", "BASE", 0),
+
+        ("CW 45°", "Rotate CLOCKWISE to exactly 45° from the start mark; keep it flat and hold still.", "Z", 45),
+        ("CW 90°", "Continue CLOCKWISE to exactly 90° from the start mark; hold still.", "Z", 90),
+        ("CW 135°", "Continue CLOCKWISE to exactly 135°; hold still.", "Z", 135),
+        ("CW 180°", "Continue CLOCKWISE to exactly 180°; hold still.", "Z", 180),
+        ("CW 225°", "Continue CLOCKWISE to exactly 225°; hold still.", "Z", 225),
+        ("CW 270°", "Continue CLOCKWISE to exactly 270°; hold still.", "Z", 270),
+        ("CW 315°", "Continue CLOCKWISE to exactly 315°; hold still.", "Z", 315),
+        ("CW 360°", "Complete one full CLOCKWISE turn to 360° / the original physical heading; hold still.", "Z", 360),
+
+        ("RE-ZERO FOR CCW", "Return to the original physical start mark. Press capture and the app will set a fresh zero.", "REZERO", 0),
+
+        ("CCW 45°", "Rotate COUNTERCLOCKWISE to exactly 45° from the start mark; keep it flat and hold still.", "Z", -45),
+        ("CCW 90°", "Continue COUNTERCLOCKWISE to exactly 90°; hold still.", "Z", -90),
+        ("CCW 135°", "Continue COUNTERCLOCKWISE to exactly 135°; hold still.", "Z", -135),
+        ("CCW 180°", "Continue COUNTERCLOCKWISE to exactly 180°; hold still.", "Z", -180),
+        ("CCW 225°", "Continue COUNTERCLOCKWISE to exactly 225°; hold still.", "Z", -225),
+        ("CCW 270°", "Continue COUNTERCLOCKWISE to exactly 270°; hold still.", "Z", -270),
+        ("CCW 315°", "Continue COUNTERCLOCKWISE to exactly 315°; hold still.", "Z", -315),
+        ("CCW 360°", "Complete one full COUNTERCLOCKWISE turn to 360° / the original physical heading; hold still.", "Z", -360),
+
+        ("RE-ZERO FOR TILT", "Return to the original flat/start position. Press capture for a fresh tilt zero.", "REZERO", 0),
+        ("FRONT EDGE UP 45°", "Lift the FRONT edge about 45° and hold still.", "TILT", 45),
+        ("BACK EDGE UP 45°", "Return flat, then lift the BACK edge about 45° and hold still.", "TILT", 45),
+        ("RIGHT EDGE UP 45°", "Return flat, then lift the RIGHT edge about 45° and hold still.", "TILT", 45),
+        ("LEFT EDGE UP 45°", "Return flat, then lift the LEFT edge about 45° and hold still.", "TILT", 45),
     ]
 
     def open_calibration(self):
@@ -223,7 +237,7 @@ class BloomGyroMini(tk.Tk):
         w = tk.Toplevel(self)
         self.cal_window = w
         w.title("BloomGyro Simon Calibration")
-        w.geometry("470x330")
+        w.geometry("500x350")
         w.resizable(False, False)
         w.configure(bg="#111111")
 
@@ -306,10 +320,14 @@ class BloomGyroMini(tk.Tk):
         self.cal_progress_lbl.configure(text=f"STEP {self.cal_step_index + 1} / {total}")
         self.cal_title_lbl.configure(text=title)
         self.cal_instruction_lbl.configure(text=instruction)
-        self.cal_capture_btn.configure(
-            text="ZERO & START" if self.cal_step_index == 0 else "CAPTURE / NEXT",
-            state="normal"
-        )
+        _title, _instruction, axis, _target = self.CAL_STEPS[self.cal_step_index]
+        if self.cal_step_index == 0:
+            button_text = "ZERO & START"
+        elif axis == "REZERO":
+            button_text = "SET FRESH ZERO"
+        else:
+            button_text = "CAPTURE / NEXT"
+        self.cal_capture_btn.configure(text=button_text, state="normal")
 
     def _recent_average(self, seconds: float = 0.7):
         cutoff = time.monotonic() - seconds
@@ -338,7 +356,10 @@ class BloomGyroMini(tk.Tk):
         }
 
     def calibration_capture(self):
-        if self.cal_step_index == 0:
+        if self.cal_step_index >= len(self.CAL_STEPS):
+            return
+        _title, _instruction, axis, _target = self.CAL_STEPS[self.cal_step_index]
+        if self.cal_step_index == 0 or axis == "REZERO":
             self.send("ZERO")
             self.cal_capture_btn.configure(text="ZEROING...", state="disabled")
             self.after(850, self._capture_current_cal_step)
@@ -368,8 +389,12 @@ class BloomGyroMini(tk.Tk):
             "CAL_CAPTURE",
             detail=f"step={row['step']}|title={title}|target={target}|avg_x={snap['x']:.2f}|avg_y={snap['y']:.2f}|avg_z={snap['z']:.2f}"
         )
+        error_text = ""
+        if axis == "Z":
+            err = snap["z"] - target
+            error_text = f"   ERR {err:+.1f}°"
         self.cal_result_lbl.configure(
-            text=f"CAPTURED  X {snap['x']:+.1f}°   Y {snap['y']:+.1f}°   Z {snap['z']:+.1f}°   ({snap['n']} samples)",
+            text=f"CAPTURED  X {snap['x']:+.1f}°   Y {snap['y']:+.1f}°   Z {snap['z']:+.1f}°{error_text}   ({snap['n']} samples)",
             fg="#6dff8a"
         )
         self.cal_step_index += 1
@@ -383,13 +408,17 @@ class BloomGyroMini(tk.Tk):
             writer = csv.writer(f)
             writer.writerow([
                 "step", "instruction_name", "instruction", "target_axis", "target_deg",
-                "samples", "avg_x_deg", "avg_y_deg", "avg_z_deg", "avg_gz_dps", "avg_touch",
-                "x_min", "x_max", "y_min", "y_max", "z_min", "z_max"
+                "samples", "avg_x_deg", "avg_y_deg", "avg_z_deg", "z_error_deg", "z_ratio_measured_over_target",
+                "avg_gz_dps", "avg_touch", "x_min", "x_max", "y_min", "y_max", "z_min", "z_max"
             ])
             for r in self.cal_rows:
+                zerr = r["z"] - r["target_deg"] if r["target_axis"] == "Z" else ""
+                zratio = (r["z"] / r["target_deg"]) if r["target_axis"] == "Z" and r["target_deg"] else ""
                 writer.writerow([
                     r["step"], r["title"], r["instruction"], r["target_axis"], r["target_deg"],
                     r["n"], f"{r['x']:.3f}", f"{r['y']:.3f}", f"{r['z']:.3f}",
+                    f"{zerr:.3f}" if zerr != "" else "",
+                    f"{zratio:.6f}" if zratio != "" else "",
                     f"{r['gz']:.3f}", r["touch"],
                     f"{r['x_min']:.3f}", f"{r['x_max']:.3f}",
                     f"{r['y_min']:.3f}", f"{r['y_max']:.3f}",
@@ -402,10 +431,15 @@ class BloomGyroMini(tk.Tk):
             f.write(f"IMU WHO_AM_I: {self.whoami}\n")
             f.write(f"Hardware: OLED={self.boot['oled']} MPU={self.boot['mpu']} LED={self.boot['led']}\n\n")
             for r in self.cal_rows:
+                extra = ""
+                if r["target_axis"] == "Z":
+                    err = r["z"] - r["target_deg"]
+                    ratio = (r["z"] / r["target_deg"]) if r["target_deg"] else 0.0
+                    extra = f" | err={err:+.2f} | ratio={ratio:+.4f}"
                 f.write(
                     f"{r['step']:02d}. {r['title']} | target={r['target_deg']} "
                     f"| X={r['x']:+.2f} Y={r['y']:+.2f} Z={r['z']:+.2f} "
-                    f"| gz={r['gz']:+.2f} dps | n={r['n']}\n"
+                    f"| gz={r['gz']:+.2f} dps | n={r['n']}{extra}\n"
                 )
 
         self._log_event("CAL_COMPLETE", detail=str(self.cal_csv_path))
@@ -658,6 +692,7 @@ class BloomGyroMini(tk.Tk):
             self.status_lbl.configure(text="LIVE", fg="#6dff8a")
             self.port_lbl.configure(text=f"PORT: {port}")
             self.zero_btn.configure(state="normal", text="ZERO / RESET")
+            self.cal_btn.configure(state="normal")
         else:
             self.status_lbl.configure(text="RECONNECTING", fg="#ffd166")
             self.port_lbl.configure(text=f"PORT: lost {port}")
