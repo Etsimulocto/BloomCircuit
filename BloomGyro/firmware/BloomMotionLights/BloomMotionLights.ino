@@ -186,6 +186,48 @@ static void addRgb(Rgb &dst, const Rgb &src, float gain=1.0f) {
 static const float DIR_X[4]={0,1,0,-1};
 static const float DIR_Y[4]={-1,0,1,0};
 
+static void renderYoke(uint32_t nowMs) {
+  // Treat X/Y tilt like a joystick/yoke.  The four physical bulbs are
+  // TOP, RIGHT, BOTTOM, LEFT and light in the direction the rig is tilted.
+  //
+  // Diagonals naturally blend between two neighboring bulbs.  Direction also
+  // changes color so the motion is readable even when brightness is similar:
+  // TOP=cyan, RIGHT=red/orange, BOTTOM=magenta, LEFT=blue.
+  float x=constrain(tiltY/35.0f,-1.0f,1.0f);  // +x = RIGHT
+  float y=constrain(-tiltX/35.0f,-1.0f,1.0f); // +y = TOP
+  float mag=constrain(sqrtf(x*x+y*y),0.0f,1.0f);
+
+  // Soft center glow when level.
+  for (int i=0;i<4;i++) leds[i]={0,10,8};
+
+  if (mag < 0.05f) return;
+
+  // Dot product against each cardinal direction gives a smooth directional
+  // weight.  Squaring makes the selected side feel more "joystick-like".
+  const float vx[4]={0,1,0,-1};
+  const float vy[4]={1,0,-1,0};
+  const float hue[4]={185.0f,18.0f,305.0f,225.0f};
+
+  for (int i=0;i<4;i++) {
+    float w=max(0.0f,x*vx[i]+y*vy[i]);
+    w=w*w;
+    float value=0.05f + 0.95f*w*mag;
+    leds[i]=hsv(hue[i],0.95f,constrain(value,0.0f,1.0f));
+  }
+
+  // A fast shove/tilt gives the selected direction a brief brightness kick.
+  if (motionEnergy>8.0f) {
+    float kick=constrain((motionEnergy-8.0f)/30.0f,0.0f,0.35f);
+    for (int i=0;i<4;i++) {
+      float w=max(0.0f,x*vx[i]+y*vy[i]);
+      if (w>0.0f) {
+        Rgb boost=hsv(hue[i],0.65f,kick*w);
+        addRgb(leds[i],boost,1.0f);
+      }
+    }
+  }
+}
+
 static void renderFluid(uint32_t nowMs) {
   float tx=constrain(tiltY/45.0f,-1.0f,1.0f); // right/left physical field
   float ty=constrain(tiltX/45.0f,-1.0f,1.0f); // front/back physical field
@@ -242,8 +284,9 @@ static void renderAurora(uint32_t nowMs) {
 }
 
 static void renderMotionLights(uint32_t nowMs) {
-  if (mode==0) renderFluid(nowMs);
-  else if (mode==1) renderComet(nowMs);
+  if (mode==0) renderYoke(nowMs);
+  else if (mode==1) renderFluid(nowMs);
+  else if (mode==2) renderComet(nowMs);
   else renderAurora(nowMs);
 
   // Shake/pickup burst overlays a brief white-gold flash.
@@ -298,7 +341,7 @@ static void oledStatus(){
   if(!i2cPresent(OLED_ADDR)) return;
   oledClear();
   uint8_t bar[16];
-  for(int i=0;i<16;i++) bar[i]=(i<4+mode*4)?0x7E:0x00;
+  for(int i=0;i<16;i++) bar[i]=(i<(mode+1)*4)?0x7E:0x00;
   oledCmd(0x21);oledCmd(16);oledCmd(31);oledCmd(0x22);oledCmd(2);oledCmd(2);
   oledChunk(bar,16);
 
@@ -322,7 +365,7 @@ static void serviceTouch(){
   bool active=v>=th;
   if(active && !touchLatch){
     touchLatch=true;
-    mode=(mode+1)%3;
+    mode=(mode+1)%4;
     shakePulse=1.0f;
     Serial.printf("BML|MODE|%u\n",mode);
   } else if(!active){
@@ -335,7 +378,7 @@ static void serviceTouch(){
 void setup(){
   Serial.begin(115200);
   delay(150);
-  Serial.println("BML|IDENTITY|device=BloomMotionLights|fw=0.1.0");
+  Serial.println("BML|IDENTITY|device=BloomMotionLights|fw=0.2.0|mode0=YOKE");
 
   Wire.begin(PIN_SDA,PIN_SCL,400000);
   bool ledOk=initLeds();
