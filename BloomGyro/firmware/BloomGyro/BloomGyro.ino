@@ -83,10 +83,11 @@ static constexpr uint8_t LED_COUNT = 4;
 // ---------------------------- Timing / filter ---------------------
 static constexpr float GYRO_SCALE = 131.0f;   // nominal LSB/(deg/s), +/-250 dps
 static constexpr float ACC_SCALE  = 16384.0f; // LSB/g, +/-2g
-// Bench calibration for this installed 0x70 MPU-6500-class module.
-// Physical 90 deg rotation measured about 70 deg before correction:
-// 90 / 70 = 1.285714.  X/Y remain gravity-corrected separately.
-static constexpr float GYRO_Z_CAL = 1.285714f;
+// Simon calibration for this installed 0x70 MPU-6500-class module.
+// 90-degree trials measured about 70-74 degrees and 180-degree trials about
+// 142-149 degrees. A 1.24 multiplier is the combined bench correction.
+// X/Y remain gravity-corrected separately.
+static constexpr float GYRO_Z_CAL = 1.240000f;
 static constexpr float COMP_ALPHA = 0.985f;
 static constexpr float ZERO_DEADBAND_DEG = 2.0f;
 static constexpr float GYRO_STILL_DPS = 0.8f;
@@ -356,7 +357,9 @@ static void updateOrientation(const ImuSample &s, float dt) {
 
   float gx = ((float)s.gx - gyroBiasX) / GYRO_SCALE;
   float gy = ((float)s.gy - gyroBiasY) / GYRO_SCALE;
-  float gz = (((float)s.gz - gyroBiasZ) / GYRO_SCALE) * GYRO_Z_CAL;
+  // Bench calibration: clockwise rotation should be positive/red.
+  // The installed 0x70 IMU reports the opposite Z sign, so invert it here.
+  float gz = -(((float)s.gz - gyroBiasZ) / GYRO_SCALE) * GYRO_Z_CAL;
   lastGzDps = gz;
 
   float accX = atan2f(ay, az) * 180.0f / PI;
@@ -376,7 +379,10 @@ static void updateOrientation(const ImuSample &s, float dt) {
 
 static float relX() { return wrap180(angleX - zeroX); }
 static float relY() { return wrap180(angleY - zeroY); }
-static float relZ() { return wrap180(angleZ - zeroZ); }
+// Keep yaw unwrapped so 180/360-degree calibration and multiple turns are
+// measurable without a sign jump at the +/-180 boundary.
+static float relZ() { return angleZ - zeroZ; }
+static float relZWrapped() { return wrap180(relZ()); }
 
 static void setZero() {
   zeroX = angleX;
@@ -441,20 +447,22 @@ static bool zeroTouchPressed() {
 static void renderLightRing(float zDeg) {
   clearLeds();
 
-  bool atZero = fabsf(zDeg) <= ZERO_DEADBAND_DEG &&
+  // Physical heading repeats every 360 degrees.  Use wrapped heading only
+  // for the "back at zero" test, while keeping the unwrapped sign for color.
+  float wrapped = wrap180(zDeg);
+  bool atZero = fabsf(wrapped) <= ZERO_DEADBAND_DEG &&
                 fabsf(lastGzDps) <= GYRO_STILL_DPS;
 
   if (atZero) {
-    // Zero reference is deliberately obvious from any viewing direction.
     for (auto &p : ledFrame) p = {0,80,0};
     ledBrightness=40;
     writeApa106();
     return;
   }
 
-  // Positive travels clockwise: LED0 -> LED1 -> LED2 -> LED3 -> LED0.
-  // Negative travels counter-clockwise.
-  float ringAngle = zDeg;
+  // Position always wraps around the four-LED ring.
+  // Positive = clockwise/red, negative = counter-clockwise/blue.
+  float ringAngle = fmodf(zDeg, 360.0f);
   if (ringAngle < 0) ringAngle += 360.0f;
 
   float sector = ringAngle / 90.0f;
