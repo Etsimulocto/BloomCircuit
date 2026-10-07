@@ -376,11 +376,13 @@ static void setZero() {
   clearLeds();
   for (auto &p : ledFrame) p = {0,90,0};
   ledBrightness=50;
-  writeApa106();
+  if (ledOk) writeApa106();
 
-  oledClear();
-  oledText(36,2,"ZERO");
-  oledText(24,4,"REFERENCE SET");
+  if (oledOk) {
+    oledClear();
+    oledText(36,2,"ZERO");
+    oledText(24,4,"REFERENCE SET");
+  }
   Serial.printf("BG|ZERO|x=%.3f|y=%.3f|z=%.3f\n", zeroX, zeroY, zeroZ);
   delay(220);
 }
@@ -490,6 +492,57 @@ static bool oledOk=false;
 static bool mpuOk=false;
 static bool ledOk=false;
 
+static char serialCmd[40] = {};
+static uint8_t serialCmdLen = 0;
+
+static void sendStatus() {
+  Serial.printf("BG|STATUS|oled=%u|mpu=%u|led=%u|x=%.2f|y=%.2f|z=%.2f|gz_dps=%.2f|touch=%lu\n",
+                oledOk?1:0,mpuOk?1:0,ledOk?1:0,
+                relX(),relY(),relZ(),lastGzDps,(unsigned long)touchRead(PIN_ZERO));
+}
+
+static void handleSerialCommand(const char *cmd) {
+  while (*cmd == ' ' || *cmd == '\t') ++cmd;
+
+  if (!strcasecmp(cmd, "ZERO") || !strcasecmp(cmd, "RESET") ||
+      !strcasecmp(cmd, "ZERO RESET")) {
+    if (mpuOk) {
+      setZero();
+      sendStatus();
+    } else {
+      Serial.println("BG|ERROR|zero_rejected_mpu_unavailable");
+    }
+    return;
+  }
+
+  if (!strcasecmp(cmd, "GET STATUS") || !strcasecmp(cmd, "STATUS")) {
+    sendStatus();
+    return;
+  }
+
+  if (!strcasecmp(cmd, "HELLO")) {
+    Serial.printf("BG|IDENTITY|device=BloomGyro|fw=%s|format=bloomcore/v1.3\n", BG_VERSION);
+    sendStatus();
+    return;
+  }
+
+  if (*cmd) Serial.printf("BG|ERROR|unknown_command=%s\n", cmd);
+}
+
+static void serviceSerialCommands() {
+  while (Serial.available() > 0) {
+    char ch=(char)Serial.read();
+    if (ch == '\r') continue;
+    if (ch == '\n') {
+      serialCmd[serialCmdLen]='\0';
+      handleSerialCommand(serialCmd);
+      serialCmdLen=0;
+      continue;
+    }
+    if (serialCmdLen < sizeof(serialCmd)-1) serialCmd[serialCmdLen++]=ch;
+  }
+}
+
 void setup() {
   Serial.begin(115200);
   delay(200);
@@ -540,6 +593,8 @@ void setup() {
 }
 
 void loop() {
+  serviceSerialCommands();
+
   if (!mpuOk) {
     delay(250);
     return;
