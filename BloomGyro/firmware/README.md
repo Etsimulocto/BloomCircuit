@@ -171,3 +171,28 @@ scale=131.0
 10. only then consider filter/scale changes
 
 Do not change multiple layers at once.
+
+
+## Motion-light reuse
+
+The validated IMU layer is also reused by `BloomMotionLights`, a standalone sensory-light playground.
+
+Key lesson: accelerometer/gyro data is often more useful as an **interaction signal** than as an instrument reading.
+
+For motion-reactive LEDs:
+
+- X/Y tilt comes from gravity-relative accelerometer data
+- gyro rates provide motion speed and twists
+- acceleration magnitude provides shake/impact energy
+- absolute Z heading is unnecessary
+
+The current YOKE sensory mode maps X/Y motion onto the four physical APA106 bulbs with:
+
+- soft blue idle
+- blue-to-gold directional crossfade
+- about 45-degree full-scale tilt
+- about 6% center dead zone
+- early-response easing
+- no white flash overlay in YOKE mode
+
+This keeps the output useful during energetic handling instead of saturating all four LEDs.
