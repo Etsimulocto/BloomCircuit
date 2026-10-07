@@ -194,33 +194,33 @@ class BloomGyroMini(tk.Tk):
         self.port_lbl.pack(fill="x", padx=11)
 
     CAL_STEPS = [
-        ("FLAT / STILL", "Keep the whole rig flat and still. This starts a fresh zero.", "BASE", 0),
+        ("START / ZERO", "Keep the rig flat at the starting mark. Press ZERO & START.", "BASE", 0),
 
-        ("CW 45°", "Rotate CLOCKWISE to exactly 45° from the start mark; keep it flat and hold still.", "Z", 45),
-        ("CW 90°", "Continue CLOCKWISE to exactly 90° from the start mark; hold still.", "Z", 90),
-        ("CW 135°", "Continue CLOCKWISE to exactly 135°; hold still.", "Z", 135),
-        ("CW 180°", "Continue CLOCKWISE to exactly 180°; hold still.", "Z", 180),
-        ("CW 225°", "Continue CLOCKWISE to exactly 225°; hold still.", "Z", 225),
-        ("CW 270°", "Continue CLOCKWISE to exactly 270°; hold still.", "Z", 270),
-        ("CW 315°", "Continue CLOCKWISE to exactly 315°; hold still.", "Z", 315),
-        ("CW 360°", "Complete one full CLOCKWISE turn to 360° / the original physical heading; hold still.", "Z", 360),
+        ("CW +45°", "Turn CLOCKWISE exactly 45° from the last position, then hold still.", "Z", 45),
+        ("CW +45°", "Turn CLOCKWISE another 45° from the last position, then hold still.", "Z", 90),
+        ("CW +45°", "Turn CLOCKWISE another 45° from the last position, then hold still.", "Z", 135),
+        ("CW +45°", "Turn CLOCKWISE another 45° from the last position, then hold still.", "Z", 180),
+        ("CW +45°", "Turn CLOCKWISE another 45° from the last position, then hold still.", "Z", 225),
+        ("CW +45°", "Turn CLOCKWISE another 45° from the last position, then hold still.", "Z", 270),
+        ("CW +45°", "Turn CLOCKWISE another 45° from the last position, then hold still.", "Z", 315),
+        ("CW +45°", "Turn CLOCKWISE another 45° to complete the full circle, then hold still.", "Z", 360),
 
-        ("RE-ZERO FOR CCW", "Return to the original physical start mark. Press capture and the app will set a fresh zero.", "REZERO", 0),
+        ("CCW START / ZERO", "Return to the physical starting mark. Press SET FRESH ZERO.", "REZERO", 0),
 
-        ("CCW 45°", "Rotate COUNTERCLOCKWISE to exactly 45° from the start mark; keep it flat and hold still.", "Z", -45),
-        ("CCW 90°", "Continue COUNTERCLOCKWISE to exactly 90°; hold still.", "Z", -90),
-        ("CCW 135°", "Continue COUNTERCLOCKWISE to exactly 135°; hold still.", "Z", -135),
-        ("CCW 180°", "Continue COUNTERCLOCKWISE to exactly 180°; hold still.", "Z", -180),
-        ("CCW 225°", "Continue COUNTERCLOCKWISE to exactly 225°; hold still.", "Z", -225),
-        ("CCW 270°", "Continue COUNTERCLOCKWISE to exactly 270°; hold still.", "Z", -270),
-        ("CCW 315°", "Continue COUNTERCLOCKWISE to exactly 315°; hold still.", "Z", -315),
-        ("CCW 360°", "Complete one full COUNTERCLOCKWISE turn to 360° / the original physical heading; hold still.", "Z", -360),
+        ("CCW +45°", "Turn COUNTERCLOCKWISE exactly 45° from the last position, then hold still.", "Z", -45),
+        ("CCW +45°", "Turn COUNTERCLOCKWISE another 45° from the last position, then hold still.", "Z", -90),
+        ("CCW +45°", "Turn COUNTERCLOCKWISE another 45° from the last position, then hold still.", "Z", -135),
+        ("CCW +45°", "Turn COUNTERCLOCKWISE another 45° from the last position, then hold still.", "Z", -180),
+        ("CCW +45°", "Turn COUNTERCLOCKWISE another 45° from the last position, then hold still.", "Z", -225),
+        ("CCW +45°", "Turn COUNTERCLOCKWISE another 45° from the last position, then hold still.", "Z", -270),
+        ("CCW +45°", "Turn COUNTERCLOCKWISE another 45° from the last position, then hold still.", "Z", -315),
+        ("CCW +45°", "Turn COUNTERCLOCKWISE another 45° to complete the full circle, then hold still.", "Z", -360),
 
-        ("RE-ZERO FOR TILT", "Return to the original flat/start position. Press capture for a fresh tilt zero.", "REZERO", 0),
-        ("FRONT EDGE UP 45°", "Lift the FRONT edge about 45° and hold still.", "TILT", 45),
-        ("BACK EDGE UP 45°", "Return flat, then lift the BACK edge about 45° and hold still.", "TILT", 45),
-        ("RIGHT EDGE UP 45°", "Return flat, then lift the RIGHT edge about 45° and hold still.", "TILT", 45),
-        ("LEFT EDGE UP 45°", "Return flat, then lift the LEFT edge about 45° and hold still.", "TILT", 45),
+        ("TILT START / ZERO", "Return flat to the physical starting position. Press SET FRESH ZERO.", "REZERO", 0),
+        ("FRONT UP 45°", "Lift the FRONT edge about 45° and hold still.", "TILT", 45),
+        ("BACK UP 45°", "Return flat, then lift the BACK edge about 45° and hold still.", "TILT", 45),
+        ("RIGHT UP 45°", "Return flat, then lift the RIGHT edge about 45° and hold still.", "TILT", 45),
+        ("LEFT UP 45°", "Return flat, then lift the LEFT edge about 45° and hold still.", "TILT", 45),
     ]
 
     def open_calibration(self):
