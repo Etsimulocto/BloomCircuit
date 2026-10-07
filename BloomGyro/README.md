@@ -174,3 +174,22 @@ Preserve known-good lower layers. In particular:
 - do not alter yaw scale before checking sample timing
 - do not assume a 0x70 device is an MPU-6050
 - change one diagnostic layer at a time
+
+
+## Accelerometer-driven sensory lighting
+
+The same validated IMU stack now powers `BloomMotionLights`, a separate motion-reactive LED test.
+
+The important takeaway is that a basic accelerometer/gyro is already enough for strong sensory interaction:
+
+- tilt can select a physical direction
+- motion speed can drive brightness/energy
+- shake and impacts can trigger effects
+- diagonal movement can blend neighboring bulbs
+- four APA106 lights are enough for a useful top/right/bottom/left field
+
+The current preferred YOKE behavior uses all four bulbs as a directional field: idle is soft blue, and movement toward a side crossfades that side toward warm gold. The response starts early, reaches full strength around 45 degrees, and avoids white saturation during rough handling.
+
+Absolute yaw is not needed for this use; a magnetometer is only necessary if the product must recover a true world-relative heading after arbitrary spins.
+
+See `firmware/BloomMotionLights/README.md` for the sensory-light tuning notes.
