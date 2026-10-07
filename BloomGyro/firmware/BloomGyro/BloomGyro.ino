@@ -292,10 +292,13 @@ static bool mpuInit() {
   if (Wire.endTransmission(false) != 0) return false;
   if (Wire.requestFrom((int)MPU_ADDR, 1, true) != 1) return false;
   uint8_t who = Wire.read();
-  if (who != 0x68 && who != 0x69) {
+  // MPU-6050 reports 0x68/0x69. Some drop-in MPU-6500-class boards
+  // report 0x70 while using the same basic accel/gyro register map.
+  if (who != 0x68 && who != 0x69 && who != 0x70) {
     Serial.printf("BG|ERROR|mpu_whoami=0x%02X\n", who);
     return false;
   }
+  Serial.printf("BG|IMU|whoami=0x%02X\n", who);
 
   i2cWriteReg(MPU_ADDR, 0x6B, 0x01); // wake, PLL with X gyro
   delay(20);
