@@ -1,0 +1,26 @@
+name: BloomGyro checks
+on:
+  push:
+    paths:
+      - 'BloomGyro/**'
+      - '.github/workflows/bloomgyro-check.yml'
+  pull_request:
+    paths:
+      - 'BloomGyro/**'
+      - '.github/workflows/bloomgyro-check.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: arduino/setup-arduino-cli@v2
+      - name: Install ESP32 core
+        run: |
+          arduino-cli core update-index --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+          arduino-cli core install esp32:esp32@3.3.12 --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+      - name: Compile BloomGyro ESP32-S3 firmware
+        run: |
+          arduino-cli compile --fqbn esp32:esp32:esp32s3:CDCOnBoot=cdc BloomGyro/firmware/BloomGyro
