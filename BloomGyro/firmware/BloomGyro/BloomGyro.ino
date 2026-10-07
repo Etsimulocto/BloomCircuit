@@ -69,7 +69,7 @@ struct ImuSample;
 
 // ---------------------------- Identity ----------------------------
 static const char *BG_VERSION = "0.1.1";
-static const char *BG_BUILD = "HOLDLOCK";
+static const char *BG_BUILD = "FASTBUS5HZ";
 
 // ---------------------------- Hardware map ------------------------
 static constexpr uint8_t PIN_SDA       = 8;
@@ -99,7 +99,7 @@ static constexpr uint32_t STILL_HOLD_MS  = 700;      // must be still before lea
 static constexpr float BIAS_LEARN_ALPHA  = 0.0015f; // gentle EMA while stationary
 
 static constexpr uint32_t SENSOR_PERIOD_US = 5000;  // 200 Hz
-static constexpr uint32_t DISPLAY_PERIOD_MS = 50;   // 20 Hz
+static constexpr uint32_t DISPLAY_PERIOD_MS = 200;  // 5 Hz; keep OLED traffic from starving IMU
 static constexpr uint32_t SERIAL_PERIOD_MS = 100;   // 10 Hz
 
 // ---------------------------- Small SSD1306 text driver -----------
@@ -347,7 +347,7 @@ static bool mpuInit() {
                             fsSel == 2 ? 32.8f : 16.4f;
   gyroScaleRuntime = gyroScaleReadback;
 
-  Serial.printf("BG|IMUCFG|pwr1=0x%02X|smpl=0x%02X|cfg=0x%02X|gyro=0x%02X|accel=0x%02X|fs_sel=%u|scale=%.1f|i2c_khz=100|z_cal=%.6f\n",
+  Serial.printf("BG|IMUCFG|pwr1=0x%02X|smpl=0x%02X|cfg=0x%02X|gyro=0x%02X|accel=0x%02X|fs_sel=%u|scale=%.1f|i2c_khz=400|z_cal=%.6f\n",
                 pwr1, smpl, cfg, gyroCfg, accelCfg, fsSel, gyroScaleReadback, GYRO_Z_CAL);
 
   if (gyroCfg != 0x00) {
@@ -630,7 +630,7 @@ void setup() {
   delay(200);
   Serial.printf("BG|IDENTITY|device=BloomGyro|fw=%s|format=bloomcore/v1.3\n", BG_VERSION);
 
-  Wire.begin(PIN_SDA, PIN_SCL, 100000);
+  Wire.begin(PIN_SDA, PIN_SCL, 400000);
 
   ledOk = initApa106Rmt();
   oledOk = oledInit();
@@ -675,7 +675,7 @@ void setup() {
     oledClear();
     oledText(25,0,"BLOOM GYRO");
     oledText(28,3,"FW 0.1.1");
-    oledText(19,5,"HOLD LOCK");
+    oledText(13,5,"FAST BUS 5HZ");
     delay(1800);
   }
 
@@ -695,7 +695,7 @@ void loop() {
   if ((uint32_t)(nowUs-lastSensorUs) >= SENSOR_PERIOD_US) {
     float dt=(nowUs-lastSensorUs)/1000000.0f;
     lastSensorUs=nowUs;
-    dt=constrain(dt,0.001f,0.05f);
+    dt=constrain(dt,0.001f,0.20f);
 
     ImuSample s;
     if (mpuRead(s)) {
