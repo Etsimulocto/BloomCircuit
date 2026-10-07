@@ -58,6 +58,11 @@
 #include <math.h>
 #include "esp32-hal-rmt.h"
 
+// Arduino auto-generates prototypes before local type definitions.
+// Keep these visible early so generated prototypes remain valid.
+struct Rgb;
+struct ImuSample;
+
 #if !defined(CONFIG_IDF_TARGET_ESP32S3)
 #error BloomGyro requires ESP32-S3
 #endif
