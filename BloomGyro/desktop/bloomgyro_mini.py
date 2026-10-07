@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import csv
 import glob
+from collections import deque
 import os
 import queue
 import subprocess
@@ -34,7 +35,7 @@ LOG_DIR = Path(os.environ.get(
 )).expanduser()
 
 WINDOW_W = 330
-WINDOW_H = 255
+WINDOW_H = 285
 
 
 def programmer_running() -> bool:
@@ -79,6 +80,12 @@ class BloomGyroMini(tk.Tk):
         self.samples = 0
         self.last_rx_monotonic = 0.0
         self.zero_count = 0
+        self.recent_samples = deque(maxlen=120)
+        self.cal_window = None
+        self.cal_step_index = 0
+        self.cal_rows = []
+        self.cal_csv_path = None
+        self.cal_txt_path = None
 
         LOG_DIR.mkdir(parents=True, exist_ok=True)
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -160,6 +167,14 @@ class BloomGyroMini(tk.Tk):
         )
         self.zero_btn.pack(side="left", fill="x", expand=True)
 
+        self.cal_btn = tk.Button(
+            controls, text="SIMON CAL", command=self.open_calibration,
+            state="disabled", bg="#242424", fg="#ffffff",
+            activebackground="#333333", activeforeground="#ffffff",
+            font=("DejaVu Sans", 9, "bold"), relief="raised", bd=2
+        )
+        self.cal_btn.pack(side="left", padx=(6, 0))
+
         self.sample_lbl = tk.Label(
             controls, text="0 samples", bg="#111111", fg="#777777",
             font=("DejaVu Sans Mono", 8)
@@ -177,6 +192,233 @@ class BloomGyroMini(tk.Tk):
             font=("DejaVu Sans Mono", 7), anchor="w"
         )
         self.port_lbl.pack(fill="x", padx=11)
+
+    CAL_STEPS = [
+        ("FLAT / STILL", "Keep the whole rig flat and still.", "BASE", 0),
+        ("CLOCKWISE 90°", "Turn the whole rig clockwise exactly 90°, keep it flat, then hold still.", "Z", 90),
+        ("BACK TO ZERO", "Return to the original zero heading and hold still.", "Z", 0),
+        ("COUNTERCLOCKWISE 90°", "Turn counterclockwise exactly 90°, keep it flat, then hold still.", "Z", -90),
+        ("BACK TO ZERO", "Return to the original zero heading and hold still.", "Z", 0),
+        ("CLOCKWISE 180°", "Turn clockwise exactly 180°, keep it flat, then hold still.", "Z", 180),
+        ("BACK TO ZERO", "Return to the original zero heading and hold still.", "Z", 0),
+        ("COUNTERCLOCKWISE 180°", "Turn counterclockwise exactly 180°, keep it flat, then hold still.", "Z", -180),
+        ("BACK TO ZERO", "Return to the original zero heading and hold still.", "Z", 0),
+        ("FRONT EDGE UP 45°", "Lift the FRONT edge about 45°, hold the heading, then hold still.", "TILT", 45),
+        ("BACK EDGE UP 45°", "Lift the BACK edge about 45°, then hold still.", "TILT", 45),
+        ("RIGHT EDGE UP 45°", "Lift the RIGHT edge about 45°, then hold still.", "TILT", 45),
+        ("LEFT EDGE UP 45°", "Lift the LEFT edge about 45°, then hold still.", "TILT", 45),
+    ]
+
+    def open_calibration(self):
+        if self.cal_window is not None and self.cal_window.winfo_exists():
+            self.cal_window.lift()
+            return
+
+        self.cal_step_index = 0
+        self.cal_rows = []
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.cal_csv_path = LOG_DIR / f"bloomgyro_cal_{stamp}.csv"
+        self.cal_txt_path = LOG_DIR / f"bloomgyro_cal_{stamp}.txt"
+
+        w = tk.Toplevel(self)
+        self.cal_window = w
+        w.title("BloomGyro Simon Calibration")
+        w.geometry("470x330")
+        w.resizable(False, False)
+        w.configure(bg="#111111")
+
+        tk.Label(
+            w, text="SIMON SAYS — CALIBRATION RUN",
+            bg="#111111", fg="#ffffff", font=("DejaVu Sans", 12, "bold")
+        ).pack(pady=(12, 4))
+
+        self.cal_progress_lbl = tk.Label(
+            w, text="", bg="#111111", fg="#888888",
+            font=("DejaVu Sans Mono", 9)
+        )
+        self.cal_progress_lbl.pack()
+
+        self.cal_title_lbl = tk.Label(
+            w, text="", bg="#050505", fg="#00e5ff",
+            font=("DejaVu Sans", 16, "bold"), width=34, height=2
+        )
+        self.cal_title_lbl.pack(padx=12, pady=(8, 2))
+
+        self.cal_instruction_lbl = tk.Label(
+            w, text="", bg="#111111", fg="#dddddd",
+            font=("DejaVu Sans", 10), wraplength=430, justify="center"
+        )
+        self.cal_instruction_lbl.pack(padx=16, pady=(5, 8))
+
+        self.cal_live_lbl = tk.Label(
+            w, text="X +000.0   Y +000.0   Z +000.0",
+            bg="#111111", fg="#bdbdbd", font=("DejaVu Sans Mono", 10, "bold")
+        )
+        self.cal_live_lbl.pack(pady=4)
+
+        self.cal_note_lbl = tk.Label(
+            w, text="Move into the requested position, HOLD STILL, then capture.",
+            bg="#111111", fg="#777777", font=("DejaVu Sans", 8)
+        )
+        self.cal_note_lbl.pack(pady=(2, 6))
+
+        buttons = tk.Frame(w, bg="#111111")
+        buttons.pack(fill="x", padx=12, pady=8)
+
+        self.cal_capture_btn = tk.Button(
+            buttons, text="ZERO & START", command=self.calibration_capture,
+            bg="#242424", fg="#ffffff", activebackground="#333333",
+            activeforeground="#ffffff", font=("DejaVu Sans", 10, "bold")
+        )
+        self.cal_capture_btn.pack(side="left", fill="x", expand=True)
+
+        tk.Button(
+            buttons, text="CANCEL", command=self.close_calibration,
+            bg="#242424", fg="#cccccc", activebackground="#333333",
+            activeforeground="#ffffff", font=("DejaVu Sans", 9)
+        ).pack(side="left", padx=(8, 0))
+
+        self.cal_result_lbl = tk.Label(
+            w, text="", bg="#111111", fg="#6dff8a",
+            font=("DejaVu Sans Mono", 8), wraplength=440, justify="left"
+        )
+        self.cal_result_lbl.pack(padx=12, pady=(4, 8))
+
+        w.protocol("WM_DELETE_WINDOW", self.close_calibration)
+        self._show_cal_step()
+
+    def close_calibration(self):
+        if self.cal_window is not None:
+            try:
+                self.cal_window.destroy()
+            except Exception:
+                pass
+        self.cal_window = None
+
+    def _show_cal_step(self):
+        if self.cal_window is None or not self.cal_window.winfo_exists():
+            return
+        total = len(self.CAL_STEPS)
+        if self.cal_step_index >= total:
+            self._finish_calibration()
+            return
+        title, instruction, _axis, _target = self.CAL_STEPS[self.cal_step_index]
+        self.cal_progress_lbl.configure(text=f"STEP {self.cal_step_index + 1} / {total}")
+        self.cal_title_lbl.configure(text=title)
+        self.cal_instruction_lbl.configure(text=instruction)
+        self.cal_capture_btn.configure(
+            text="ZERO & START" if self.cal_step_index == 0 else "CAPTURE / NEXT",
+            state="normal"
+        )
+
+    def _recent_average(self, seconds: float = 0.7):
+        cutoff = time.monotonic() - seconds
+        rows = [r for r in self.recent_samples if r["t"] >= cutoff]
+        if len(rows) < 3:
+            rows = list(self.recent_samples)[-5:]
+        if not rows:
+            return None
+
+        def avg(key):
+            return sum(r[key] for r in rows) / len(rows)
+
+        def lo(key):
+            return min(r[key] for r in rows)
+
+        def hi(key):
+            return max(r[key] for r in rows)
+
+        return {
+            "n": len(rows),
+            "x": avg("x"), "y": avg("y"), "z": avg("z"),
+            "gz": avg("gz_dps"), "touch": round(avg("touch")),
+            "x_min": lo("x"), "x_max": hi("x"),
+            "y_min": lo("y"), "y_max": hi("y"),
+            "z_min": lo("z"), "z_max": hi("z"),
+        }
+
+    def calibration_capture(self):
+        if self.cal_step_index == 0:
+            self.send("ZERO")
+            self.cal_capture_btn.configure(text="ZEROING...", state="disabled")
+            self.after(850, self._capture_current_cal_step)
+            return
+        self._capture_current_cal_step()
+
+    def _capture_current_cal_step(self):
+        if self.cal_step_index >= len(self.CAL_STEPS):
+            return
+        snap = self._recent_average()
+        if snap is None:
+            self.cal_result_lbl.configure(text="No live samples yet — hold still and try again.", fg="#ff6666")
+            self.cal_capture_btn.configure(state="normal", text="CAPTURE / NEXT")
+            return
+
+        title, instruction, axis, target = self.CAL_STEPS[self.cal_step_index]
+        row = {
+            "step": self.cal_step_index + 1,
+            "title": title,
+            "instruction": instruction,
+            "target_axis": axis,
+            "target_deg": target,
+            **snap,
+        }
+        self.cal_rows.append(row)
+        self._log_event(
+            "CAL_CAPTURE",
+            detail=f"step={row['step']}|title={title}|target={target}|avg_x={snap['x']:.2f}|avg_y={snap['y']:.2f}|avg_z={snap['z']:.2f}"
+        )
+        self.cal_result_lbl.configure(
+            text=f"CAPTURED  X {snap['x']:+.1f}°   Y {snap['y']:+.1f}°   Z {snap['z']:+.1f}°   ({snap['n']} samples)",
+            fg="#6dff8a"
+        )
+        self.cal_step_index += 1
+        self.after(350, self._show_cal_step)
+
+    def _finish_calibration(self):
+        if not self.cal_rows:
+            return
+
+        with self.cal_csv_path.open("w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow([
+                "step", "instruction_name", "instruction", "target_axis", "target_deg",
+                "samples", "avg_x_deg", "avg_y_deg", "avg_z_deg", "avg_gz_dps", "avg_touch",
+                "x_min", "x_max", "y_min", "y_max", "z_min", "z_max"
+            ])
+            for r in self.cal_rows:
+                writer.writerow([
+                    r["step"], r["title"], r["instruction"], r["target_axis"], r["target_deg"],
+                    r["n"], f"{r['x']:.3f}", f"{r['y']:.3f}", f"{r['z']:.3f}",
+                    f"{r['gz']:.3f}", r["touch"],
+                    f"{r['x_min']:.3f}", f"{r['x_max']:.3f}",
+                    f"{r['y_min']:.3f}", f"{r['y_max']:.3f}",
+                    f"{r['z_min']:.3f}", f"{r['z_max']:.3f}",
+                ])
+
+        with self.cal_txt_path.open("w", encoding="utf-8") as f:
+            f.write("BloomGyro Simon Calibration Report\n")
+            f.write(f"Created: {datetime.now().astimezone().isoformat()}\n")
+            f.write(f"IMU WHO_AM_I: {self.whoami}\n")
+            f.write(f"Hardware: OLED={self.boot['oled']} MPU={self.boot['mpu']} LED={self.boot['led']}\n\n")
+            for r in self.cal_rows:
+                f.write(
+                    f"{r['step']:02d}. {r['title']} | target={r['target_deg']} "
+                    f"| X={r['x']:+.2f} Y={r['y']:+.2f} Z={r['z']:+.2f} "
+                    f"| gz={r['gz']:+.2f} dps | n={r['n']}\n"
+                )
+
+        self._log_event("CAL_COMPLETE", detail=str(self.cal_csv_path))
+        self.cal_progress_lbl.configure(text="CALIBRATION COMPLETE")
+        self.cal_title_lbl.configure(text="DONE")
+        self.cal_instruction_lbl.configure(
+            text="The run is saved. Send me the calibration CSV or TXT and I can calculate the axis/scale corrections."
+        )
+        self.cal_capture_btn.configure(text="CLOSE", state="normal", command=self.close_calibration)
+        self.cal_result_lbl.configure(
+            text=f"CSV: {self.cal_csv_path.name}\nTXT: {self.cal_txt_path.name}",
+            fg="#6dff8a"
+        )
 
     @staticmethod
     def _fields(line: str) -> dict[str, str]:
@@ -307,6 +549,7 @@ class BloomGyroMini(tk.Tk):
     def _reenable_zero(self):
         if self.ser is not None:
             self.zero_btn.configure(state="normal", text="ZERO / RESET")
+            self.cal_btn.configure(state="normal")
 
     def _log_event(self, event: str, detail: str = ""):
         try:
@@ -333,6 +576,11 @@ class BloomGyroMini(tk.Tk):
             self.values["gz_dps"] = self._f(f, "gz_dps")
             self.values["touch"] = self._i(f, "touch")
             self.samples += 1
+            self.recent_samples.append({
+                "t": time.monotonic(),
+                "x": self.values["x"], "y": self.values["y"], "z": self.values["z"],
+                "gz_dps": self.values["gz_dps"], "touch": self.values["touch"],
+            })
             self._update_readout()
             self._log_event("ANGLES")
             return
@@ -391,6 +639,10 @@ class BloomGyroMini(tk.Tk):
         self.gz_lbl.configure(text=f"Z RATE   {self.values['gz_dps']:+07.2f}°/s")
         self.touch_lbl.configure(text=f"TOUCH    {self.values['touch']}")
         self.sample_lbl.configure(text=f"{self.samples} samples")
+        if self.cal_window is not None and self.cal_window.winfo_exists():
+            self.cal_live_lbl.configure(
+                text=f"X {self.values['x']:+06.1f}   Y {self.values['y']:+06.1f}   Z {self.values['z']:+06.1f}"
+            )
         self._update_hw()
 
     def _update_hw(self):
@@ -410,6 +662,7 @@ class BloomGyroMini(tk.Tk):
             self.status_lbl.configure(text="RECONNECTING", fg="#ffd166")
             self.port_lbl.configure(text=f"PORT: lost {port}")
             self.zero_btn.configure(state="disabled")
+            self.cal_btn.configure(state="disabled")
 
     def _drain_rx(self):
         try:
