@@ -41,6 +41,11 @@ required = {
     "particle screensaver": "hjParticleCount",
     "USB touch stream fix": "USB_TOUCH_STREAM_FIX_V1",
     "5 Hz touch telemetry": "millis()-lastInputStreamMs>=200",
+    "four APA106 lamps": "LED_COUNT = 4",
+    "Light 3 protocol": "SET LED3 COLOR",
+    "Light 4 protocol": "SET LED4 COLOR",
+    "Light 3 status": "|led3=",
+    "Light 4 status": "|led4=",
 }
 
 missing = [name for name, marker in required.items() if marker not in s]
@@ -67,5 +72,6 @@ print(f"  firmware version {expected_version}")
 print("  Fuel Gauge + HOME battery/power cycle present")
 print("  GET POWER protocol present")
 print("  30-second OLED screensaver present")
-print("  expanded patterns + particle saver present")
+print("  expanded four-lamp patterns + particle saver present")
 print("  USB touch telemetry single-stream fix present (5 Hz)")
+print("  four-lamp protocol/status/persistence present")
