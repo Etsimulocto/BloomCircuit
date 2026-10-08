@@ -174,91 +174,92 @@ static const HjBankPattern HJ_BANK_PATTERNS[] = {
 static constexpr uint8_t HJ_BANK_PATTERN_COUNT =
   sizeof(HJ_BANK_PATTERNS)/sizeof(HJ_BANK_PATTERNS[0]);
 
-static const HjBankPattern* hjFindBankPattern(const String &name) {
+static int16_t hjFindBankPatternIndex(const String &name) {
   for(uint8_t i=0;i<HJ_BANK_PATTERN_COUNT;++i)
-    if(name == HJ_BANK_PATTERNS[i].name) return &HJ_BANK_PATTERNS[i];
-  return nullptr;
+    if(name == HJ_BANK_PATTERNS[i].name) return (int16_t)i;
+  return -1;
 }
 
 static bool hjServiceBankPattern(unsigned long now, uint8_t bri) {
-  const HjBankPattern *d = hjFindBankPattern(patternName);
-  if(!d) return false;
-  if(now-patternLastMs < d->intervalMs) return true;
+  int16_t bankIndex = hjFindBankPatternIndex(patternName);
+  if(bankIndex < 0) return false;
+  const HjBankPattern &d = HJ_BANK_PATTERNS[(uint8_t)bankIndex];
+  if(now-patternLastMs < d.intervalMs) return true;
   patternLastMs=now;
 
   uint16_t step=patternStep++;
   uint8_t slow=(uint8_t)(step & 0xFF);
   Rgb frame[LED_COUNT];
 
-  if(d->mode == HJ_BANK_FLOW) {
-    const Rgb pal[4]={d->p0,d->p1,d->p2,d->p3};
+  if(d.mode == HJ_BANK_FLOW) {
+    const Rgb pal[4]={d.p0,d.p1,d.p2,d.p3};
     for(uint8_t i=0;i<LED_COUNT;++i){
       uint8_t phase=(uint8_t)(slow + i*64U);
       uint8_t seg=(phase>>6)&3U;
       uint8_t amt=(uint8_t)((phase&63U)*4U);
       frame[i]=blendRgb(pal[seg],pal[(seg+1U)&3U],amt);
     }
-  } else if(d->mode == HJ_BANK_WAVE) {
-    const Rgb pal[4]={d->p0,d->p1,d->p2,d->p3};
+  } else if(d.mode == HJ_BANK_WAVE) {
+    const Rgb pal[4]={d.p0,d.p1,d.p2,d.p3};
     for(uint8_t i=0;i<LED_COUNT;++i){
       uint8_t level=triangle8(step + i*45U,180);
       frame[i]=hjDim(pal[i],(uint8_t)(45U + (uint16_t)level*210U/255U));
     }
-  } else if(d->mode == HJ_BANK_SWEEP) {
+  } else if(d.mode == HJ_BANK_SWEEP) {
     static const uint8_t path[4]={HJ_TOP_LEFT,HJ_TOP_RIGHT,HJ_SIDE_RIGHT,HJ_SIDE_LEFT};
     hjBlankFrame(frame);
     uint8_t head=path[step&3U];
     uint8_t tail=path[(step+3U)&3U];
-    const Rgb pal[4]={d->p0,d->p1,d->p2,d->p3};
+    const Rgb pal[4]={d.p0,d.p1,d.p2,d.p3};
     Rgb c=pal[(step>>2)&3U];
     frame[head]=c;
     frame[tail]=hjDim(c,60);
-  } else if(d->mode == HJ_BANK_GLOW) {
+  } else if(d.mode == HJ_BANK_GLOW) {
     uint8_t level=triangle8(step,220);
-    Rgb c=blendRgb(d->p0,d->p1,level);
+    Rgb c=blendRgb(d.p0,d.p1,level);
     frame[HJ_TOP_LEFT]=c;
-    frame[HJ_TOP_RIGHT]=blendRgb(c,d->p2,50);
-    frame[HJ_SIDE_LEFT]=hjDim(blendRgb(c,d->p3,80),150);
-    frame[HJ_SIDE_RIGHT]=hjDim(blendRgb(c,d->p3,120),150);
-  } else if(d->mode == HJ_BANK_SPARK) {
-    const Rgb pal[4]={d->p0,d->p1,d->p2,d->p0};
+    frame[HJ_TOP_RIGHT]=blendRgb(c,d.p2,50);
+    frame[HJ_SIDE_LEFT]=hjDim(blendRgb(c,d.p3,80),150);
+    frame[HJ_SIDE_RIGHT]=hjDim(blendRgb(c,d.p3,120),150);
+  } else if(d.mode == HJ_BANK_SPARK) {
+    const Rgb pal[4]={d.p0,d.p1,d.p2,d.p0};
     for(uint8_t i=0;i<LED_COUNT;++i){
       frame[i]=hjDim(pal[i],120);
-      if(random(5)==0) frame[i]=d->p3;
+      if(random(5)==0) frame[i]=d.p3;
     }
-  } else if(d->mode == HJ_BANK_PAIR) {
+  } else if(d.mode == HJ_BANK_PAIR) {
     bool flip=step&1U;
-    frame[HJ_TOP_LEFT]=flip?d->p0:d->p1;
-    frame[HJ_TOP_RIGHT]=flip?d->p1:d->p0;
-    frame[HJ_SIDE_LEFT]=flip?d->p2:d->p3;
-    frame[HJ_SIDE_RIGHT]=flip?d->p3:d->p2;
-  } else if(d->mode == HJ_BANK_DIAG) {
+    frame[HJ_TOP_LEFT]=flip?d.p0:d.p1;
+    frame[HJ_TOP_RIGHT]=flip?d.p1:d.p0;
+    frame[HJ_SIDE_LEFT]=flip?d.p2:d.p3;
+    frame[HJ_SIDE_RIGHT]=flip?d.p3:d.p2;
+  } else if(d.mode == HJ_BANK_DIAG) {
     bool flip=step&1U;
     hjBlankFrame(frame);
     if(flip){
-      frame[HJ_TOP_LEFT]=d->p0;
-      frame[HJ_SIDE_RIGHT]=d->p2;
-      frame[HJ_TOP_RIGHT]=hjDim(d->p1,45);
-      frame[HJ_SIDE_LEFT]=hjDim(d->p3,45);
+      frame[HJ_TOP_LEFT]=d.p0;
+      frame[HJ_SIDE_RIGHT]=d.p2;
+      frame[HJ_TOP_RIGHT]=hjDim(d.p1,45);
+      frame[HJ_SIDE_LEFT]=hjDim(d.p3,45);
     } else {
-      frame[HJ_TOP_RIGHT]=d->p1;
-      frame[HJ_SIDE_LEFT]=d->p3;
-      frame[HJ_TOP_LEFT]=hjDim(d->p0,45);
-      frame[HJ_SIDE_RIGHT]=hjDim(d->p2,45);
+      frame[HJ_TOP_RIGHT]=d.p1;
+      frame[HJ_SIDE_LEFT]=d.p3;
+      frame[HJ_TOP_LEFT]=hjDim(d.p0,45);
+      frame[HJ_SIDE_RIGHT]=hjDim(d.p2,45);
     }
   } else { // HJ_BANK_RIPPLE
     uint8_t phase=(uint8_t)(step&3U);
     hjBlankFrame(frame);
     if(phase==0){
-      frame[HJ_TOP_LEFT]=d->p0; frame[HJ_TOP_RIGHT]=d->p1;
+      frame[HJ_TOP_LEFT]=d.p0; frame[HJ_TOP_RIGHT]=d.p1;
     } else if(phase==1){
-      frame[HJ_TOP_LEFT]=hjDim(d->p0,80); frame[HJ_TOP_RIGHT]=hjDim(d->p1,80);
-      frame[HJ_SIDE_LEFT]=d->p2; frame[HJ_SIDE_RIGHT]=d->p3;
+      frame[HJ_TOP_LEFT]=hjDim(d.p0,80); frame[HJ_TOP_RIGHT]=hjDim(d.p1,80);
+      frame[HJ_SIDE_LEFT]=d.p2; frame[HJ_SIDE_RIGHT]=d.p3;
     } else if(phase==2){
-      frame[HJ_SIDE_LEFT]=hjDim(d->p2,80); frame[HJ_SIDE_RIGHT]=hjDim(d->p3,80);
+      frame[HJ_SIDE_LEFT]=hjDim(d.p2,80); frame[HJ_SIDE_RIGHT]=hjDim(d.p3,80);
     } else {
-      frame[HJ_TOP_LEFT]=hjDim(d->p0,35); frame[HJ_TOP_RIGHT]=hjDim(d->p1,35);
-      frame[HJ_SIDE_LEFT]=hjDim(d->p2,35); frame[HJ_SIDE_RIGHT]=hjDim(d->p3,35);
+      frame[HJ_TOP_LEFT]=hjDim(d.p0,35); frame[HJ_TOP_RIGHT]=hjDim(d.p1,35);
+      frame[HJ_SIDE_LEFT]=hjDim(d.p2,35); frame[HJ_SIDE_RIGHT]=hjDim(d.p3,35);
     }
   }
 
