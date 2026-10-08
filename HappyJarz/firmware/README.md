@@ -35,3 +35,23 @@ Do not move working low-level code merely for cosmetic cleanup.
 Full-size S3 target with more flash/PSRAM and additional inputs.
 
 Do not implement the final FULL target until the actual board is bench-tested.
+
+## Current SIMPLE firmware snapshot
+
+Current proven SIMPLE development release: **0.17.9**.
+
+The active integrated source remains in `happyjarz-controller` and is assembled by the staged patch pipeline.
+
+Current product-level behavior includes:
+
+- 100 four-lamp light patterns
+- seven OLED screensavers
+- seven native OLED mini-games
+- calibrated and filtered battery telemetry
+- low-battery bulb/OLED warning
+- switched accessory-rail pause/resume
+- one-hour software sleep with touch wake and alarm wake
+- host OLED and LED-frame mirrors
+- logical host/gamepad input routed through the device input layer
+
+The ESP32 remains powered during both accessory pause and one-hour software sleep so clock, alarm and host communication can continue.
