@@ -1,6 +1,6 @@
 # HAPPY JARZ ESP32 Firmware
 
-**Current firmware release:** **v0.11.0**
+**Current firmware release:** **v0.17.9**
 
 **Compatibility staging base:** `happyjarz_integrated_v0_5.ino` + standard patch pipeline
 
@@ -152,7 +152,7 @@ Current sensing path:
 
 - GPIO3 = onboard battery/supply ADC path
 - divider ratio = `2.0`
-- provisional `BATTERY_CAL_FACTOR = 1.370`
+- calibrated `BATTERY_CAL_FACTOR = 0.802`
 - percentage is voltage-estimated, not coulomb counted
 
 Bench reference:
@@ -197,6 +197,9 @@ Modes:
 - SPIRAL
 - TRIPPY
 - PARTICLES
+- BLOOM
+- BREATHE
+- GLITTER
 
 Controls:
 
@@ -228,7 +231,7 @@ A long B press acts as HOME/escape from the arcade.
 At 115200 baud the firmware responds to `HELLO` with an `HJ|IDENTITY|...` line. For this branch/release it should report:
 
 ```text
-fw=0.11.0
+fw=0.17.9
 ```
 
 ## Current Pi compile/upload path
@@ -256,3 +259,51 @@ Firmware behavior changes require a firmware version bump before merge, includin
 ## Diagnostics / failure boundary
 
 Preserve known-good layers. If USB/controller behavior is wrong but local touch, LEDs and OLED still work, debug watcher/controller/protocol deployment first. If local LEDs/touch/OLED fail, debug firmware/hardware before changing the desktop application.
+
+## Low-battery warning
+
+Firmware `0.17.9` uses the calibrated/filtered Fuel Gauge for warning decisions.
+
+- enter warning at 10% or lower
+- clear only at 15% or higher
+- bulb 4 / right-side accent flashes red at 1 Hz
+- bulbs 1-3 continue the current pattern
+- OLED shows `LOW BATTERY`, `CHARGE ME!!!`, percentage and the USB-side cue
+- invalid/unverified battery readings never trigger the warning
+
+Battery voltage is lightly filtered before percentage conversion so normal ADC noise does not produce large visible percentage jumps.
+
+## Switched accessory pause
+
+OLED + four APA106 lamps can share a physical SPST-switched 3.3V accessory rail while the ESP32 remains powered.
+
+Firmware probes OLED address `0x3C` and reports:
+
+```text
+HJ|ACCESSORY|state=PAUSED|sensor=OLED
+HJ|ACCESSORY|state=ACTIVE|sensor=OLED
+```
+
+PAUSED freezes pattern progression, stops OLED rendering and holds the LED data path inactive. When the rail returns, the OLED is reinitialized and the current UI/pattern resumes.
+
+## One-hour software sleep
+
+After one hour without physical input:
+
+- OLED enters controller power-save
+- all four lamps are blanked
+- pattern progression freezes
+- ESP32 clock, alarm, USB, Wi-Fi and touch scanning remain active
+
+Wake sources:
+
+- any physical touch button
+- alarm trigger
+
+The first touch is consumed as a wake event so it does not also perform the normal button action. Alarm wake occurs before the normal alarm light pattern is applied.
+
+```text
+HJ|SLEEP|state=ASLEEP|reason=IDLE_1H
+HJ|SLEEP|state=AWAKE|reason=TOUCH
+HJ|SLEEP|state=AWAKE|reason=ALARM
+```
