@@ -725,6 +725,18 @@ class HappyJarzApp(tk.Tk):
         return fields
 
     def _handle_line(self, line: str):
+        # OLED frames are intentionally not copied into the visible/session log:
+        # each payload is ~1.4 KB Base64 and can arrive several times per second.
+        if line.startswith("HJ|OLED|"):
+            fields = self._parse_fields(line)
+            if fields.get("codec") == "b64v1" and fields.get("data"):
+                try:
+                    seq = int(fields.get("seq", "0"))
+                except ValueError:
+                    seq = 0
+                self._render_oled_frame(seq, fields["data"])
+            return
+
         if line.startswith("HJ|TOUCH|") or line.startswith("HJ|INPUT|"):
             fields = self._parse_fields(line)
             aliases = {
@@ -750,13 +762,6 @@ class HappyJarzApp(tk.Tk):
             if raw:
                 caps = {part.strip().lower() for part in raw.split(",") if part.strip()}
                 self._apply_input_capabilities(caps)
-        elif line.startswith("HJ|OLED|"):
-            if fields.get("codec") == "b64v1" and fields.get("data"):
-                try:
-                    seq = int(fields.get("seq", "0"))
-                except ValueError:
-                    seq = 0
-                self._render_oled_frame(seq, fields["data"])
         elif line.startswith("HJ|EVENT|") and fields.get("input"):
             key = fields["input"].strip().lower()
             if key in self.mini_buttons:
