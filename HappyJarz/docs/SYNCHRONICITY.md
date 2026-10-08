@@ -138,7 +138,7 @@ Suggested message families:
 - HJ|CAPS|...
 - HJ|STATE|...
 - HJ|LED_FRAME|...
-- HJ|OLED_FRAME|...
+- HJ|OLED|...
 - HJ|INPUT|...
 - HJ|POWER|...
 - HJ|EVENT|...
@@ -148,3 +148,39 @@ Suggested message families:
 Never treat host-side cached state as proof of physical device state.
 
 When synchronization matters, state comes from the device.
+
+## Gamepad synchronization
+
+Linux gamepads must feed the same logical host action path used by clickable Mini controls.
+
+Current routing policy:
+
+```text
+/dev/input/event* semantic mapping
+        ↓ if unavailable
+/dev/input/js* semantic mapping
+        ↓
+logical HAPPY JARZ action
+        ↓
+KEY <ACTION>
+        ↓
+ESP32 unified input path
+```
+
+Do not read both Linux APIs simultaneously for one controller, because the same physical press may be exposed twice.
+
+Current logical mapping:
+
+```text
+D-pad / hat / stick -> UP DOWN LEFT RIGHT
+South               -> A
+East                -> B
+West                -> X
+North               -> Y
+TL                  -> L
+TR                  -> R
+START               -> START
+SELECT              -> SELECT
+```
+
+Capability gating remains authoritative. SIMPLE only accepts its advertised controls; FULL-only actions remain disabled until a FULL device reports support.
