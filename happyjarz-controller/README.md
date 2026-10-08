@@ -1,6 +1,6 @@
 # HAPPY JARZ Controller
 
-**Current platform release pair:** desktop app **v1.5.0** + firmware **v0.13.0**
+**Current platform release pair:** desktop app **v1.5.0** + firmware **v0.14.0**
 
 This subsystem is the PC/Raspberry Pi field-service and control layer for the HAPPY JARZ powered stand. It sits above the known-good ESP32-S3 light/touch/OLED hardware layer and is designed so desktop-side changes do not casually rewrite the proven APA106 timing.
 
@@ -258,7 +258,7 @@ Preserve known-good layers. If local LED/touch/OLED behavior works but the deskt
 
 ### Integrated Mini mirror/controller
 
-App v1.5.0 / firmware v0.13.0 are the current synchronized pair. The Mini was introduced in app v1.4.0 and expanded in v1.5.0 with semantic gamepad routing and the blue OLED mirror.
+App v1.5.0 / firmware v0.14.0 are the current synchronized pair. The Mini was introduced in app v1.4.0 and expanded in v1.5.0 with semantic gamepad routing and the blue OLED mirror.
 
 Current behavior:
 - actual 128x64 U8g2 framebuffer mirror from the device
@@ -336,3 +336,33 @@ Notable behavior:
 FADE, BREATH and PULSE operate on the full four-entry `ledColor[]` state.
 
 The final staged verifier requires `HAPPYJARZ_FOUR_LAMP_PATTERN_ENGINE_V2` so an old pair-based service cannot be flashed accidentally.
+
+
+### Stand-topology chase family
+
+Firmware v0.14.0 adds patterns based on the real stand geometry:
+
+```text
+1 = top-left jar light
+2 = top-right jar light
+3 = left-side box accent
+4 = right-side box accent
+```
+
+New patterns:
+- CHASE_CW
+- CHASE_CCW
+- JAR_CHASE
+- SIDE_CHASE
+- SWEEP_LR
+- SWEEP_TS
+- DIAGONAL
+- PING_PONG
+- DUAL_CHASE
+- OPP_CHASE
+- JAR_PULSE
+- SIDE_ACCENT
+
+The clockwise physical path is `1 -> 2 -> 4 -> 3`.
+
+These effects use the saved per-lamp base colors rather than hard-coding a single chase color, so user color choices continue to matter.
