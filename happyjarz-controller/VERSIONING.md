@@ -9,7 +9,7 @@ These rules are mandatory for HAPPY JARZ releases and behavior-changing builds.
 
 The current release pair is:
 
-- App `1.4.0`
+- App `1.5.0`
 - Firmware `0.12.0`
 
 ## Mandatory bump rule
@@ -84,3 +84,10 @@ App 1.4.0 / firmware 0.12.0 are paired because the integrated Mini depends on ne
 - HJ|OLED framebuffer frames
 
 Older firmware may still run the host application, but the synchronized Mini controls/mirror are not considered supported without firmware 0.12.0 or later.
+
+
+### App 1.5.0
+
+Host-only update. Firmware remains 0.12.0.
+
+Adds semantic Linux gamepad support with event* preferred and js* fallback, full 12-action mapping for future FULL hardware, and blue OLED mirror pixels matching the physical display.
