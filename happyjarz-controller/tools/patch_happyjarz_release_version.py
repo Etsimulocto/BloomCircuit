@@ -57,6 +57,13 @@ shutil.copy2(arcade_h, sketch.parent / arcade_h.name)
 shutil.copy2(arcade_cpp, sketch.parent / arcade_cpp.name)
 subprocess.run([sys.executable, str(arcade_patch), str(sketch)], check=True)
 
+# Final one-hour software sleep runs after arcade so it can freeze arcade state
+# and intercept the final physical-input router without disturbing wake logic.
+sleep_patch = Path(__file__).with_name("patch_happyjarz_sleep_mode.py")
+if not sleep_patch.exists():
+    raise SystemExit(f"release staging failed: missing sleep patch {sleep_patch}")
+subprocess.run([sys.executable, str(sleep_patch), str(sketch)], check=True)
+
 s = sketch.read_text(encoding="utf-8")
 pattern = r'static const char \*HJ_FW_VERSION = "[^"]+";'
 replacement = f'static const char *HJ_FW_VERSION = "{version}";'
