@@ -10,7 +10,7 @@ The repository also contains the current **HAPPY JARZ controller/firmware stack*
 
 See [`happyjarz-controller/README.md`](happyjarz-controller/README.md) for the controller/service workflow and [`happyjarz-controller/firmware/README.md`](happyjarz-controller/firmware/README.md) for the ESP32 firmware layer.
 
-Current development firmware on `feature/happyjarz-catch-the-glitter`: **v0.11.0**.
+Current integrated hardware-development firmware on `feature/happyjarz-catch-the-glitter`: **v0.11.0**. The newer platform branch `feature/happyjarz-platform` carries the synchronized host/app architecture at **app v1.5.0 + firmware v0.12.0**.
 
 Current proven hardware:
 
@@ -210,3 +210,29 @@ There is no warranty; verify wiring and component pinouts against actual hardwar
 ## Scope
 
 BloomCircuit is intentionally a wiring-map and fabrication-documentation tool. It does not replace KiCad, SPICE, PCB DRC, or a datasheet. The goal is to make a physical maker circuit easy to understand, reproduce, service, and engrave.
+
+
+## HAPPY JARZ platform branch
+
+`feature/happyjarz-platform` is the clean forward-development branch for the synchronized HAPPY JARZ product stack.
+
+Current platform release pair:
+
+```text
+Host app  1.5.0
+Firmware  0.12.0
+```
+
+Key additions on the platform branch:
+- four-lamp host UI with separate BASE and LIVE color concepts
+- integrated Mini in the LIGHTS + CONTROL panel
+- actual 128x64 U8g2 OLED framebuffer mirror
+- blue-on-black OLED rendering to match the physical blue OLED modules
+- 12 visible logical controls: D-pad, A/B/X/Y, L/R, START/SELECT
+- SIMPLE capability gating: only D-pad + A/B active
+- semantic Linux gamepad support with event* preferred and js* fallback
+- one shared serial connection for control + telemetry + OLED mirror
+- host `KEY ...` commands entering the same firmware input path as physical touch
+- SIMPLE / FULL and US / EU release-lane architecture
+
+The production FULL board GPIO map remains intentionally uncommitted until the actual board is received and bench-tested.
