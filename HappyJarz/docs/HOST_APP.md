@@ -141,3 +141,17 @@ LED4 BASE -> text
 The theme updates when BASE colors change or when `HJ|STATUS|` refreshes those saved colors. It does not consume `HJ|LED_FRAME|`, so animated pattern output never drives host chrome.
 
 Derived secondary colors are allowed for Panel2, muted text and hover states, but the source palette remains the four device BASE colors. OLED mirror pixels and literal BASE/LIVE color swatches remain visually literal.
+
+
+### Pattern palette capture
+
+App 1.8.1 themes the host from a short capture window after each pattern change:
+
+1. arm capture when the selected/device pattern changes
+2. collect several four-lamp `HJ|LED_FRAME|` frames
+3. discard near-black transitional samples
+4. pick strong/distinct pattern colors
+5. derive background, panel, outline and text roles
+6. freeze the result until the pattern changes again
+
+The live LED stream continues normally after capture, but no further theme changes occur, preventing flashing or continuous chrome animation.
