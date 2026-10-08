@@ -118,3 +118,10 @@ GLITTER
 The ESP32 remains the renderer and source of truth. The app only sends saver commands and mirrors the returned 1024-byte OLED framebuffer. This keeps BLOOM, BREATHE, GLITTER, arcade screens and future device-local visuals synchronized with the physical display.
 
 For BLOOM/BREATHE/GLITTER, `HJ|SAVER|` reports the shared `visual_speed` value used by the host status readout.
+
+
+### Multiple live OLED viewers
+
+Multiple UI surfaces may display the same OLED framebuffer. App 1.7.1 shows the device framebuffer in both LIGHTS + CONTROL and OLED + PROCEDURAL SCREENSAVERS.
+
+These are not separate mirrors or serial consumers. Both widgets are updated from the same decoded `HJ|OLED|` frame, preserving one serial owner and one authoritative device-rendered OLED state.
