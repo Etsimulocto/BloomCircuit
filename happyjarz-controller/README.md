@@ -16,7 +16,7 @@ happyjarz-controller/firmware/VERSION # firmware version
 Current values:
 
 ```text
-App      1.7.0
+App      1.7.1
 Firmware 0.12.0
 ```
 
@@ -453,3 +453,10 @@ Firmware 0.17.1 fixes both in the staging patch. The saver behavior itself is ot
 #### BLOOM petal styles
 
 Firmware 0.17.2 simplifies BLOOM into a clean flower-only saver. It cycles through 4, 6, 8 and 10-petal outline styles with a small center and slow open/close motion. Background pollen, lower bowl/leaves and other decorative elements were removed.
+
+
+#### App 1.7.1 screensaver OLED preview
+
+The OLED + PROCEDURAL SCREENSAVERS panel now includes its own live 2x view of the actual 128x64 device framebuffer. It shares the same incoming `HJ|OLED|` stream as the Mini in LIGHTS + CONTROL; there is still one serial owner and one device framebuffer source of truth.
+
+Changing saver mode, reseeding, or changing speed can now be watched directly on the screensaver page without switching tabs.
