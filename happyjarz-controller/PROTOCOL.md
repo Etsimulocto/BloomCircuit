@@ -32,7 +32,7 @@ SET LED2 COLOR <R> <G> <B>
 SET LED3 COLOR <R> <G> <B>
 SET LED4 COLOR <R> <G> <B>
 SET BRIGHTNESS <0-100>
-SET PATTERN <OFF|SOLID|FADE|RAINBOW|PULSE>
+SET PATTERN <registered pattern name>
 TEST RGB
 TEST TOUCH
 SAVE
@@ -177,3 +177,25 @@ SELECT                   -> KEY SELECT
 The host prefers semantic `/dev/input/event*` and falls back to semantic `/dev/input/js*`. It must not consume both simultaneously for the same physical controller.
 
 SIMPLE firmware currently accepts only the controls returned by `GET CAPS`. FULL-only actions remain a forward-compatible host surface until FULL hardware is verified.
+
+
+### Topology chase patterns
+
+Firmware v0.14.0 registers:
+
+```text
+CHASE_CW
+CHASE_CCW
+JAR_CHASE
+SIDE_CHASE
+SWEEP_LR
+SWEEP_TS
+DIAGONAL
+PING_PONG
+DUAL_CHASE
+OPP_CHASE
+JAR_PULSE
+SIDE_ACCENT
+```
+
+These names are accepted through the existing `SET PATTERN <name>` command and are included in the local pattern cycle.
