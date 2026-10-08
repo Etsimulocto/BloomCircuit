@@ -68,3 +68,17 @@ Host commands are requests, not final truth:
 This applies to physical touch changes, animated patterns, OLED navigation, games, reconnects, and device-local settings.
 
 See SYNCHRONICITY.md.
+## Current implementation status
+
+Host app v1.3.0 on the platform branch now includes:
+
+- four Light cards with separate BASE and LIVE swatches
+- 12-input gamepad tester: UP/DOWN/LEFT/RIGHT, A/B/X/Y, L/R, START/SELECT
+- SIMPLE capability fallback that leaves FULL-only controls visible but disabled
+- HJ|CAPS|controls=... parsing for future explicit capability advertisement
+- HJ|LED_FRAME|... parsing for future live lamp telemetry
+- HJ|INPUT| parsing for all 12 logical controls
+
+Current integrated firmware does not yet publish continuous HJ|LED_FRAME telemetry, so animated LIVE swatches are host-ready but not yet fed by firmware.
+
+OLED mirror and Mini appearance editor remain planned host surfaces and are not implemented by this Lights/Controls patch.
