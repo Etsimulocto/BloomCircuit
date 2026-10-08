@@ -186,13 +186,75 @@ s = parse_re.sub(
     count=1,
 )
 
-replace_once(
-    '  if(line.startsWith("SET LED2 COLOR ")){if(parseRgb(line,2))ack("SET LED2 COLOR");else err("invalid LED2 RGB values");return;}\n',
-    '  if(line.startsWith("SET LED2 COLOR ")){if(parseRgb(line,2))ack("SET LED2 COLOR");else err("invalid LED2 RGB values");return;}\n'
-    '  if(line.startsWith("SET LED3 COLOR ")){if(parseRgb(line,3))ack("SET LED3 COLOR");else err("invalid LED3 RGB values");return;}\n'
-    '  if(line.startsWith("SET LED4 COLOR ")){if(parseRgb(line,4))ack("SET LED4 COLOR");else err("invalid LED4 RGB values");return;}\n',
-    "SET LED2 command",
+# Insert Light 3/4 handlers immediately before brightness handling. Earlier
+# staging patches may reformat the LED1/LED2 lines, so do not anchor to their
+# exact text.
+if 'SET LED3 COLOR ' not in s or 'SET LED4 COLOR ' not in s:
+    brightness_cmd = re.search(
+        r'(?m)^\s*if\(line\.startsWith\("SET BRIGHTNESS "\)\).*?
+# RGB self-test covers every connected lamp and restores all four colors.
+test_re = re.compile(
+    r'  if\(line=="TEST RGB"\)\{\n.*?Serial\.println\("HJ\|TEST\|rgb=PASS"\);return;\n  \}',
+    re.DOTALL,
 )
+m = test_re.search(s)
+if not m:
+    raise SystemExit("four-light patch failed: TEST RGB block not found")
+s = s[:m.start()] + '''  if(line=="TEST RGB"){
+    Rgb saved[LED_COUNT];
+    for(uint8_t i=0;i<LED_COUNT;++i) saved[i]=ledColor[i];
+    uint8_t sb=brightnessPercent; String sp=patternName;
+    patternName="SOLID"; brightnessPercent=35;
+    const Rgb tests[]={{255,0,0},{0,255,0},{0,0,255},{255,255,255}};
+    for(const auto &c:tests){
+      for(uint8_t i=0;i<LED_COUNT;++i) ledColor[i]=c;
+      showLeds(); delay(350);
+    }
+    for(uint8_t i=0;i<LED_COUNT;++i) ledColor[i]=saved[i];
+    brightnessPercent=sb; patternName=sp; resetPatternEngine();
+    if(sp=="SOLID") showLeds();
+    Serial.println("HJ|TEST|rgb=PASS"); return;
+  }''' + s[m.end():]
+
+# Startup color self-test now drives all four lamps together.
+s = s.replace(
+    'brightnessPercent=25; ledColor[0]={0,0,255};ledColor[1]={0,0,255};showLeds();',
+    'brightnessPercent=25; for(uint8_t i=0;i<LED_COUNT;++i) ledColor[i]={0,0,255}; showLeds();',
+    1,
+)
+s = s.replace(
+    'ledColor[0]={0,255,0};ledColor[1]={0,255,0};showLeds();delay(180);',
+    'for(uint8_t i=0;i<LED_COUNT;++i) ledColor[i]={0,255,0}; showLeds(); delay(180);',
+    1,
+)
+
+# Alarm uses all four lamps.
+s = s.replace(
+    '  ledColor[0] = {255,120,20}; ledColor[1] = {255,40,100};\n',
+    '  ledColor[0] = {255,120,20}; ledColor[1] = {255,40,100};\n'
+    '  ledColor[2] = {255,120,20}; ledColor[3] = {255,40,100};\n',
+    1,
+)
+
+s = s.replace(
+    'Rgb off[LED_COUNT] = {{0,0,0},{0,0,0}};',
+    'Rgb off[LED_COUNT] = {{0,0,0},{0,0,0},{0,0,0},{0,0,0}};',
+    1,
+)
+
+p.write_text(s, encoding="utf-8")
+print("Applied HAPPY JARZ four-light patch: 4 APA106 lamps + LED3/4 protocol/persistence + 4-lamp patterns.")
+,
+        s,
+    )
+    if not brightness_cmd:
+        raise SystemExit("four-light patch failed: SET BRIGHTNESS command marker not found")
+    indent = re.match(r'\s*', brightness_cmd.group(0)).group(0)
+    extra = (
+        f'{indent}if(line.startsWith("SET LED3 COLOR ")){{if(parseRgb(line,3))ack("SET LED3 COLOR");else err("invalid LED3 RGB values");return;}}\n'
+        f'{indent}if(line.startsWith("SET LED4 COLOR ")){{if(parseRgb(line,4))ack("SET LED4 COLOR");else err("invalid LED4 RGB values");return;}}\n'
+    )
+    s = s[:brightness_cmd.start()] + extra + s[brightness_cmd.start():]
 
 # RGB self-test covers every connected lamp and restores all four colors.
 test_re = re.compile(
