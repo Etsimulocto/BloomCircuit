@@ -10,7 +10,7 @@ The repository also contains the current **HAPPY JARZ controller/firmware stack*
 
 See [`happyjarz-controller/README.md`](happyjarz-controller/README.md) for the controller/service workflow and [`happyjarz-controller/firmware/README.md`](happyjarz-controller/firmware/README.md) for the ESP32 firmware layer.
 
-Current integrated hardware-development firmware on `feature/happyjarz-catch-the-glitter`: **v0.11.0**. The newer platform branch `feature/happyjarz-platform` carries the synchronized HAPPY JARZ stack at **app v1.7.0 + firmware v0.17.1**.
+Current integrated hardware-development firmware on `feature/happyjarz-catch-the-glitter`: **v0.11.0**. The newer platform branch `feature/happyjarz-platform` carries the synchronized HAPPY JARZ stack at **app v1.8.3 + firmware v0.17.9**.
 
 Current proven hardware:
 
@@ -219,8 +219,8 @@ BloomCircuit is intentionally a wiring-map and fabrication-documentation tool. I
 Current platform release pair:
 
 ```text
-Host app  1.5.0
-Firmware  0.12.0
+Host app  1.8.3
+Firmware  0.17.9
 ```
 
 Key additions on the platform branch:
@@ -243,8 +243,8 @@ The production FULL board GPIO map remains intentionally uncommitted until the a
 `feature/happyjarz-platform` currently targets:
 
 ```text
-Host app  1.7.0
-Firmware  0.17.1
+Host app  1.8.3
+Firmware  0.17.9
 Patterns  100
 Savers    7
 ```
@@ -252,3 +252,19 @@ Savers    7
 The firmware includes 100 registered four-lamp light patterns plus seven board-local OLED screensavers. The newest saver pack adds BLOOM, BREATHE and GLITTER, while the host app mirrors the actual blue SSD1306 framebuffer over the same USB serial connection used for control and telemetry.
 
 Firmware 0.17.1 is the compile-fix release for that saver pack: visual-saver state is declared before saver-status telemetry uses it, and BLOOM uses the installed U8g2 five-argument `drawArc(x, y, radius, start, end)` API.
+
+### Power, battery and sleep snapshot
+
+Current SIMPLE firmware `0.17.9` includes:
+
+- calibrated + filtered GPIO3 battery telemetry
+- HOME battery percentage while USB is connected
+- low-battery warning at <=10%, clearing at >=15%
+- bulb 4 / right-side accent flashes red during low battery
+- OLED `LOW BATTERY / CHARGE ME!!!` warning overlay
+- SPST-switched 3.3V OLED/lamp accessory rail with automatic pause/resume detection
+- one-hour software sleep with OLED power-save, lamps dark and pattern freeze
+- any physical touch wakes the Jar; the wake touch is consumed
+- alarm events wake the Jar before firing the alarm light pattern
+
+The ESP32 itself remains running during accessory pause and software sleep so clock, alarm, USB, Wi-Fi and touch services stay alive.
