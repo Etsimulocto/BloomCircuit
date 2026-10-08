@@ -17,8 +17,8 @@ Current proven integrated base:
 - battery/power telemetry
 - local clock, settings, screensavers, games and USB control
 
-Current platform development firmware baseline: `0.16.0`.
-Current host app baseline: `1.6.0`.
+Current platform development firmware baseline: `0.17.0`.
+Current host app baseline: `1.7.0`.
 
 ### FULL
 
@@ -83,3 +83,6 @@ The physical device remains authoritative for live OLED state, inputs, lights an
 
 
 Current SIMPLE platform build includes **100 registered light patterns**, with the newer 56 effects implemented through a compact shared descriptor engine rather than duplicated per-pattern code.
+
+
+Current SIMPLE platform build includes seven OLED screensaver modes: SAYINGS, SPIRAL, TRIPPY, PARTICLES, BLOOM, BREATHE and GLITTER.
