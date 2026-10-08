@@ -32,14 +32,27 @@ required = (
     "static float batteryVoltage()",
     "static uint8_t batteryPercentFromVoltage(float v)",
     "static bool batteryReadingPlausible(float v)",
-    "HJ_SIDE_RIGHT",
     "static void hjOledPresent()",
 )
 for marker in required:
     if marker not in s:
         fail("required marker not found: " + marker)
 
-# Add cached warning state after Fuel Gauge helpers are available.
+# writeFrame() lives near the top of the staged sketch, before Fuel Gauge and
+# four-light topology declarations. Put the tiny state/prototype it needs there.
+early_marker = 'static String patternName = "SOLID";\n'
+if early_marker not in s:
+    fail("patternName marker not found")
+
+early = r'''
+// HAPPYJARZ_LOW_BATTERY_WARNING_EARLY
+static constexpr uint8_t HJ_LOW_BATTERY_LED_INDEX = 3; // physical bulb 4
+static bool hjLowBatteryWarning = false;
+static bool hjLowBatteryFlashOn();
+'''
+s = s.replace(early_marker, early_marker + early, 1)
+
+# Add cached warning service after Fuel Gauge helpers are available.
 anchor = "static bool usbDataLinked() {\n"
 if anchor not in s:
     fail("Fuel Gauge usbDataLinked marker not found")
@@ -48,7 +61,6 @@ block = r'''
 // HAPPYJARZ_LOW_BATTERY_WARNING_V1
 static constexpr uint8_t HJ_LOW_BATTERY_ENTER_PCT = 10;
 static constexpr uint8_t HJ_LOW_BATTERY_CLEAR_PCT = 15;
-static bool hjLowBatteryWarning = false;
 static int16_t hjLowBatteryPercent = -1;
 static unsigned long hjLowBatteryLastCheckMs = 0;
 static constexpr unsigned long HJ_LOW_BATTERY_CHECK_MS = 5000UL;
@@ -128,7 +140,7 @@ if bytes_old not in s:
     fail("writeFrame byte block not found")
 
 bytes_new = '''    Rgb txColor = frame[led];
-    if (hjLowBatteryWarning && led == HJ_SIDE_RIGHT && hjLowBatteryFlashOn()) {
+    if (hjLowBatteryWarning && led == HJ_LOW_BATTERY_LED_INDEX && hjLowBatteryFlashOn()) {
       txColor = {255,0,0};
     }
     uint8_t bytes[3] = {
