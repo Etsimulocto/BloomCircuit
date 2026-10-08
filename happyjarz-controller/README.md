@@ -1,6 +1,6 @@
 # HAPPY JARZ Controller
 
-**Current platform release pair:** desktop app **v1.5.0** + firmware **v0.12.0**
+**Current platform release pair:** desktop app **v1.5.0** + firmware **v0.13.0**
 
 This subsystem is the PC/Raspberry Pi field-service and control layer for the HAPPY JARZ powered stand. It sits above the known-good ESP32-S3 light/touch/OLED hardware layer and is designed so desktop-side changes do not casually rewrite the proven APA106 timing.
 
@@ -258,7 +258,7 @@ Preserve known-good layers. If local LED/touch/OLED behavior works but the deskt
 
 ### Integrated Mini mirror/controller
 
-App v1.5.0 / firmware v0.12.0 are the current synchronized pair. The Mini was introduced in app v1.4.0 and expanded in v1.5.0 with semantic gamepad routing and the blue OLED mirror.
+App v1.5.0 / firmware v0.13.0 are the current synchronized pair. The Mini was introduced in app v1.4.0 and expanded in v1.5.0 with semantic gamepad routing and the blue OLED mirror.
 
 Current behavior:
 - actual 128x64 U8g2 framebuffer mirror from the device
@@ -312,3 +312,27 @@ host request
 This rule applies to live lamp color, OLED content, input events and future FULL-device controls.
 
 Do not open a second serial connection for the Mini, OLED mirror or gamepad layer. The controller's existing HAPPY JARZ serial link is the single owner.
+
+
+### Four-lamp pattern engine
+
+Firmware v0.13.0 removes the remaining two-lamp assumptions from the pattern service.
+
+The earlier four-lamp staging patch upgraded only a subset of effects while many patterns still used a two-color helper that repeated outputs as 1/2/1/2. The v0.13.0 engine defines all four lamp outputs intentionally.
+
+Notable behavior:
+- RAINBOW uses four phase-separated hues
+- DRIFT / AURORA / OCEAN / SUNSET / VALENTINE / FOREST / BUBBLEGUM use four independently phased related colors
+- EASTER / FOURTH / THANKSGIVING / NEON rotate their palettes across all four lamps
+- CANDY / FIRE / ICE / RANDOM generate four independent outputs
+- GALAXY gives each lamp its own phase and sparkle cadence
+- TWINKLE / SPARKLE preserve each lamp's own base color
+- COLOR_SWAP rotates all four saved base colors
+- COMET now physically travels across all four lamps with a fading tail
+- FIREFLY treats each lamp independently
+- HUE_FADE and LAVENDER remain intentionally uniform across all four bulbs
+- DUAL_HUE / CHRISTMAS / HALLOWEEN intentionally alternate two colors across four bulbs
+
+FADE, BREATH and PULSE operate on the full four-entry `ledColor[]` state.
+
+The final staged verifier requires `HAPPYJARZ_FOUR_LAMP_PATTERN_ENGINE_V2` so an old pair-based service cannot be flashed accidentally.
