@@ -36,7 +36,7 @@ Legacy filenames such as `happyjarz_controller_v0_3_3.py`, `happyjarz_integrated
 - board-native HAPPY ARCADE with seven mini-games
 - board-local **INFO / MANUAL** with 12 help pages
 - Fuel Gauge / `GET POWER` telemetry
-- 30-second screensaver timeout with SAYINGS / SPIRAL / TRIPPY / PARTICLES
+- 30-second screensaver timeout with SAYINGS / SPIRAL / TRIPPY / PARTICLES / BLOOM / BREATHE / GLITTER
 - persistent custom marquee sayings
 - transient desktop MENU/GAME input modes that fall back to local JAR control when the USB CDC session disappears
 
@@ -258,7 +258,7 @@ Preserve known-good layers. If local LED/touch/OLED behavior works but the deskt
 
 ### Integrated Mini mirror/controller
 
-App v1.5.0 / firmware v0.14.0 are the current synchronized pair. The Mini was introduced in app v1.4.0 and expanded in v1.5.0 with semantic gamepad routing and the blue OLED mirror.
+App v1.7.0 / firmware v0.17.1 are the current synchronized pair. The Mini was introduced in app v1.4.0 and expanded in v1.5.0 with semantic gamepad routing and the blue OLED mirror.
 
 Current behavior:
 - actual 128x64 U8g2 framebuffer mirror from the device
@@ -423,7 +423,7 @@ Exact compiled flash usage must be taken from `arduino-cli compile`; do not infe
 
 ### Seven-mode OLED screensavers
 
-App v1.7.0 / firmware v0.17.0 expand the OLED saver set to seven modes:
+App v1.7.0 / firmware v0.17.1 provide the current seven-mode OLED saver set:
 
 - SAYINGS
 - SPIRAL
@@ -438,3 +438,13 @@ BREATHE uses changing radius, geometry and dither density to create a fade/breat
 GLITTER runs a persistent falling field of mixed tiny shapes with independent speed, drift and occasional flash-stars.
 
 LEFT/RIGHT cycles modes, B exits, UP/DOWN changes speed for procedural visual modes, and A reseeds/new-universe behavior.
+
+
+#### Firmware 0.17.1 compile fix
+
+The first seven-saver staging pass exposed two compile-only integration bugs:
+
+1. `hjVisualSpeed` was declared after `hjPrintSaverStatus()` referenced it.
+2. BLOOM used a six-argument `drawArc()` call, while installed U8g2 2.36.19 provides `drawArc(x, y, radius, start, end)`.
+
+Firmware 0.17.1 fixes both in the staging patch. The saver behavior itself is otherwise unchanged from the 0.17.0 feature pass.
