@@ -56,6 +56,8 @@ required = {
     "stand topology constants": "HJ_TOP_LEFT",
     "clockwise chase": '"CHASE_CW"',
     "side accent chase": '"SIDE_ACCENT"',
+    "100-pattern bank marker": "HAPPYJARZ_PATTERN_BANK_100",
+    "100-pattern terminal entry": '"MOONLIGHT"',
 }
 
 missing = [name for name, marker in required.items() if marker not in s]
@@ -89,3 +91,4 @@ print("  host KEY/CAPS protocol present")
 print("  actual U8g2 OLED framebuffer mirror present")
 print("  true four-lamp pattern engine present")
 print("  stand-topology chase family present")
+print("  100-pattern descriptor bank present")
