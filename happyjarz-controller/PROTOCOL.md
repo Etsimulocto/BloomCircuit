@@ -199,3 +199,33 @@ SIDE_ACCENT
 ```
 
 These names are accepted through the existing `SET PATTERN <name>` command and are included in the local pattern cycle.
+
+
+### Screensaver control
+
+Current app 1.7.0 / firmware 0.17.1 support seven board-local saver modes:
+
+```text
+SET SAVER MODE SAYINGS
+SET SAVER MODE SPIRAL
+SET SAVER MODE TRIPPY
+SET SAVER MODE PARTICLES
+SET SAVER MODE BLOOM
+SET SAVER MODE BREATHE
+SET SAVER MODE GLITTER
+```
+
+Other saver commands:
+
+```text
+GET SAVER STATUS
+SAVER ENTER
+SAVER EXIT
+SAVER NEXT
+SAVER PREV
+SAVER RESEED
+SAVER SPEED UP
+SAVER SPEED DOWN
+```
+
+For BLOOM, BREATHE and GLITTER, status includes `visual_speed=<1..8>`. The graphics remain device-rendered and are mirrored to the host through the normal `HJ|OLED|` framebuffer stream.
