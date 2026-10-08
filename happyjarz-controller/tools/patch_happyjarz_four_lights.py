@@ -84,6 +84,186 @@ static void hjBlankFrame(Rgb frame[LED_COUNT]) {
 
 static Rgb hjDim(const Rgb &c, uint8_t amount) {
   return blendRgb({0,0,0}, c, amount);
+}
+
+// HAPPYJARZ_PATTERN_BANK_100
+// Compact descriptor-driven bank: many named looks, one renderer.
+enum HjBankMode : uint8_t {
+  HJ_BANK_FLOW=0, HJ_BANK_WAVE, HJ_BANK_SWEEP, HJ_BANK_GLOW,
+  HJ_BANK_SPARK, HJ_BANK_PAIR, HJ_BANK_DIAG, HJ_BANK_RIPPLE
+};
+
+struct HjBankPattern {
+  const char *name;
+  uint8_t mode;
+  uint16_t intervalMs;
+  Rgb p0, p1, p2, p3;
+};
+
+static const HjBankPattern HJ_BANK_PATTERNS[] = {
+  // Water / ice
+  {"WATERFALL",HJ_BANK_FLOW,55,{0,40,180},{0,180,255},{30,255,220},{0,80,255}},
+  {"RIPPLE",HJ_BANK_RIPPLE,85,{0,80,220},{40,200,255},{0,255,210},{10,40,150}},
+  {"TIDAL",HJ_BANK_WAVE,65,{0,20,100},{0,150,255},{0,220,180},{0,70,170}},
+  {"MOONWAVE",HJ_BANK_GLOW,80,{20,20,100},{80,90,255},{120,180,255},{20,50,130}},
+  {"DEEPSEA",HJ_BANK_FLOW,75,{0,5,40},{0,30,100},{0,110,150},{10,0,70}},
+  {"LAGOON",HJ_BANK_PAIR,90,{0,180,190},{0,255,160},{0,90,255},{40,220,220}},
+  {"ARCTIC",HJ_BANK_SPARK,110,{100,210,255},{220,250,255},{80,130,255},{255,255,255}},
+  {"GLACIER",HJ_BANK_DIAG,120,{80,160,255},{180,240,255},{20,80,200},{220,255,255}},
+
+  // Fire / warm
+  {"EMBER",HJ_BANK_SPARK,95,{120,5,0},{255,40,0},{255,120,0},{255,220,80}},
+  {"CAMPFIRE",HJ_BANK_FLOW,70,{180,20,0},{255,80,0},{255,180,20},{120,0,0}},
+  {"SUNRISE",HJ_BANK_GLOW,75,{255,20,60},{255,100,20},{255,210,80},{180,20,100}},
+  {"SOLAR",HJ_BANK_WAVE,60,{255,60,0},{255,180,0},{255,255,80},{255,80,20}},
+  {"INFERNO",HJ_BANK_SWEEP,55,{255,0,0},{255,70,0},{255,180,0},{120,0,0}},
+  {"CANDLE",HJ_BANK_GLOW,105,{255,80,10},{255,180,50},{255,230,150},{180,40,0}},
+  {"AUTUMN",HJ_BANK_PAIR,125,{180,35,0},{255,90,0},{180,90,0},{110,20,0}},
+  {"HARVEST",HJ_BANK_RIPPLE,130,{255,110,0},{190,55,0},{255,190,20},{120,30,0}},
+
+  // Forest / green
+  {"MINT",HJ_BANK_GLOW,80,{40,255,170},{140,255,210},{0,180,120},{80,230,170}},
+  {"MEADOW",HJ_BANK_WAVE,85,{20,130,20},{100,255,60},{40,190,80},{180,255,80}},
+  {"JUNGLE",HJ_BANK_FLOW,65,{0,50,10},{0,150,40},{80,220,20},{0,90,60}},
+  {"MOSS",HJ_BANK_GLOW,110,{30,80,10},{80,130,30},{120,160,50},{20,60,15}},
+  {"CLOVER",HJ_BANK_DIAG,105,{0,180,40},{40,255,80},{0,120,20},{120,255,100}},
+  {"SPRING",HJ_BANK_PAIR,95,{80,255,100},{255,180,220},{120,220,255},{255,240,100}},
+  {"RAINFOREST",HJ_BANK_RIPPLE,70,{0,100,50},{0,220,100},{20,130,180},{100,255,80}},
+  {"LIMEADE",HJ_BANK_SPARK,100,{120,255,0},{220,255,40},{60,220,0},{255,255,160}},
+
+  // Dream / cosmic
+  {"DREAM",HJ_BANK_FLOW,70,{100,40,255},{255,80,220},{80,180,255},{180,100,255}},
+  {"COTTON_CANDY",HJ_BANK_WAVE,85,{255,80,190},{100,200,255},{255,160,220},{160,100,255}},
+  {"MERMAID",HJ_BANK_PAIR,75,{0,255,190},{0,130,255},{180,60,255},{40,220,220}},
+  {"UNICORN",HJ_BANK_FLOW,60,{255,80,200},{120,160,255},{180,80,255},{80,255,220}},
+  {"VAPOR",HJ_BANK_DIAG,80,{255,0,200},{0,220,255},{130,0,255},{255,80,120}},
+  {"COSMIC",HJ_BANK_SPARK,90,{30,0,80},{80,0,200},{180,0,255},{255,255,255}},
+  {"STARDUST",HJ_BANK_SPARK,125,{50,20,120},{120,70,255},{40,120,255},{255,255,220}},
+  {"NEBULA",HJ_BANK_RIPPLE,80,{80,0,160},{220,0,150},{0,80,220},{120,20,255}},
+
+  // Pink / fruit
+  {"ROSE_GOLD",HJ_BANK_GLOW,90,{255,100,120},{255,170,130},{220,100,150},{255,210,160}},
+  {"PEACH",HJ_BANK_WAVE,95,{255,120,80},{255,190,120},{255,100,110},{255,220,160}},
+  {"CORAL",HJ_BANK_FLOW,75,{255,70,80},{255,130,90},{255,80,140},{255,170,120}},
+  {"CHERRY",HJ_BANK_PAIR,100,{180,0,30},{255,0,60},{120,0,30},{255,60,100}},
+  {"BERRY",HJ_BANK_DIAG,90,{150,0,100},{255,20,150},{100,0,180},{220,60,200}},
+  {"PLUM",HJ_BANK_GLOW,105,{80,0,90},{170,20,150},{110,0,130},{220,80,180}},
+  {"GRAPE",HJ_BANK_RIPPLE,80,{80,0,180},{150,0,255},{220,40,255},{60,0,120}},
+  {"MAGENTA",HJ_BANK_SPARK,95,{255,0,180},{180,0,255},{255,60,220},{255,220,255}},
+
+  // Neon / arcade
+  {"ELECTRIC",HJ_BANK_FLOW,45,{0,255,255},{40,80,255},{180,0,255},{0,255,120}},
+  {"CYBER",HJ_BANK_DIAG,55,{0,255,220},{255,0,200},{80,0,255},{0,140,255}},
+  {"LASER",HJ_BANK_SWEEP,45,{255,0,30},{0,255,100},{0,120,255},{255,0,220}},
+  {"SYNTH",HJ_BANK_WAVE,55,{255,0,180},{0,220,255},{120,0,255},{255,80,0}},
+  {"ARCADE",HJ_BANK_PAIR,70,{255,0,0},{0,255,0},{0,80,255},{255,220,0}},
+  {"MATRIX",HJ_BANK_RIPPLE,65,{0,60,0},{0,255,40},{80,255,100},{0,120,20}},
+  {"PLASMA",HJ_BANK_FLOW,40,{255,0,100},{0,150,255},{120,0,255},{0,255,180}},
+  {"HOLOGRAM",HJ_BANK_SPARK,85,{40,220,255},{180,80,255},{0,255,190},{255,255,255}},
+
+  // Weather / sky
+  {"RAIN",HJ_BANK_RIPPLE,75,{20,80,180},{50,140,255},{0,180,255},{10,40,100}},
+  {"THUNDER",HJ_BANK_GLOW,115,{20,20,50},{60,60,120},{100,80,180},{10,10,30}},
+  {"LIGHTNING",HJ_BANK_SPARK,135,{30,40,90},{80,120,220},{170,200,255},{255,255,255}},
+  {"CLOUD",HJ_BANK_WAVE,110,{100,120,150},{180,200,220},{130,160,200},{220,230,240}},
+  {"SNOW",HJ_BANK_SPARK,120,{150,200,255},{220,240,255},{120,170,255},{255,255,255}},
+  {"FROST",HJ_BANK_DIAG,100,{80,180,255},{180,240,255},{120,140,255},{230,255,255}},
+  {"SUNBEAM",HJ_BANK_SWEEP,85,{255,180,20},{255,240,100},{255,120,0},{255,255,190}},
+  {"MOONLIGHT",HJ_BANK_GLOW,120,{20,30,80},{80,110,220},{150,180,255},{50,70,150}},
+};
+static constexpr uint8_t HJ_BANK_PATTERN_COUNT =
+  sizeof(HJ_BANK_PATTERNS)/sizeof(HJ_BANK_PATTERNS[0]);
+
+static const HjBankPattern* hjFindBankPattern(const String &name) {
+  for(uint8_t i=0;i<HJ_BANK_PATTERN_COUNT;++i)
+    if(name == HJ_BANK_PATTERNS[i].name) return &HJ_BANK_PATTERNS[i];
+  return nullptr;
+}
+
+static bool hjServiceBankPattern(unsigned long now, uint8_t bri) {
+  const HjBankPattern *d = hjFindBankPattern(patternName);
+  if(!d) return false;
+  if(now-patternLastMs < d->intervalMs) return true;
+  patternLastMs=now;
+
+  uint16_t step=patternStep++;
+  uint8_t slow=(uint8_t)(step & 0xFF);
+  Rgb frame[LED_COUNT];
+
+  if(d->mode == HJ_BANK_FLOW) {
+    const Rgb pal[4]={d->p0,d->p1,d->p2,d->p3};
+    for(uint8_t i=0;i<LED_COUNT;++i){
+      uint8_t phase=(uint8_t)(slow + i*64U);
+      uint8_t seg=(phase>>6)&3U;
+      uint8_t amt=(uint8_t)((phase&63U)*4U);
+      frame[i]=blendRgb(pal[seg],pal[(seg+1U)&3U],amt);
+    }
+  } else if(d->mode == HJ_BANK_WAVE) {
+    const Rgb pal[4]={d->p0,d->p1,d->p2,d->p3};
+    for(uint8_t i=0;i<LED_COUNT;++i){
+      uint8_t level=triangle8(step + i*45U,180);
+      frame[i]=hjDim(pal[i],(uint8_t)(45U + (uint16_t)level*210U/255U));
+    }
+  } else if(d->mode == HJ_BANK_SWEEP) {
+    static const uint8_t path[4]={HJ_TOP_LEFT,HJ_TOP_RIGHT,HJ_SIDE_RIGHT,HJ_SIDE_LEFT};
+    hjBlankFrame(frame);
+    uint8_t head=path[step&3U];
+    uint8_t tail=path[(step+3U)&3U];
+    const Rgb pal[4]={d->p0,d->p1,d->p2,d->p3};
+    Rgb c=pal[(step>>2)&3U];
+    frame[head]=c;
+    frame[tail]=hjDim(c,60);
+  } else if(d->mode == HJ_BANK_GLOW) {
+    uint8_t level=triangle8(step,220);
+    Rgb c=blendRgb(d->p0,d->p1,level);
+    frame[HJ_TOP_LEFT]=c;
+    frame[HJ_TOP_RIGHT]=blendRgb(c,d->p2,50);
+    frame[HJ_SIDE_LEFT]=hjDim(blendRgb(c,d->p3,80),150);
+    frame[HJ_SIDE_RIGHT]=hjDim(blendRgb(c,d->p3,120),150);
+  } else if(d->mode == HJ_BANK_SPARK) {
+    const Rgb pal[4]={d->p0,d->p1,d->p2,d->p0};
+    for(uint8_t i=0;i<LED_COUNT;++i){
+      frame[i]=hjDim(pal[i],120);
+      if(random(5)==0) frame[i]=d->p3;
+    }
+  } else if(d->mode == HJ_BANK_PAIR) {
+    bool flip=step&1U;
+    frame[HJ_TOP_LEFT]=flip?d->p0:d->p1;
+    frame[HJ_TOP_RIGHT]=flip?d->p1:d->p0;
+    frame[HJ_SIDE_LEFT]=flip?d->p2:d->p3;
+    frame[HJ_SIDE_RIGHT]=flip?d->p3:d->p2;
+  } else if(d->mode == HJ_BANK_DIAG) {
+    bool flip=step&1U;
+    hjBlankFrame(frame);
+    if(flip){
+      frame[HJ_TOP_LEFT]=d->p0;
+      frame[HJ_SIDE_RIGHT]=d->p2;
+      frame[HJ_TOP_RIGHT]=hjDim(d->p1,45);
+      frame[HJ_SIDE_LEFT]=hjDim(d->p3,45);
+    } else {
+      frame[HJ_TOP_RIGHT]=d->p1;
+      frame[HJ_SIDE_LEFT]=d->p3;
+      frame[HJ_TOP_LEFT]=hjDim(d->p0,45);
+      frame[HJ_SIDE_RIGHT]=hjDim(d->p2,45);
+    }
+  } else { // HJ_BANK_RIPPLE
+    uint8_t phase=(uint8_t)(step&3U);
+    hjBlankFrame(frame);
+    if(phase==0){
+      frame[HJ_TOP_LEFT]=d->p0; frame[HJ_TOP_RIGHT]=d->p1;
+    } else if(phase==1){
+      frame[HJ_TOP_LEFT]=hjDim(d->p0,80); frame[HJ_TOP_RIGHT]=hjDim(d->p1,80);
+      frame[HJ_SIDE_LEFT]=d->p2; frame[HJ_SIDE_RIGHT]=d->p3;
+    } else if(phase==2){
+      frame[HJ_SIDE_LEFT]=hjDim(d->p2,80); frame[HJ_SIDE_RIGHT]=hjDim(d->p3,80);
+    } else {
+      frame[HJ_TOP_LEFT]=hjDim(d->p0,35); frame[HJ_TOP_RIGHT]=hjDim(d->p1,35);
+      frame[HJ_SIDE_LEFT]=hjDim(d->p2,35); frame[HJ_SIDE_RIGHT]=hjDim(d->p3,35);
+    }
+  }
+
+  writeFrame(frame,bri);
+  return true;
 }''',
     s,
     count=1,
@@ -106,6 +286,13 @@ registry = '''static const char *PATTERN_NAMES[] = {
   "CHASE_CW","CHASE_CCW","JAR_CHASE","SIDE_CHASE",
   "SWEEP_LR","SWEEP_TS","DIAGONAL","PING_PONG",
   "DUAL_CHASE","OPP_CHASE","JAR_PULSE","SIDE_ACCENT",
+  "WATERFALL","RIPPLE","TIDAL","MOONWAVE","DEEPSEA","LAGOON","ARCTIC","GLACIER",
+  "EMBER","CAMPFIRE","SUNRISE","SOLAR","INFERNO","CANDLE","AUTUMN","HARVEST",
+  "MINT","MEADOW","JUNGLE","MOSS","CLOVER","SPRING","RAINFOREST","LIMEADE",
+  "DREAM","COTTON_CANDY","MERMAID","UNICORN","VAPOR","COSMIC","STARDUST","NEBULA",
+  "ROSE_GOLD","PEACH","CORAL","CHERRY","BERRY","PLUM","GRAPE","MAGENTA",
+  "ELECTRIC","CYBER","LASER","SYNTH","ARCADE","MATRIX","PLASMA","HOLOGRAM",
+  "RAIN","THUNDER","LIGHTNING","CLOUD","SNOW","FROST","SUNBEAM","MOONLIGHT",
   "OFF"
 };'''
 s = s[:m.start()] + registry + s[m.end():]
@@ -128,6 +315,8 @@ service_four = r'''static void servicePattern() {
   unsigned long now = millis();
   uint8_t bri = safeBrightness(brightnessPercent);
   if (bri == 0) { allOff(); return; }
+
+  if (hjServiceBankPattern(now,bri)) return;
 
   // Base-color brightness effects already operate on all four saved lamp colors.
   if (patternName == "FADE" || patternName == "BREATH") {
