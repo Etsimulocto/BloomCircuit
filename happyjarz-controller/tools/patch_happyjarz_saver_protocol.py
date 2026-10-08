@@ -15,7 +15,7 @@ Protocol:
   SAVER RESEED
   SAVER SPEED UP
   SAVER SPEED DOWN
-  SET SAVER MODE SAYINGS|SPIRAL|TRIPPY|PARTICLES
+  SET SAVER MODE SAYINGS|SPIRAL|TRIPPY|PARTICLES|BLOOM|BREATHE|GLITTER
 """
 from pathlib import Path
 import subprocess
@@ -55,6 +55,11 @@ if not particle_patch.exists():
     raise SystemExit(f"saver protocol patch failed: missing {particle_patch.name}")
 subprocess.run([sys.executable, str(particle_patch), str(p)], check=True)
 
+visual_patch = Path(__file__).with_name("patch_happyjarz_saver_visual_pack.py")
+if not visual_patch.exists():
+    raise SystemExit(f"saver protocol patch failed: missing {visual_patch.name}")
+subprocess.run([sys.executable, str(visual_patch), str(p)], check=True)
+
 s = p.read_text(encoding="utf-8")
 legacy_pos = s.find(legacy_reseed)
 if legacy_pos < 0:
@@ -75,13 +80,17 @@ static const char *hjSaverModeName() {
   if (hjScreensaverMode == 0) return "SAYINGS";
   if (hjScreensaverMode == 1) return "SPIRAL";
   if (hjScreensaverMode == 2) return "TRIPPY";
-  return "PARTICLES";
+  if (hjScreensaverMode == 3) return "PARTICLES";
+  if (hjScreensaverMode == 4) return "BLOOM";
+  if (hjScreensaverMode == 5) return "BREATHE";
+  return "GLITTER";
 }
 
 static void hjSaverReseedCurrent() {
   if (hjScreensaverMode == 1) hjReseedSpiral();
   else if (hjScreensaverMode == 2) hjReseedTrippy();
   else if (hjScreensaverMode == 3) hjReseedParticles();
+  else if (hjScreensaverMode >= 4) hjReseedVisualSaver();
 }
 
 static void hjSaverPrepareCurrent() {
@@ -108,6 +117,7 @@ static void hjPrintSaverStatus() {
   Serial.print("|spiral_speed="); Serial.print(hjSpiralSpeed);
   Serial.print("|trippy_speed="); Serial.print(hjTrippySpeed);
   Serial.print("|particle_speed="); Serial.print(hjParticleSpeed);
+  Serial.print("|visual_speed="); Serial.print(hjVisualSpeed);
   Serial.print("|particles="); Serial.print(hjParticleCount);
   Serial.print("|attractors="); Serial.print(hjAttractorCount);
   Serial.print("|links="); Serial.print(hjParticleLinks ? 1 : 0);
@@ -141,12 +151,14 @@ cmds = r'''  if(line=="GET SAVER STATUS"){hjPrintSaverStatus();return;}
     if(hjScreensaverMode==1 && hjSpiralSpeed<8) hjSpiralSpeed++;
     else if(hjScreensaverMode==2 && hjTrippySpeed<8) hjTrippySpeed++;
     else if(hjScreensaverMode==3 && hjParticleSpeed<8) hjParticleSpeed++;
+    else if(hjScreensaverMode>=4 && hjVisualSpeed<8) hjVisualSpeed++;
     ack("SAVER SPEED UP"); hjPrintSaverStatus(); return;
   }
   if(line=="SAVER SPEED DOWN"){
     if(hjScreensaverMode==1 && hjSpiralSpeed>1) hjSpiralSpeed--;
     else if(hjScreensaverMode==2 && hjTrippySpeed>1) hjTrippySpeed--;
     else if(hjScreensaverMode==3 && hjParticleSpeed>1) hjParticleSpeed--;
+    else if(hjScreensaverMode>=4 && hjVisualSpeed>1) hjVisualSpeed--;
     ack("SAVER SPEED DOWN"); hjPrintSaverStatus(); return;
   }
   if(line.startsWith("SET SAVER MODE ")){
@@ -155,7 +167,10 @@ cmds = r'''  if(line=="GET SAVER STATUS"){hjPrintSaverStatus();return;}
     else if(v=="SPIRAL") hjSaverSetMode(1,true);
     else if(v=="TRIPPY") hjSaverSetMode(2,true);
     else if(v=="PARTICLES") hjSaverSetMode(3,true);
-    else {err("saver mode must be SAYINGS SPIRAL TRIPPY or PARTICLES");return;}
+    else if(v=="BLOOM") hjSaverSetMode(4,true);
+    else if(v=="BREATHE") hjSaverSetMode(5,true);
+    else if(v=="GLITTER") hjSaverSetMode(6,true);
+    else {err("saver mode must be SAYINGS SPIRAL TRIPPY PARTICLES BLOOM BREATHE or GLITTER");return;}
     ack("SET SAVER MODE"); hjPrintSaverStatus(); return;
   }
 '''
