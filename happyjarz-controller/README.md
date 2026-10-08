@@ -1,6 +1,6 @@
 # HAPPY JARZ Controller
 
-**Current release pair:** desktop app **v1.1.0** + firmware **v0.10.0**
+**Current release pair:** desktop app **v1.2.0** + firmware **v0.11.0**
 
 This subsystem is the PC/Raspberry Pi field-service and control layer for the HAPPY JARZ powered stand. It sits above the known-good ESP32-S3 light/touch/OLED hardware layer and is designed so desktop-side changes do not casually rewrite the proven APA106 timing.
 
@@ -16,8 +16,8 @@ happyjarz-controller/firmware/VERSION # firmware version
 Current values:
 
 ```text
-App      1.1.0
-Firmware 0.10.0
+App      1.2.0
+Firmware 0.11.0
 ```
 
 Legacy filenames such as `happyjarz_controller_v0_3_3.py`, `happyjarz_integrated_v0_5.ino`, and `flash_happyjarz_v0_5.sh` are compatibility names only. The flasher reads `firmware/VERSION`, injects it into `HJ_FW_VERSION`, and verifies the final staged build before upload.
@@ -25,7 +25,7 @@ Legacy filenames such as `happyjarz_controller_v0_3_3.py`, `happyjarz_integrated
 ## Current proven behavior
 
 - identify a Jar over USB serial and reconnect after unplug/replug
-- independent Light 1 / Light 2 color control
+- independent Light 1 / Light 2 / Light 3 / Light 4 color control
 - full **0-100% LED brightness range** in firmware
 - on-device SOLID brightness tuning under `MENU -> LIGHTS`
 - expanded sensory/holiday/color pattern library
@@ -48,13 +48,15 @@ Controller: **ESP32-S3 SuperMini**
 
 - GPIO7 -> 220 ohm -> APA106 #1 DIN
 - APA106 #1 DOUT -> APA106 #2 DIN
+- APA106 #2 DOUT -> APA106 #3 DIN
+- APA106 #3 DOUT -> APA106 #4 DIN
 - common GND with ESP32
 - proven byte order: **RGB**
 - ESP32 data is 3.3V logic
 
-Bench update, October 2, 2026:
+Bench baseline, October 2, 2026:
 
-- the current two-lamp prototype operated through the full **0-100%** firmware range with lamp VCC at **3.3V**
+- the original two-lamp prototype operated through the full **0-100%** firmware range with lamp VCC at **3.3V**
 - the same prototype also operated through the full **0-100%** range with lamp VCC at **5V**
 - no blue-collapse / blue-shift was observed during this test
 - **24% at 3.3V** was already visually plenty for normal jar use
@@ -175,6 +177,22 @@ PWR BAT
 ```
 
 `CHG ?` is intentional when USB is present because the charger IC charging/full signal is not wired to an ESP32 GPIO.
+
+## Four-lamp lighting
+
+Firmware v0.11.0 expands the physical APA106 chain to four lamps while preserving the proven GPIO7/RMT transport.
+
+- all four lamps remain on the same daisy-chain data pin
+- Light 1 through Light 4 have independent persistent SOLID colors
+- USB protocol exposes `SET LED1 COLOR` through `SET LED4 COLOR`
+- `GET STATUS` reports `led1` through `led4`
+- two-color presets alternate across all four lamps
+- RAINBOW uses four phase-separated colors
+- RANDOM generates four independent colors
+- TWINKLE / SPARKLE use each lamp's own selected base color
+- COLOR_SWAP rotates all four selected colors
+
+The desktop Pi/PC controller shows four independent light cards in a 2x2 layout.
 
 ## Pattern library
 
