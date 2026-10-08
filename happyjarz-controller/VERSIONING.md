@@ -9,7 +9,7 @@ These rules are mandatory for HAPPY JARZ releases and behavior-changing builds.
 
 The current release pair is:
 
-- App `1.6.0`
+- App `1.7.0`
 - Firmware `0.16.0`
 
 ## Mandatory bump rule
@@ -120,3 +120,10 @@ All topology chase patterns now generate their own slowly rotating hue while pre
 100-pattern release.
 
 Adds a 56-entry descriptor-driven pattern bank on top of the existing 44 effects, for exactly 100 registered patterns total. The host dropdown and firmware registry are updated together.
+
+
+### App 1.7.0 / Firmware 0.17.0
+
+Expanded OLED screensaver release.
+
+Adds BLOOM, BREATHE and GLITTER as first-class saver modes, bringing the board-local saver set to seven. The host display tab exposes all seven modes and reports shared visual speed telemetry.
