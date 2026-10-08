@@ -12,9 +12,12 @@ Battery-only:
   V <voltage>
   PWR BAT
 USB present:
-  BAT --%
+  BAT <percent>
   PWR USB
   CHG ?
+
+Battery percentage is never hidden merely because USB is present. If the
+battery reading is unverified, BAT --% is shown instead of inventing a value.
 
 Charging/full state is not wired to an ESP32 GPIO yet, so USB mode explicitly
 shows unknown rather than inventing a charger state.
@@ -69,8 +72,15 @@ new_helper = r'''static String oledHomePowerText() {
   String text = "A MENU  ";
   if (usbPower) {
     uint8_t page = (uint8_t)((millis() / 2500UL) % 3UL);
-    if (page == 0) text += "BAT --%";
-    else if (page == 1) text += "PWR USB";
+    if (page == 0) {
+      text += "BAT ";
+      if (batteryReadingPlausible(volts)) {
+        text += String(batteryPercentFromVoltage(volts));
+        text += "%";
+      } else {
+        text += "--%";
+      }
+    } else if (page == 1) text += "PWR USB";
     else text += "CHG ?";
   } else {
     uint8_t page = (uint8_t)((millis() / 2500UL) % 3UL);
