@@ -10,7 +10,7 @@ These rules are mandatory for HAPPY JARZ releases and behavior-changing builds.
 The current release pair is:
 
 - App `1.5.0`
-- Firmware `0.14.0`
+- Firmware `0.15.0`
 
 ## Mandatory bump rule
 
@@ -106,3 +106,10 @@ Adds stand-topology chase effects based on the physical four-lamp geometry:
 1 top-left, 2 top-right, 3 side-left, 4 side-right.
 
 Host app remains 1.5.0 and exposes the new pattern names through its existing pattern dropdown.
+
+
+### Firmware 0.15.0
+
+Color-rolling chase update.
+
+All topology chase patterns now generate their own slowly rotating hue while preserving their existing physical motion paths.
