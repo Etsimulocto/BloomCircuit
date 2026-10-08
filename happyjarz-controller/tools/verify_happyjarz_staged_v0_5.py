@@ -46,6 +46,12 @@ required = {
     "Light 4 protocol": "SET LED4 COLOR",
     "Light 3 status": "|led3=",
     "Light 4 status": "|led4=",
+    "host KEY input": 'line.startsWith("KEY ")',
+    "host capability protocol": "HJ|CAPS|profile=SIMPLE",
+    "OLED mirror protocol": "HJ|OLED|seq=",
+    "OLED mirror stream": 'line=="STREAM OLED ON"',
+    "OLED actual framebuffer source": "oled->getBufferPtr()",
+    "unified virtual input queue": "hjHostKeyPending",
 }
 
 missing = [name for name, marker in required.items() if marker not in s]
@@ -75,3 +81,5 @@ print("  30-second OLED screensaver present")
 print("  expanded four-lamp patterns + particle saver present")
 print("  USB touch telemetry single-stream fix present (5 Hz)")
 print("  four-lamp protocol/status/persistence present")
+print("  host KEY/CAPS protocol present")
+print("  actual U8g2 OLED framebuffer mirror present")
