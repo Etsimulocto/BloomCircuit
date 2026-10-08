@@ -60,6 +60,11 @@ required = {
     "OLED rail sensor": "hjAccessoryRailPresent",
     "LED clamp on pause": "if (hjAccessoryPaused) { pinMode(LED_DATA_PIN, OUTPUT); digitalWrite(LED_DATA_PIN, LOW); return; }",
     "accessory pause telemetry": "HJ|ACCESSORY|state=PAUSED|sensor=OLED",
+    "low battery warning": "HAPPYJARZ_LOW_BATTERY_WARNING_V1",
+    "low battery threshold": "HJ_LOW_BATTERY_ENTER_PCT = 10",
+    "low battery clear hysteresis": "HJ_LOW_BATTERY_CLEAR_PCT = 15",
+    "bulb 4 low battery beacon": "led == HJ_SIDE_RIGHT",
+    "charge me OLED warning": "\"CHARGE ME!!!\"",
     "unified virtual input queue": "hjHostKeyPending",
     "true four-lamp pattern engine": "HAPPYJARZ_FOUR_LAMP_PATTERN_ENGINE_V2",
     "stand topology constants": "HJ_TOP_LEFT",
@@ -106,6 +111,7 @@ print("  actual U8g2 OLED framebuffer mirror present")
 print("  arcade/game OLED frames use mirrored present path")
 print("  live four-lamp LED_FRAME stream present")
 print("  switched 3.3V accessory rail auto-pause/resume present")
+print("  low-battery bulb 4 beacon + CHARGE ME OLED warning present")
 print("  true four-lamp pattern engine present")
 print("  stand-topology chase family present")
 print("  100-pattern descriptor bank present")
