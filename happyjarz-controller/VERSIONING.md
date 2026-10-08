@@ -10,7 +10,7 @@ These rules are mandatory for HAPPY JARZ releases and behavior-changing builds.
 The current release pair is:
 
 - App `1.5.0`
-- Firmware `0.13.0`
+- Firmware `0.14.0`
 
 ## Mandatory bump rule
 
@@ -98,3 +98,11 @@ Adds semantic Linux gamepad support with event* preferred and js* fallback, full
 Four-lamp pattern cleanup.
 
 Replaces the remaining two-lamp pattern assumptions with an explicit four-output engine. App protocol remains compatible with host app 1.5.0; this is a firmware behavior update rather than a host protocol break.
+
+
+### Firmware 0.14.0
+
+Adds stand-topology chase effects based on the physical four-lamp geometry:
+1 top-left, 2 top-right, 3 side-left, 4 side-right.
+
+Host app remains 1.5.0 and exposes the new pattern names through its existing pattern dropdown.
