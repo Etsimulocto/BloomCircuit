@@ -53,6 +53,9 @@ required = {
     "OLED actual framebuffer source": "oled->getBufferPtr()",
     "unified virtual input queue": "hjHostKeyPending",
     "true four-lamp pattern engine": "HAPPYJARZ_FOUR_LAMP_PATTERN_ENGINE_V2",
+    "stand topology constants": "HJ_TOP_LEFT",
+    "clockwise chase": '"CHASE_CW"',
+    "side accent chase": '"SIDE_ACCENT"',
 }
 
 missing = [name for name, marker in required.items() if marker not in s]
@@ -85,3 +88,4 @@ print("  four-lamp protocol/status/persistence present")
 print("  host KEY/CAPS protocol present")
 print("  actual U8g2 OLED framebuffer mirror present")
 print("  true four-lamp pattern engine present")
+print("  stand-topology chase family present")
