@@ -1014,6 +1014,32 @@ class HappyJarzApp(tk.Tk):
         self.configure(bg=bg)
         recolor(self)
 
+        # Text editors/logs use classic Tk colors rather than ttk styles.
+        def retheme_text_boxes(widget):
+            if isinstance(widget, tk.Text):
+                try:
+                    widget.configure(
+                        bg=panel2,
+                        fg=text,
+                        insertbackground=text,
+                        selectbackground=border,
+                    )
+                except tk.TclError:
+                    pass
+            for child in widget.winfo_children():
+                retheme_text_boxes(child)
+
+        retheme_text_boxes(self)
+
+        # Preserve literal lamp swatches after walking the widget tree. These
+        # must always show the actual BASE/LIVE lamp colors, not theme roles.
+        for led, rgb in self.led_colors.items():
+            if led in self.led_base_swatches:
+                self.led_base_swatches[led].configure(bg=self._rgb_hex(rgb))
+        for led, rgb in self.live_led_colors.items():
+            if rgb is not None and led in self.led_swatches:
+                self.led_swatches[led].configure(bg=self._rgb_hex(rgb))
+
         # These are classic Tk controls whose intended role is known even after
         # several theme changes.
         for key, label in self.input_name_labels.items():
