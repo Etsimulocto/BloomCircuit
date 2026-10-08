@@ -162,7 +162,12 @@ class HappyJarzApp(tk.Tk):
         self.touch_vars = {k: tk.StringVar(value="—") for k in ("up", "down", "left", "right", "a", "b")}
         self.brightness_var = tk.IntVar(value=75)
         self.pattern_var = tk.StringVar(value="SOLID")
-        self.led_colors = {1: (255, 80, 120), 2: (80, 120, 255)}
+        self.led_colors = {
+            1: (255, 80, 120),
+            2: (80, 120, 255),
+            3: (255, 80, 120),
+            4: (80, 120, 255),
+        }
         self.led_swatches = {}
         self._brightness_after = None
 
@@ -278,9 +283,17 @@ class HappyJarzApp(tk.Tk):
         lights.pack(fill="x", pady=(0, 8))
         lights.columnconfigure(0, weight=1)
         lights.columnconfigure(1, weight=1)
-        for led in (1, 2):
+        for led in (1, 2, 3, 4):
+            grid_row = (led - 1) // 2
+            grid_col = (led - 1) % 2
             outer, box = self._card(lights, 10)
-            outer.grid(row=0, column=led - 1, sticky="nsew", padx=(0, 4) if led == 1 else (4, 0))
+            outer.grid(
+                row=grid_row,
+                column=grid_col,
+                sticky="nsew",
+                padx=(0, 4) if grid_col == 0 else (4, 0),
+                pady=(0, 4) if grid_row == 0 else (4, 0),
+            )
             top = ttk.Frame(box, style="Panel.TFrame")
             top.pack(fill="x")
             ttk.Label(top, text=f"LIGHT {led}", style="Section.TLabel").pack(side="left")
@@ -515,6 +528,18 @@ class HappyJarzApp(tk.Tk):
                     pass
             if "pattern" in fields:
                 self.pattern_var.set(fields["pattern"])
+            for led in (1, 2, 3, 4):
+                key = f"led{led}"
+                if key not in fields:
+                    continue
+                try:
+                    r, g, b = (int(part) for part in fields[key].split(",", 2))
+                except (ValueError, TypeError):
+                    continue
+                if all(0 <= value <= 255 for value in (r, g, b)):
+                    self.led_colors[led] = (r, g, b)
+                    if led in self.led_swatches:
+                        self.led_swatches[led].configure(bg=f"#{r:02x}{g:02x}{b:02x}")
         elif line.startswith("HJ|WIFI|"):
             self.wifi_state.set(fields.get("state", "UNKNOWN"))
             if fields.get("ssid"):
