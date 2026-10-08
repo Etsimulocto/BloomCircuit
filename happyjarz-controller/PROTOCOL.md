@@ -87,3 +87,70 @@ HJ|PONG
 3. `SAVE` means persist the current user configuration in ESP32 nonvolatile storage.
 4. Touch streaming is diagnostic telemetry only; local touch control must continue to work without a PC attached.
 5. The Jar remains a standalone product. USB control is a service/configuration path, not a runtime dependency.
+
+
+## Host Mini synchronization
+
+Introduced with app 1.4.0 / firmware 0.12.0.
+
+### Capabilities
+
+```text
+GET CAPS
+```
+
+SIMPLE currently replies:
+
+```text
+HJ|CAPS|profile=SIMPLE|controls=up,down,left,right,a,b|oled=128x64|oled_mirror=1|leds=4
+```
+
+The host app uses this capability list to keep FULL-only controls visible but disabled.
+
+### Host logical input
+
+```text
+KEY UP
+KEY DOWN
+KEY LEFT
+KEY RIGHT
+KEY A
+KEY B
+```
+
+On SIMPLE these commands enter the same logical input queue consumed by the physical copper-touch path. Unsupported FULL controls return an error rather than being guessed.
+
+Typical host-origin event:
+
+```text
+HJ|EVENT|input=up|source=host
+HJ|ACK|command=KEY
+```
+
+Future FULL firmware may advertise and accept:
+
+```text
+X Y L R START SELECT
+```
+
+only after the real FULL GPIO/profile is bench-verified.
+
+### OLED mirror
+
+```text
+GET OLED
+STREAM OLED ON
+STREAM OLED OFF
+```
+
+Frame:
+
+```text
+HJ|OLED|seq=<n>|codec=b64v1|bytes=1024|data=<base64>
+```
+
+The payload is the actual 1024-byte U8g2 128x64 full framebuffer used for the physical SSD1306 display. The staged firmware wraps the existing `sendBuffer()` presentation path so menus, games, screensavers and other renderers mirror the pixels actually presented to the OLED.
+
+Streaming is change-driven and rate-limited to at most four frames per second. This is an initial conservative USB budget and should be tuned only after hardware latency testing.
+
+The host must use the existing serial connection. Do not open a second serial session for the OLED mirror.
