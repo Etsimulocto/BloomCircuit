@@ -36,6 +36,42 @@ class HappyJarzApp(previous.HappyJarzApp):
         ttk.Label(head, text="OLED + PROCEDURAL SCREENSAVERS", style="Section.TLabel").pack(side="left")
         ttk.Label(head, textvariable=self.saver_state, style="PanelMuted.TLabel").pack(side="right")
 
+        preview = ttk.Frame(display, style="Panel.TFrame")
+        preview.pack(fill="x", pady=(8, 8))
+
+        screen_box = tk.Frame(preview, bg="#05080d", bd=1, relief="sunken")
+        screen_box.pack(side="left")
+
+        saver_oled_label = tk.Label(
+            screen_box,
+            image=self.oled_scaled_image,
+            bg="#000000",
+            bd=0,
+            padx=0,
+            pady=0,
+        )
+        saver_oled_label.pack(padx=6, pady=6)
+        self.oled_mirror_labels.append(saver_oled_label)
+
+        preview_info = ttk.Frame(preview, style="Panel.TFrame")
+        preview_info.pack(side="left", fill="both", expand=True, padx=(12, 0))
+        ttk.Label(
+            preview_info,
+            text="LIVE DEVICE OLED",
+            style="Section.TLabel",
+        ).pack(anchor="w")
+        ttk.Label(
+            preview_info,
+            textvariable=self.oled_mirror_status,
+            style="Value.TLabel",
+        ).pack(anchor="w", pady=(4, 4))
+        ttk.Label(
+            preview_info,
+            text="Actual 128x64 framebuffer from the Jar. Saver buttons below update this view and the physical OLED together.",
+            style="PanelMuted.TLabel",
+            wraplength=520,
+        ).pack(anchor="w")
+
         info = ttk.Frame(display, style="Panel.TFrame")
         info.pack(fill="x", pady=(8, 7))
         ttk.Label(info, text="Idle delay", style="PanelMuted.TLabel").grid(row=0, column=0, sticky="w")
