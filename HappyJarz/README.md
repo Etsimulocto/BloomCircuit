@@ -17,7 +17,7 @@ Current proven integrated base:
 - battery/power telemetry
 - local clock, settings, screensavers, games and USB control
 
-Current platform development firmware baseline: `0.17.0`.
+Current platform development firmware baseline: `0.17.1`.
 Current host app baseline: `1.7.0`.
 
 ### FULL
@@ -86,3 +86,28 @@ Current SIMPLE platform build includes **100 registered light patterns**, with t
 
 
 Current SIMPLE platform build includes seven OLED screensaver modes: SAYINGS, SPIRAL, TRIPPY, PARTICLES, BLOOM, BREATHE and GLITTER.
+
+
+## Current visual stack
+
+The current SIMPLE build carries:
+- **100** registered four-lamp light patterns
+- **7** OLED screensavers
+- actual OLED framebuffer mirroring into the host Mini
+- blue-on-black host rendering to match the physical blue SSD1306 display
+
+The seven saver modes are:
+
+```text
+SAYINGS
+SPIRAL
+TRIPPY
+PARTICLES
+BLOOM
+BREATHE
+GLITTER
+```
+
+BLOOM is a procedural opening/closing lotus. BREATHE creates a perceived fade on the monochrome OLED using changing geometry and pixel density. GLITTER is a persistent falling mixed-shape field with independent drift, fall speed and occasional flash-stars.
+
+Firmware `0.17.1` is the compile-fix release for this saver pack. It moves the visual-saver speed/state declarations ahead of saver-status telemetry and uses the installed U8g2 five-argument `drawArc()` signature.
