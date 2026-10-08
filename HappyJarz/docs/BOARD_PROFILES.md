@@ -98,3 +98,32 @@ Exact FULL GPIO assignments remain provisional until the actual production board
 Keep spare touch capacity where practical for future controls or touch-shield/noise handling.
 
 Host keyboards, gamepads, physical touch pads and on-screen app controls should all map into the same logical action layer.
+
+
+## Lamp physical topology
+
+Current four-lamp stand geometry:
+
+```text
+      TOP / JARS
+
+   [1]       [2]
+ top-left   top-right
+
+   [3]       [4]
+ side-left  side-right
+```
+
+Functional groups:
+- Jar pair: 1 + 2
+- Side accent pair: 3 + 4
+- Left column: 1 + 3
+- Right column: 2 + 4
+
+Canonical clockwise path:
+
+```text
+1 -> 2 -> 4 -> 3 -> 1
+```
+
+Pattern code should use physical topology names rather than assuming APA106 DIN order alone.
