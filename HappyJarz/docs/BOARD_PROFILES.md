@@ -72,6 +72,29 @@ ACTION_A
 ACTION_B
 ```
 
-FULL may add actions such as X/Y, shoulder buttons, START, SELECT, MENU or HOME, but names and mappings remain provisional until the real board is tested.
+FULL target logical controls:
 
-Host keyboards, gamepads and physical touch pads should all map into the same logical action layer.
+```text
+UP
+DOWN
+LEFT
+RIGHT
+A
+B
+X
+Y
+L
+R
+START
+SELECT
+```
+
+That is 12 gamepad-style actions total.
+
+The FULL board should not be forced to reuse the SIMPLE raw GPIO map. Because the full-size ESP32-S3 exposes many more GPIOs, peripheral functions such as OLED I2C, APA106 data and battery ADC can be moved away from touch-capable pins as needed so the board can reserve enough native touch channels for the full gamepad layout.
+
+Exact FULL GPIO assignments remain provisional until the actual production board is received and bench-tested.
+
+Keep spare touch capacity where practical for future controls or touch-shield/noise handling.
+
+Host keyboards, gamepads, physical touch pads and on-screen app controls should all map into the same logical action layer.
