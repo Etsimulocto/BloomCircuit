@@ -452,7 +452,7 @@ Firmware 0.17.1 fixes both in the staging patch. The saver behavior itself is ot
 
 #### BLOOM petal styles
 
-Firmware 0.17.3 simplifies BLOOM into a clean flower-only saver. It cycles through 4, 6, 8 and 10-petal outline styles with a small center and slow open/close motion. Background pollen, lower bowl/leaves and other decorative elements were removed.
+Firmware 0.17.4 simplifies BLOOM into a clean flower-only saver. It cycles through 4, 6, 8 and 10-petal outline styles with a small center and slow open/close motion. Background pollen, lower bowl/leaves and other decorative elements were removed.
 
 
 #### App      1.8.3 screensaver OLED preview
@@ -485,7 +485,7 @@ When the pattern changes, the app samples a short burst of `HJ|LED_FRAME|` telem
 This preserves a calm static UI while allowing OCEAN, EMBER, NEBULA, RAINBOW and other patterns to give the host app their own visual skin.
 
 
-#### App      1.8.3 / Firmware 0.17.3 live LED palette capture
+#### App      1.8.3 / Firmware 0.17.4 live LED palette capture
 
 Firmware now exposes the actual four-lamp pattern output over the existing USB serial link:
 
@@ -512,3 +512,18 @@ That means all three pattern-change paths now trigger the same frozen host theme
 - USB/gamepad input routed into the board
 
 The app updates its pattern selector from the device frame, arms a short palette capture, derives the new theme, then freezes it until the next pattern change.
+
+
+#### Firmware 0.17.4 switched accessory pause
+
+The OLED and four APA106 lamps may share a switched 3.3 V accessory rail while the ESP32 remains powered.
+
+Firmware uses the OLED's 0x3C I2C ACK as the accessory-rail sensor. When the OLED disappears, the device enters PAUSED state: the pattern engine freezes, OLED rendering stops, LED writes are blocked, and GPIO7 is held LOW. Time, Wi-Fi, USB serial and controller state continue running.
+
+When the OLED returns, firmware reinitializes the display, redraws the current UI, resets the pattern engine, restores SOLID output if applicable, and resumes normal operation.
+
+Telemetry:
+```text
+HJ|ACCESSORY|state=PAUSED|sensor=OLED
+HJ|ACCESSORY|state=ACTIVE|sensor=OLED
+```
