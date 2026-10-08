@@ -91,7 +91,7 @@ HJ|PONG
 
 ## Host Mini synchronization
 
-Introduced with app 1.4.0 / firmware 0.12.0.
+Introduced with app 1.4.0 / firmware 0.12.0; current host app is 1.5.0.
 
 ### Capabilities
 
@@ -154,3 +154,26 @@ The payload is the actual 1024-byte U8g2 128x64 full framebuffer used for the ph
 Streaming is change-driven and rate-limited to at most four frames per second. This is an initial conservative USB budget and should be tuned only after hardware latency testing.
 
 The host must use the existing serial connection. Do not open a second serial session for the OLED mirror.
+
+
+### Gamepad host mapping
+
+Gamepad support is host-side and requires no additional firmware command beyond `KEY <ACTION>`.
+
+Current app v1.5.0 host mapping:
+
+```text
+D-pad / hat / left stick -> KEY UP/DOWN/LEFT/RIGHT
+South                    -> KEY A
+East                     -> KEY B
+West                     -> KEY X
+North                    -> KEY Y
+TL                       -> KEY L
+TR                       -> KEY R
+START                    -> KEY START
+SELECT                   -> KEY SELECT
+```
+
+The host prefers semantic `/dev/input/event*` and falls back to semantic `/dev/input/js*`. It must not consume both simultaneously for the same physical controller.
+
+SIMPLE firmware currently accepts only the controls returned by `GET CAPS`. FULL-only actions remain a forward-compatible host surface until FULL hardware is verified.
