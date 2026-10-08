@@ -452,7 +452,7 @@ Firmware 0.17.1 fixes both in the staging patch. The saver behavior itself is ot
 
 #### BLOOM petal styles
 
-Firmware 0.17.4 simplifies BLOOM into a clean flower-only saver. It cycles through 4, 6, 8 and 10-petal outline styles with a small center and slow open/close motion. Background pollen, lower bowl/leaves and other decorative elements were removed.
+Firmware 0.17.5 simplifies BLOOM into a clean flower-only saver. It cycles through 4, 6, 8 and 10-petal outline styles with a small center and slow open/close motion. Background pollen, lower bowl/leaves and other decorative elements were removed.
 
 
 #### App      1.8.3 screensaver OLED preview
@@ -485,7 +485,7 @@ When the pattern changes, the app samples a short burst of `HJ|LED_FRAME|` telem
 This preserves a calm static UI while allowing OCEAN, EMBER, NEBULA, RAINBOW and other patterns to give the host app their own visual skin.
 
 
-#### App      1.8.3 / Firmware 0.17.4 live LED palette capture
+#### App      1.8.3 / Firmware 0.17.5 live LED palette capture
 
 Firmware now exposes the actual four-lamp pattern output over the existing USB serial link:
 
@@ -514,7 +514,7 @@ That means all three pattern-change paths now trigger the same frozen host theme
 The app updates its pattern selector from the device frame, arms a short palette capture, derives the new theme, then freezes it until the next pattern change.
 
 
-#### Firmware 0.17.4 switched accessory pause
+#### Firmware 0.17.5 switched accessory pause
 
 The OLED and four APA106 lamps may share a switched 3.3 V accessory rail while the ESP32 remains powered.
 
@@ -527,3 +527,15 @@ Telemetry:
 HJ|ACCESSORY|state=PAUSED|sensor=OLED
 HJ|ACCESSORY|state=ACTIVE|sensor=OLED
 ```
+
+
+#### Firmware 0.17.5 low battery warning
+
+When the calibrated Fuel Gauge reports 10% or less, HAPPY JARZ enters a visible low-battery warning overlay:
+
+- physical bulb 4 / right-side accent flashes red at 1 Hz
+- bulbs 1-3 continue the current pattern
+- every OLED presentation is overridden with `LOW BATTERY / CHARGE ME!!! / <percent>% USB ->`
+- warning clears only after battery reaches 15% to prevent threshold chatter
+
+Unverified or implausible Fuel Gauge readings never trigger the warning. The current prototype still reports `sensor=UNVERIFIED` until the GPIO3 battery divider/calibration is corrected.
