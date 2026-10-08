@@ -18,7 +18,7 @@ Current proven integrated base:
 - local clock, settings, screensavers, games and USB control
 
 Current platform development firmware baseline: `0.12.0`.
-Current host app baseline: `1.4.0`.
+Current host app baseline: `1.5.0`.
 
 ### FULL
 
@@ -62,3 +62,21 @@ See:
 - `docs/UPDATE_SYSTEM.md`
 - `docs/US_EU_PROFILES.md`
 - `releases/manifest.json`
+
+
+## Current synchronized Mini
+
+The host app currently embeds a Mini controller in the bottom of LIGHTS + CONTROL.
+
+Current behavior:
+- actual device OLED framebuffer mirrored over the existing USB link
+- blue pixels on black to match the physical blue OLED module
+- 12 visible gamepad-style controls
+- SIMPLE enables UP/DOWN/LEFT/RIGHT/A/B
+- FULL-only X/Y/L/R/START/SELECT stay visible but disabled until advertised by hardware capabilities
+- Linux gamepads use semantic mappings rather than fixed axis/button guesses
+- `/dev/input/event*` is preferred; semantic `/dev/input/js*` is fallback
+- gamepad and clickable controls both send through the same logical `KEY ...` protocol
+- returned device input events pulse the matching Mini control
+
+The physical device remains authoritative for live OLED state, inputs, lights and games.
