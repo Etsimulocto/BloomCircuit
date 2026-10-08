@@ -155,3 +155,10 @@ App 1.8.1 themes the host from a short capture window after each pattern change:
 6. freeze the result until the pattern changes again
 
 The live LED stream continues normally after capture, but no further theme changes occur, preventing flashing or continuous chrome animation.
+
+
+### Device-originated pattern changes
+
+App 1.8.3 treats `HJ|LED_FRAME|pattern=...` as the authoritative source for device-originated pattern changes.
+
+Physical touch and gamepad events may change the pattern without an app-side command. When the live frame reports a new pattern name, the app updates its selector and arms the same short palette capture used for app-originated changes. This keeps host theming synchronized regardless of where the input originated.
