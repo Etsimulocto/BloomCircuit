@@ -1,6 +1,6 @@
 # HAPPY JARZ Controller
 
-**Current platform release pair:** desktop app **v1.5.0** + firmware **v0.15.0**
+**Current platform release pair:** desktop app **v1.6.0** + firmware **v0.16.0**
 
 This subsystem is the PC/Raspberry Pi field-service and control layer for the HAPPY JARZ powered stand. It sits above the known-good ESP32-S3 light/touch/OLED hardware layer and is designed so desktop-side changes do not casually rewrite the proven APA106 timing.
 
@@ -16,7 +16,7 @@ happyjarz-controller/firmware/VERSION # firmware version
 Current values:
 
 ```text
-App      1.5.0
+App      1.6.0
 Firmware 0.12.0
 ```
 
@@ -389,3 +389,33 @@ Affected patterns:
 The spatial animation cadence remains fast enough to read as a chase, while hue advances much more slowly so it does not look like a rainbow strobe.
 
 The chase family no longer depends on saved base colors being non-white.
+
+
+### 100-pattern library
+
+App v1.6.0 / firmware v0.16.0 expand the HAPPY JARZ sensory library to exactly 100 registered patterns.
+
+The first 44 patterns remain the existing hand-built effects and topology-aware chase family. The additional 56 patterns use a compact descriptor-driven engine so flash growth stays modest compared with writing 56 separate large effect functions.
+
+New descriptor families include:
+- water / ice
+- fire / warm
+- forest / green
+- dream / cosmic
+- pink / fruit
+- neon / arcade
+- weather / sky
+
+Renderer modes include:
+- four-lamp palette flow
+- phased brightness wave
+- physical sweep with tail
+- soft glow
+- independent sparkle
+- pair exchange
+- diagonal alternation
+- jar-to-side ripple
+
+The app and firmware share the same 100 registered names. The final staged verifier requires `HAPPYJARZ_PATTERN_BANK_100`.
+
+Exact compiled flash usage must be taken from `arduino-cli compile`; do not infer it from source length.
