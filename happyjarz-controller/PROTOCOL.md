@@ -248,3 +248,17 @@ HJ|LED_FRAME|led1=<r,g,b>|led2=<r,g,b>|led3=<r,g,b>|led4=<r,g,b>|pattern=<name>|
 ```
 
 The values are the raw live pattern RGB values before global brightness scaling. The stream shares the existing serial owner and is capped at 10 Hz.
+
+
+### Accessory rail pause
+
+Firmware 0.17.4 can detect the switched OLED/lamp 3.3 V rail by probing the OLED at I2C address 0x3C.
+
+Events:
+
+```text
+HJ|ACCESSORY|state=PAUSED|sensor=OLED
+HJ|ACCESSORY|state=ACTIVE|sensor=OLED
+```
+
+PAUSED freezes visible output while the ESP32 remains alive. ACTIVE reinitializes the OLED and resumes the current light state.
