@@ -1,6 +1,6 @@
 # HAPPY JARZ Controller
 
-**Current platform release pair:** desktop app **v1.4.0** + firmware **v0.12.0**
+**Current platform release pair:** desktop app **v1.5.0** + firmware **v0.12.0**
 
 This subsystem is the PC/Raspberry Pi field-service and control layer for the HAPPY JARZ powered stand. It sits above the known-good ESP32-S3 light/touch/OLED hardware layer and is designed so desktop-side changes do not casually rewrite the proven APA106 timing.
 
@@ -16,7 +16,7 @@ happyjarz-controller/firmware/VERSION # firmware version
 Current values:
 
 ```text
-App      1.4.0
+App      1.5.0
 Firmware 0.12.0
 ```
 
@@ -271,3 +271,28 @@ Current behavior:
 - OLED telemetry is change-driven, Base64 encoded and capped at 4 Hz
 
 Do not reconstruct menus independently in the host app. The physical device framebuffer is authoritative.
+
+
+### Gamepad routing
+
+App v1.5.0 carries forward the proven BloomPetz Linux gamepad lessons without copying its early hard-coded-index behavior.
+
+Routing order:
+1. prefer semantic `/dev/input/event*`
+2. fall back to semantic `/dev/input/js*`
+3. never read both paths simultaneously for the same controller
+
+Mapped logical controls:
+- D-pad / hat / left stick -> UP DOWN LEFT RIGHT
+- South -> A
+- East -> B
+- West -> X
+- North -> Y
+- TL -> L
+- TR -> R
+- START -> START
+- SELECT -> SELECT
+
+All gamepad events enter the same host `KEY ...` path used by clickable Mini controls. Device capability gating still applies, so SIMPLE ignores FULL-only actions until a FULL device advertises them.
+
+The Mini OLED mirror uses blue pixels on black to match the physical blue OLED modules.
