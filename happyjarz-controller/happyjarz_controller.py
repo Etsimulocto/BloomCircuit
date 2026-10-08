@@ -210,6 +210,9 @@ class HappyJarzApp(tk.Tk):
             "border": BORDER,
             "text": TEXT,
         }
+        self._theme_capture_pattern = None
+        self._theme_capture_frames = []
+        self._theme_capture_after = None
 
         self.wifi_ssid = tk.StringVar()
         self.wifi_password = tk.StringVar()
@@ -380,7 +383,7 @@ class HappyJarzApp(tk.Tk):
         patterns = ttk.Combobox(settings, state="readonly", textvariable=self.pattern_var,
                                 values=("OFF", "SOLID", "FADE", "RAINBOW", "PULSE", "RANDOM"))
         patterns.grid(row=2, column=1, sticky="ew", padx=8, pady=(7, 0))
-        patterns.bind("<<ComboboxSelected>>", lambda _e: self.link.send(f"SET PATTERN {self.pattern_var.get()}"))
+        patterns.bind("<<ComboboxSelected>>", self._pattern_selected)
         ttk.Button(settings, text="Save to Jar", style="Accent.TButton", command=lambda: self.link.send("SAVE")).grid(row=2, column=2, sticky="e", pady=(7, 0))
         settings.columnconfigure(1, weight=1)
 
@@ -912,14 +915,12 @@ class HappyJarzApp(tk.Tk):
         out = tuple(round(x + (y - x) * amount) for x, y in zip(av, bv))
         return HappyJarzApp._rgb_hex(out)
 
-    def _apply_theme_from_base_colors(self):
-        # BASE lamp colors are the stable product palette:
-        # L1=background, L2=panel, L3=outline, L4=text.
+    def _apply_theme_colors(self, colors):
         new_roles = {
-            "bg": self._rgb_hex(self.led_colors[1]),
-            "panel": self._rgb_hex(self.led_colors[2]),
-            "border": self._rgb_hex(self.led_colors[3]),
-            "text": self._rgb_hex(self.led_colors[4]),
+            "bg": self._rgb_hex(colors["bg"]) if not isinstance(colors["bg"], str) else colors["bg"],
+            "panel": self._rgb_hex(colors["panel"]) if not isinstance(colors["panel"], str) else colors["panel"],
+            "border": self._rgb_hex(colors["border"]) if not isinstance(colors["border"], str) else colors["border"],
+            "text": self._rgb_hex(colors["text"]) if not isinstance(colors["text"], str) else colors["text"],
         }
         old_roles = dict(self._theme_roles)
         self._theme_roles = new_roles
@@ -1068,7 +1069,6 @@ class HappyJarzApp(tk.Tk):
         self.led_colors[led] = (r, g, b)
         if led in self.led_base_swatches:
             self.led_base_swatches[led].configure(bg=f"#{r:02x}{g:02x}{b:02x}")
-        self._apply_theme_from_base_colors()
         self.link.send(f"SET LED{led} COLOR {r} {g} {b}")
 
     def _set_live_led(self, led: int, rgb):
@@ -1110,6 +1110,81 @@ class HappyJarzApp(tk.Tk):
             self._apply_input_capabilities(self.input_names)
         elif hw:
             self._apply_input_capabilities(self.simple_inputs)
+
+    def _pattern_selected(self, _event=None):
+        pattern = self.pattern_var.get().strip().upper()
+        self._arm_pattern_theme_capture(pattern)
+        self.link.send(f"SET PATTERN {pattern}")
+
+    def _arm_pattern_theme_capture(self, pattern: str):
+        pattern = (pattern or "").strip().upper()
+        self._theme_capture_pattern = pattern
+        self._theme_capture_frames = []
+        if self._theme_capture_after:
+            try:
+                self.after_cancel(self._theme_capture_after)
+            except tk.TclError:
+                pass
+        # Capture for a short window so a pulse/black transition does not choose
+        # the whole app palette. Finalize once the new pattern has shown itself.
+        self._theme_capture_after = self.after(650, self._finalize_pattern_theme)
+
+    @staticmethod
+    def _rgb_luma(rgb):
+        r, g, b = rgb
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+    @staticmethod
+    def _rgb_distance(a, b):
+        return sum((int(x) - int(y)) ** 2 for x, y in zip(a, b)) ** 0.5
+
+    @staticmethod
+    def _scale_rgb(rgb, factor):
+        return tuple(max(0, min(255, round(v * factor))) for v in rgb)
+
+    def _finalize_pattern_theme(self):
+        self._theme_capture_after = None
+        samples = []
+        for frame in self._theme_capture_frames:
+            for rgb in frame:
+                if self._rgb_luma(rgb) < 18:
+                    continue
+                samples.append(rgb)
+
+        # Collapse near-duplicates so a repeated jar-pair color does not dominate.
+        unique = []
+        for rgb in sorted(samples, key=self._rgb_luma, reverse=True):
+            if all(self._rgb_distance(rgb, old) >= 45 for old in unique):
+                unique.append(rgb)
+
+        if not unique:
+            return
+
+        primary = unique[0]
+        if len(unique) > 1:
+            secondary = max(unique[1:], key=lambda c: self._rgb_distance(primary, c))
+        else:
+            # Single-color patterns still get a coherent two-tone app theme.
+            r, g, b = primary
+            secondary = (g, b, r)
+
+        # Use the pattern colors directly for outline/text, with darker forms for
+        # large surfaces so the UI remains readable and calm.
+        theme_colors = {
+            "bg": self._scale_rgb(primary, 0.22),
+            "panel": self._scale_rgb(secondary, 0.30),
+            "border": primary,
+            "text": secondary,
+        }
+
+        # Very dark secondary colors make unreadable text; brighten only enough
+        # for UI readability while preserving the pattern hue.
+        if self._rgb_luma(theme_colors["text"]) < 115:
+            factor = 115.0 / max(1.0, self._rgb_luma(theme_colors["text"]))
+            theme_colors["text"] = self._scale_rgb(theme_colors["text"], min(2.8, factor))
+
+        self._apply_theme_colors(theme_colors)
+        self._theme_capture_frames = []
 
     def _brightness_changed(self, value):
         n = max(0, min(100, int(float(value))))
@@ -1199,6 +1274,7 @@ class HappyJarzApp(tk.Tk):
             if key in self.mini_buttons:
                 self._pulse_mini_button(key)
         elif line.startswith("HJ|LED_FRAME|"):
+            captured = []
             for led in (1, 2, 3, 4):
                 raw = fields.get(f"led{led}") or fields.get(f"live_led{led}")
                 if not raw:
@@ -1208,6 +1284,10 @@ class HappyJarzApp(tk.Tk):
                 except ValueError:
                     continue
                 self._set_live_led(led, rgb)
+                if len(rgb) == 3 and all(0 <= value <= 255 for value in rgb):
+                    captured.append(rgb)
+            if self._theme_capture_after and len(captured) == 4:
+                self._theme_capture_frames.append(tuple(captured))
         elif line.startswith("HJ|STATUS|"):
             if "brightness" in fields:
                 try:
@@ -1217,7 +1297,11 @@ class HappyJarzApp(tk.Tk):
                 except ValueError:
                     pass
             if "pattern" in fields:
-                self.pattern_var.set(fields["pattern"])
+                incoming_pattern = fields["pattern"].strip().upper()
+                previous_pattern = self.pattern_var.get().strip().upper()
+                self.pattern_var.set(incoming_pattern)
+                if incoming_pattern and incoming_pattern != previous_pattern:
+                    self._arm_pattern_theme_capture(incoming_pattern)
             for led in (1, 2, 3, 4):
                 key = f"led{led}"
                 if key not in fields:
@@ -1232,7 +1316,6 @@ class HappyJarzApp(tk.Tk):
                         self.led_base_swatches[led].configure(bg=f"#{r:02x}{g:02x}{b:02x}")
                     if self.pattern_var.get() == "SOLID":
                         self._set_live_led(led, (r, g, b))
-            self._apply_theme_from_base_colors()
         elif line.startswith("HJ|WIFI|"):
             self.wifi_state.set(fields.get("state", "UNKNOWN"))
             if fields.get("ssid"):
