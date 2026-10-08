@@ -1,6 +1,6 @@
 # HAPPY JARZ ESP32 Firmware
 
-**Current firmware release:** **v0.10.0**
+**Current firmware release:** **v0.11.0**
 
 **Compatibility staging base:** `happyjarz_integrated_v0_5.ino` + standard patch pipeline
 
@@ -24,7 +24,7 @@ Known-good timing:
 - bit 0 ~= 4 ticks high / 14 ticks low
 - bit 1 ~= 14 high / 4 low
 - ~100 us reset/latch
-- two APA106 lamps daisy chained
+- four APA106 lamps daisy chained
 - proven byte order: **RGB**
 
 ## Current wiring
@@ -33,10 +33,12 @@ Known-good timing:
 
 - GPIO7 -> 220 ohm -> APA106 #1 DIN
 - APA106 #1 DOUT -> APA106 #2 DIN
+- APA106 #2 DOUT -> APA106 #3 DIN
+- APA106 #3 DOUT -> APA106 #4 DIN
 - common GND
 - ESP32 data remains 3.3V logic
 
-Bench testing on October 2, 2026 showed the current two-lamp prototype working through the full firmware **0-100% brightness range** with lamp VCC at both **3.3V** and **5V**. No blue-collapse / blue-shift was observed in this test.
+Bench testing on October 2, 2026 established the original two-lamp electrical baseline working through the full firmware **0-100% brightness range** with lamp VCC at both **3.3V** and **5V**. No blue-collapse / blue-shift was observed in this test.
 
 Practical visual result:
 
@@ -163,6 +165,14 @@ PWR BAT
 
 `CHG ?` is intentional when USB is present because the charger IC charging/full signal is not wired to an ESP32 GPIO.
 
+## Four-lamp behavior
+
+Firmware v0.11.0 keeps the proven APA106 RMT timing unchanged and expands the staged logical lamp count from two to four.
+
+Persistent color state and USB control are available independently for Light 1, Light 2, Light 3 and Light 4. `GET STATUS` reports all four RGB values.
+
+High-level patterns are four-lamp aware: two-color scenes alternate across the chain; RAINBOW uses four phase offsets; RANDOM generates four independent colors; TWINKLE/SPARKLE retain each lamp's chosen base color; COLOR_SWAP rotates all four chosen colors.
+
 ## Brightness behavior
 
 The firmware range is **0-100%**.
@@ -218,7 +228,7 @@ A long B press acts as HOME/escape from the arcade.
 At 115200 baud the firmware responds to `HELLO` with an `HJ|IDENTITY|...` line. For this branch/release it should report:
 
 ```text
-fw=0.10.0
+fw=0.11.0
 ```
 
 ## Current Pi compile/upload path
