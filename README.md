@@ -4,19 +4,21 @@
 
 BloomCircuit is a browser-based physical wiring-map editor for maker projects. It is built around **physical wiring documentation**, a **2.54 mm snap grid**, and **laser-ready SVG export** rather than PCB routing or SPICE simulation.
 
-The repository also contains the current **HAPPY JARZ controller/firmware stack**, built around an ESP32-S3 SuperMini, six capacitive-touch controls, two APA106 lamps, a 128x64 I2C OLED, USB control, a desktop controller, plug-to-launch service tooling, logs, and safe GitHub fast-forward updates.
+The repository also contains the current **HAPPY JARZ controller/firmware stack**, built around an ESP32-S3 SuperMini, six capacitive-touch controls, four APA106 lamps, a 128x64 I2C OLED, USB control, a desktop controller, plug-to-launch service tooling, logs, and safe GitHub fast-forward updates.
 
 ## HAPPY JARZ current prototype
 
 See [`happyjarz-controller/README.md`](happyjarz-controller/README.md) for the controller/service workflow and [`happyjarz-controller/firmware/README.md`](happyjarz-controller/firmware/README.md) for the ESP32 firmware layer.
 
-Current development firmware on `feature/happyjarz-catch-the-glitter`: **v0.9.3**.
+Current development firmware on `feature/happyjarz-catch-the-glitter`: **v0.11.0**.
 
 Current proven hardware:
 
 - ESP32-S3 SuperMini
 - GPIO7 -> 220 ohm -> APA106 #1 DIN
 - APA106 #1 DOUT -> APA106 #2 DIN
+- APA106 #2 DOUT -> APA106 #3 DIN
+- APA106 #3 DOUT -> APA106 #4 DIN
 - common GND
 - GPIO4 = UP touch
 - GPIO5 = DOWN touch
@@ -29,7 +31,7 @@ Current proven hardware:
 - OLED VCC -> 3.3V
 - OLED address `0x3C`
 
-The tested APA106 lamps accept the ESP32-S3's 3.3V data signal. The current two-lamp prototype has now been bench-tested through the full **0-100% firmware brightness range** with lamp VCC at both **3.3V and 5V**, with no blue-collapse observed in the latest test. Never route 5V into an ESP32 GPIO.
+The tested APA106 lamps accept the ESP32-S3's 3.3V data signal. The original two-lamp electrical baseline was bench-tested through the full **0-100% firmware brightness range** with lamp VCC at both **3.3V and 5V**, with no blue-collapse observed in the latest test. Never route 5V into an ESP32 GPIO.
 
 Practical brightness result:
 
