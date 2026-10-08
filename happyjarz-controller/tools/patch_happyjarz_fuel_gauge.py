@@ -68,8 +68,29 @@ static uint16_t batteryAdcMillivolts() {
   return (uint16_t)(total / samples);
 }
 
+static float batteryFilteredVoltage = 0.0f;
+static bool batteryFilterReady = false;
+static unsigned long batteryFilterLastMs = 0;
+static constexpr unsigned long BATTERY_FILTER_INTERVAL_MS = 1000UL;
+
 static float batteryVoltage() {
-  return ((float)batteryAdcMillivolts() / 1000.0f) * BATTERY_DIVIDER_RATIO * BATTERY_CAL_FACTOR;
+  unsigned long now = millis();
+  if (batteryFilterReady && now - batteryFilterLastMs < BATTERY_FILTER_INTERVAL_MS) {
+    return batteryFilteredVoltage;
+  }
+
+  float rawVolts = ((float)batteryAdcMillivolts() / 1000.0f) * BATTERY_DIVIDER_RATIO * BATTERY_CAL_FACTOR;
+  batteryFilterLastMs = now;
+
+  if (!batteryFilterReady) {
+    batteryFilteredVoltage = rawVolts;
+    batteryFilterReady = true;
+  } else {
+    // 1/4 new + 3/4 history. Smooth enough to stop percentage chatter while
+    // still following real charging/discharge changes within a few seconds.
+    batteryFilteredVoltage = batteryFilteredVoltage * 0.75f + rawVolts * 0.25f;
+  }
+  return batteryFilteredVoltage;
 }
 
 static bool batteryReadingPlausible(float v) {
@@ -119,7 +140,7 @@ static String oledHomePowerText() {
 
 static void printPowerStatus() {
   uint16_t adcMv = batteryAdcMillivolts();
-  float volts = ((float)adcMv / 1000.0f) * BATTERY_DIVIDER_RATIO * BATTERY_CAL_FACTOR;
+  float volts = batteryVoltage();
   if (!batteryReadingPlausible(volts)) {
     Serial.printf("HJ|POWER|sensor=UNVERIFIED|adc_mv=%u|voltage=%.3f|percent=-1|usb_data=%d|charge=HW_ONLY\n",
                   adcMv, volts, usbDataLinked()?1:0);
