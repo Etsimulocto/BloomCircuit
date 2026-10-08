@@ -1276,6 +1276,15 @@ class HappyJarzApp(tk.Tk):
             if key in self.mini_buttons:
                 self._pulse_mini_button(key)
         elif line.startswith("HJ|LED_FRAME|"):
+            # Physical touch and gamepad inputs can change patterns entirely on
+            # the device. LED_FRAME carries the authoritative live pattern name,
+            # so use it to arm the same frozen palette capture as the app picker.
+            frame_pattern = fields.get("pattern", "").strip().upper()
+            current_pattern = self.pattern_var.get().strip().upper()
+            if frame_pattern and frame_pattern != current_pattern:
+                self.pattern_var.set(frame_pattern)
+                self._arm_pattern_theme_capture(frame_pattern)
+
             captured = []
             for led in (1, 2, 3, 4):
                 raw = fields.get(f"led{led}") or fields.get(f"live_led{led}")
