@@ -201,6 +201,16 @@ class HappyJarzApp(tk.Tk):
         self.led_base_swatches = {}
         self._brightness_after = None
 
+        # App chrome follows the four saved/base lamp colors only.
+        # Live pattern frames never feed this theme, so animations cannot flash
+        # or recolor the desktop UI.
+        self._theme_roles = {
+            "bg": BG,
+            "panel": PANEL,
+            "border": BORDER,
+            "text": TEXT,
+        }
+
         self.wifi_ssid = tk.StringVar()
         self.wifi_password = tk.StringVar()
         self.wifi_state = tk.StringVar(value="UNKNOWN")
@@ -889,6 +899,137 @@ class HappyJarzApp(tk.Tk):
         self.log_text.pack(side="left", fill="both", expand=True)
         scroll.pack(side="right", fill="y")
 
+    @staticmethod
+    def _rgb_hex(rgb):
+        r, g, b = (max(0, min(255, int(v))) for v in rgb)
+        return f"#{r:02x}{g:02x}{b:02x}"
+
+    @staticmethod
+    def _blend_hex(a: str, b: str, amount: float):
+        amount = max(0.0, min(1.0, float(amount)))
+        av = tuple(int(a[i:i + 2], 16) for i in (1, 3, 5))
+        bv = tuple(int(b[i:i + 2], 16) for i in (1, 3, 5))
+        out = tuple(round(x + (y - x) * amount) for x, y in zip(av, bv))
+        return HappyJarzApp._rgb_hex(out)
+
+    def _apply_theme_from_base_colors(self):
+        # BASE lamp colors are the stable product palette:
+        # L1=background, L2=panel, L3=outline, L4=text.
+        new_roles = {
+            "bg": self._rgb_hex(self.led_colors[1]),
+            "panel": self._rgb_hex(self.led_colors[2]),
+            "border": self._rgb_hex(self.led_colors[3]),
+            "text": self._rgb_hex(self.led_colors[4]),
+        }
+        old_roles = dict(self._theme_roles)
+        self._theme_roles = new_roles
+
+        bg = new_roles["bg"]
+        panel = new_roles["panel"]
+        border = new_roles["border"]
+        text = new_roles["text"]
+
+        # Secondary UI colors are derived from the four physical lamp colors;
+        # they are not additional independent theme inputs.
+        panel2 = self._blend_hex(panel, border, 0.24)
+        muted = self._blend_hex(text, panel, 0.46)
+        hover = self._blend_hex(panel2, text, 0.14)
+        accent = border
+        accent2 = self._blend_hex(border, text, 0.42)
+
+        style = ttk.Style(self)
+        style.configure(".", background=bg, foreground=text, fieldbackground=panel2,
+                        bordercolor=border, lightcolor=border, darkcolor=border)
+        style.configure("TFrame", background=bg)
+        style.configure("Panel.TFrame", background=panel)
+        style.configure("Panel2.TFrame", background=panel2)
+        style.configure("TLabel", background=bg, foreground=text)
+        style.configure("Panel.TLabel", background=panel, foreground=text)
+        style.configure("Muted.TLabel", background=bg, foreground=muted)
+        style.configure("PanelMuted.TLabel", background=panel, foreground=muted)
+        style.configure("Title.TLabel", background=bg, foreground=text)
+        style.configure("Section.TLabel", background=panel, foreground=text)
+        style.configure("Value.TLabel", background=panel, foreground=accent2)
+        style.configure("TouchValue.TLabel", background=panel2, foreground=text)
+        style.configure("TButton", background=panel2, foreground=text)
+        style.map("TButton", background=[("active", hover)], foreground=[("active", text)])
+        style.configure("Accent.TButton", background=accent, foreground=text)
+        style.map("Accent.TButton", background=[("active", accent2)], foreground=[("active", text)])
+        style.configure("TScale", background=panel, troughcolor=panel2)
+        style.configure("TCombobox", fieldbackground=panel2, background=panel2,
+                        foreground=text, arrowcolor=text, bordercolor=border)
+        style.map("TCombobox", fieldbackground=[("readonly", panel2)],
+                  foreground=[("readonly", text)])
+        style.configure("TEntry", fieldbackground=panel2, foreground=text, bordercolor=border)
+        style.configure("TCheckbutton", background=panel, foreground=text)
+        style.configure("TNotebook", background=bg, borderwidth=0)
+        style.configure("TNotebook.Tab", background=panel2, foreground=muted)
+        style.map("TNotebook.Tab", background=[("selected", border)],
+                  foreground=[("selected", text)])
+        style.configure("Vertical.TScrollbar", background=panel2, troughcolor=panel,
+                        bordercolor=panel, arrowcolor=muted)
+
+        # ttk handles most of the app. Recolor the handful of classic Tk widgets
+        # that use literal bg/fg values (card borders, touch tiles, Mini buttons,
+        # text editors). Leave the black OLED framebuffer surfaces untouched.
+        previous = {
+            BG: ("bg", bg), PANEL: ("panel", panel), PANEL_2: ("panel2", panel2),
+            BORDER: ("border", border), TEXT: ("text", text), MUTED: ("muted", muted),
+        }
+        for role, old in old_roles.items():
+            replacement = new_roles.get(role, old)
+            previous[old] = (role, replacement)
+
+        def recolor(widget):
+            try:
+                current_bg = widget.cget("bg")
+                if current_bg in previous:
+                    role = previous[current_bg][0]
+                    repl = {
+                        "bg": bg, "panel": panel, "border": border, "text": text,
+                        "panel2": panel2, "muted": muted,
+                    }.get(role)
+                    if repl:
+                        widget.configure(bg=repl)
+            except (tk.TclError, AttributeError):
+                pass
+            try:
+                current_fg = widget.cget("fg")
+                if current_fg in previous:
+                    role = previous[current_fg][0]
+                    repl = {
+                        "bg": bg, "panel": panel, "border": border, "text": text,
+                        "panel2": panel2, "muted": muted,
+                    }.get(role)
+                    if repl:
+                        widget.configure(fg=repl)
+            except (tk.TclError, AttributeError):
+                pass
+            for child in widget.winfo_children():
+                # OLED pixels/bezel intentionally stay black + blue.
+                if child in self.oled_mirror_labels:
+                    continue
+                recolor(child)
+
+        self.configure(bg=bg)
+        recolor(self)
+
+        # These are classic Tk controls whose intended role is known even after
+        # several theme changes.
+        for key, label in self.input_name_labels.items():
+            if key in self.device_capabilities:
+                label.configure(bg=panel2, fg=muted)
+        for key, label in self.input_value_labels.items():
+            if key in self.device_capabilities:
+                label.configure(bg=panel2, fg=text)
+        for key, btn in self.mini_buttons.items():
+            btn.configure(
+                bg=panel2,
+                fg=text,
+                activebackground=hover,
+                activeforeground=text,
+            )
+
     def _choose_color(self, led: int):
         initial = "#%02x%02x%02x" % self.led_colors[led]
         _rgb, hex_color = colorchooser.askcolor(color=initial, title=f"Light {led} color")
@@ -901,6 +1042,7 @@ class HappyJarzApp(tk.Tk):
         self.led_colors[led] = (r, g, b)
         if led in self.led_base_swatches:
             self.led_base_swatches[led].configure(bg=f"#{r:02x}{g:02x}{b:02x}")
+        self._apply_theme_from_base_colors()
         self.link.send(f"SET LED{led} COLOR {r} {g} {b}")
 
     def _set_live_led(self, led: int, rgb):
@@ -1064,6 +1206,7 @@ class HappyJarzApp(tk.Tk):
                         self.led_base_swatches[led].configure(bg=f"#{r:02x}{g:02x}{b:02x}")
                     if self.pattern_var.get() == "SOLID":
                         self._set_live_led(led, (r, g, b))
+            self._apply_theme_from_base_colors()
         elif line.startswith("HJ|WIFI|"):
             self.wifi_state.set(fields.get("state", "UNKNOWN"))
             if fields.get("ssid"):
