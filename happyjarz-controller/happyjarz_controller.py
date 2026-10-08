@@ -8,7 +8,11 @@ APP_PROTOCOL_V0_3.md. Unsupported commands may return HJ|ERR on older firmware.
 
 from __future__ import annotations
 
+import array
 import base64
+import glob
+import os
+import struct
 import queue
 import threading
 import time
@@ -16,6 +20,11 @@ import tkinter as tk
 from datetime import datetime
 from pathlib import Path
 from tkinter import colorchooser, ttk
+
+try:
+    import fcntl
+except ImportError:  # Windows host: Linux joystick ioctl path unavailable.
+    fcntl = None
 
 import serial
 from serial.tools import list_ports
@@ -174,7 +183,9 @@ class HappyJarzApp(tk.Tk):
         self.oled_scaled_image = None
         self.oled_mirror_label = None
         self.oled_mirror_status = tk.StringVar(value="WAITING FOR OLED")
+        self.gamepad_status = tk.StringVar(value="GAMEPAD: SEARCHING")
         self.oled_last_seq = 0
+        self.gamepad_running = True
 
         self.brightness_var = tk.IntVar(value=75)
         self.pattern_var = tk.StringVar(value="SOLID")
@@ -204,6 +215,7 @@ class HappyJarzApp(tk.Tk):
 
         self._configure_style()
         self._build_ui()
+        threading.Thread(target=self._gamepad_worker, daemon=True).start()
         self.after(80, self._drain_events)
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         self._log(f"{APP_NAME} v{APP_VERSION} started")
@@ -407,6 +419,8 @@ class HappyJarzApp(tk.Tk):
                   style="Section.TLabel").pack(side="left")
         ttk.Label(header, textvariable=self.oled_mirror_status,
                   style="PanelMuted.TLabel").pack(side="right")
+        ttk.Label(header, textvariable=self.gamepad_status,
+                  style="PanelMuted.TLabel").pack(side="right", padx=(0, 14))
 
         body = ttk.Frame(mini, style="Panel.TFrame")
         body.pack(fill="both", expand=True)
@@ -466,6 +480,250 @@ class HappyJarzApp(tk.Tk):
 
         self._apply_input_capabilities(self.device_capabilities)
 
+    def _queue_host_key(self, key: str):
+        key = key.strip().lower()
+        if key in self.input_names:
+            self.events.put(("host_key", key))
+
+    @staticmethod
+    def _event_gamepad_candidates():
+        out = []
+        for dev in sorted(glob.glob("/dev/input/event*")):
+            base = os.path.basename(dev)
+            name_path = f"/sys/class/input/{base}/device/name"
+            try:
+                name = open(name_path, "r", encoding="utf-8", errors="replace").read().strip()
+            except OSError:
+                name = ""
+            low = name.lower()
+            words = (
+                "gamepad", "controller", "joystick", "xbox", "8bitdo",
+                "dualshock", "dualsense", "gamesir", "pro controller", "usb game",
+            )
+            if any(word in low for word in words):
+                out.append((dev, name or base))
+        return out
+
+    def _read_event_gamepad(self, dev: str, name: str) -> bool:
+        """Read one Linux event gamepad. Return False when unavailable."""
+        EV_KEY = 0x01
+        EV_ABS = 0x03
+
+        BTN_SOUTH = 304
+        BTN_EAST = 305
+        BTN_NORTH = 307
+        BTN_WEST = 308
+        BTN_TL = 310
+        BTN_TR = 311
+        BTN_SELECT = 314
+        BTN_START = 315
+
+        BTN_DPAD_UP = 544
+        BTN_DPAD_DOWN = 545
+        BTN_DPAD_LEFT = 546
+        BTN_DPAD_RIGHT = 547
+
+        ABS_X = 0
+        ABS_Y = 1
+        ABS_HAT0X = 16
+        ABS_HAT0Y = 17
+
+        button_map = {
+            BTN_SOUTH: "a",
+            BTN_EAST: "b",
+            BTN_WEST: "x",
+            BTN_NORTH: "y",
+            BTN_TL: "l",
+            BTN_TR: "r",
+            BTN_START: "start",
+            BTN_SELECT: "select",
+            BTN_DPAD_UP: "up",
+            BTN_DPAD_DOWN: "down",
+            BTN_DPAD_LEFT: "left",
+            BTN_DPAD_RIGHT: "right",
+        }
+
+        event_size = struct.calcsize("llHHi")
+        axis_state = {}
+        fd = None
+        try:
+            fd = os.open(dev, os.O_RDONLY | os.O_NONBLOCK)
+            self.events.put(("gamepad_status", f"GAMEPAD: {name}"))
+            while self.gamepad_running and os.path.exists(dev):
+                try:
+                    packet = os.read(fd, event_size)
+                except BlockingIOError:
+                    time.sleep(0.01)
+                    continue
+                except OSError:
+                    break
+                if len(packet) != event_size:
+                    time.sleep(0.01)
+                    continue
+
+                _sec, _usec, etype, code, value = struct.unpack("llHHi", packet)
+
+                if etype == EV_KEY and value == 1:
+                    key = button_map.get(code)
+                    if key:
+                        self._queue_host_key(key)
+                elif etype == EV_ABS and code in (ABS_X, ABS_Y, ABS_HAT0X, ABS_HAT0Y):
+                    if code in (ABS_HAT0X, ABS_HAT0Y):
+                        pos = -1 if value < 0 else (1 if value > 0 else 0)
+                    else:
+                        pos = -1 if value < -12000 else (1 if value > 12000 else 0)
+
+                    old = axis_state.get(code, 0)
+                    axis_state[code] = pos
+                    if pos == 0 or pos == old:
+                        continue
+
+                    if code in (ABS_X, ABS_HAT0X):
+                        self._queue_host_key("left" if pos < 0 else "right")
+                    else:
+                        self._queue_host_key("up" if pos < 0 else "down")
+            return True
+        except PermissionError:
+            self.events.put(("gamepad_log", f"No permission for {dev}; trying joystick fallback"))
+            return False
+        except OSError as exc:
+            self.events.put(("gamepad_log", f"Gamepad event read failed on {dev}: {exc}"))
+            return False
+        finally:
+            if fd is not None:
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
+
+    def _read_js_gamepad(self, dev: str) -> bool:
+        """Semantic Linux joystick fallback based on the proven BloomPetz path."""
+        if fcntl is None:
+            return False
+
+        ABS_X = 0x00
+        ABS_Y = 0x01
+        ABS_HAT0X = 0x10
+        ABS_HAT0Y = 0x11
+
+        BTN_SOUTH = 0x130
+        BTN_EAST = 0x131
+        BTN_NORTH = 0x133
+        BTN_WEST = 0x134
+        BTN_TL = 0x136
+        BTN_TR = 0x137
+        BTN_SELECT = 0x13a
+        BTN_START = 0x13b
+
+        button_map = {
+            BTN_SOUTH: "a",
+            BTN_EAST: "b",
+            BTN_WEST: "x",
+            BTN_NORTH: "y",
+            BTN_TL: "l",
+            BTN_TR: "r",
+            BTN_START: "start",
+            BTN_SELECT: "select",
+        }
+
+        IOC_NRBITS = 8
+        IOC_TYPEBITS = 8
+        IOC_SIZEBITS = 14
+        IOC_NRSHIFT = 0
+        IOC_TYPESHIFT = IOC_NRSHIFT + IOC_NRBITS
+        IOC_SIZESHIFT = IOC_TYPESHIFT + IOC_TYPEBITS
+        IOC_DIRSHIFT = IOC_SIZESHIFT + IOC_SIZEBITS
+        IOC_READ = 2
+
+        def _ior(type_chr, nr, size):
+            return ((IOC_READ << IOC_DIRSHIFT) |
+                    (ord(type_chr) << IOC_TYPESHIFT) |
+                    (nr << IOC_NRSHIFT) |
+                    (size << IOC_SIZESHIFT))
+
+        JSIOCGAXMAP = _ior("j", 0x32, 0x40)
+        JSIOCGBTNMAP = _ior("j", 0x34, 0x400)
+
+        fd = None
+        try:
+            fd = os.open(dev, os.O_RDONLY | os.O_NONBLOCK)
+            axmap = array.array("B", [0] * 0x40)
+            btnmap = array.array("H", [0] * 0x200)
+            fcntl.ioctl(fd, JSIOCGAXMAP, axmap, True)
+            fcntl.ioctl(fd, JSIOCGBTNMAP, btnmap, True)
+
+            name = os.path.basename(dev)
+            self.events.put(("gamepad_status", f"GAMEPAD: {name}"))
+            axis_state = {}
+
+            while self.gamepad_running and os.path.exists(dev):
+                try:
+                    packet = os.read(fd, 8)
+                except BlockingIOError:
+                    time.sleep(0.01)
+                    continue
+                except OSError:
+                    break
+                if len(packet) != 8:
+                    time.sleep(0.01)
+                    continue
+
+                _ms, value, etype, number = struct.unpack("IhBB", packet)
+                etype &= ~0x80  # JS_EVENT_INIT
+
+                if etype == 0x01 and value:
+                    code = btnmap[number] if number < len(btnmap) else None
+                    key = button_map.get(code)
+                    if key:
+                        self._queue_host_key(key)
+
+                elif etype == 0x02:
+                    code = axmap[number] if number < len(axmap) else None
+                    if code not in (ABS_X, ABS_Y, ABS_HAT0X, ABS_HAT0Y):
+                        continue
+                    pos = -1 if value < -16000 else (1 if value > 16000 else 0)
+                    old = axis_state.get(code, 0)
+                    axis_state[code] = pos
+                    if pos == 0 or pos == old:
+                        continue
+                    if code in (ABS_X, ABS_HAT0X):
+                        self._queue_host_key("left" if pos < 0 else "right")
+                    else:
+                        self._queue_host_key("up" if pos < 0 else "down")
+            return True
+        except (OSError, PermissionError) as exc:
+            self.events.put(("gamepad_log", f"Joystick fallback failed on {dev}: {exc}"))
+            return False
+        finally:
+            if fd is not None:
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
+
+    def _gamepad_worker(self):
+        """Prefer event* semantic mapping; fall back to js* semantic mapping."""
+        while self.gamepad_running:
+            handled = False
+
+            candidates = self._event_gamepad_candidates()
+            if candidates:
+                dev, name = candidates[0]
+                handled = self._read_event_gamepad(dev, name)
+
+            if not handled:
+                js_devices = sorted(glob.glob("/dev/input/js*"))
+                if js_devices:
+                    handled = self._read_js_gamepad(js_devices[0])
+
+            if not handled:
+                self.events.put(("gamepad_status", "GAMEPAD: SEARCHING"))
+                time.sleep(0.75)
+            else:
+                # Device was disconnected or reader ended; rescan cleanly.
+                self.events.put(("gamepad_status", "GAMEPAD: SEARCHING"))
+                time.sleep(0.35)
+
     def _mini_key(self, key: str):
         key = key.strip().lower()
         if key not in self.device_capabilities:
@@ -498,7 +756,7 @@ class HappyJarzApp(tk.Tk):
 
         # U8g2 SSD1306 full-buffer layout: 8 vertical pixels per byte,
         # 128 bytes per page. This mirrors the actual device framebuffer.
-        on = "#d9f99d"
+        on = "#3b82f6"
         off = "#000000"
         rows = []
         for y in range(64):
@@ -853,6 +1111,12 @@ class HappyJarzApp(tk.Tk):
                             pass
                 elif kind == "line":
                     self._handle_line(payload)
+                elif kind == "host_key":
+                    self._mini_key(payload)
+                elif kind == "gamepad_status":
+                    self.gamepad_status.set(payload)
+                elif kind == "gamepad_log":
+                    self._log(payload)
                 elif kind == "tx":
                     self._log(f"TX  {payload}")
                 elif kind == "log":
@@ -876,6 +1140,7 @@ class HappyJarzApp(tk.Tk):
             self.log_text.configure(state="disabled")
 
     def _on_close(self):
+        self.gamepad_running = False
         self.link.close()
         self.destroy()
 
