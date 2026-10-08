@@ -8,6 +8,7 @@ APP_PROTOCOL_V0_3.md. Unsupported commands may return HJ|ERR on older firmware.
 
 from __future__ import annotations
 
+import base64
 import queue
 import threading
 import time
@@ -85,6 +86,8 @@ class JarSerial:
                     self.reader_thread.start()
                     self.send("STREAM TOUCH ON")
                     self.send("GET STATUS")
+                    self.send("GET CAPS")
+                    self.send("STREAM OLED ON")
                     return
                 probe.close()
             except (serial.SerialException, OSError):
@@ -149,8 +152,8 @@ class HappyJarzApp(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title(f"{APP_NAME} v{APP_VERSION}")
-        self.geometry("1080x760")
-        self.minsize(900, 650)
+        self.geometry("1080x900")
+        self.minsize(900, 760)
         self.configure(bg=BG)
 
         LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -166,6 +169,12 @@ class HappyJarzApp(tk.Tk):
         self.input_name_labels = {}
         self.input_value_labels = {}
         self.device_capabilities = set(self.simple_inputs)
+        self.mini_buttons = {}
+        self.oled_image = None
+        self.oled_scaled_image = None
+        self.oled_mirror_label = None
+        self.oled_mirror_status = tk.StringVar(value="WAITING FOR OLED")
+        self.oled_last_seq = 0
 
         self.brightness_var = tk.IntVar(value=75)
         self.pattern_var = tk.StringVar(value="SOLID")
@@ -386,6 +395,124 @@ class HappyJarzApp(tk.Tk):
             inputbox.columnconfigure(grid_col, weight=1)
 
         self._apply_input_capabilities(self.device_capabilities)
+        self._build_mini_console(root)
+
+    def _build_mini_console(self, root):
+        outer, mini = self._card(root, 8)
+        outer.pack(fill="both", expand=True, pady=(8, 0))
+
+        header = ttk.Frame(mini, style="Panel.TFrame")
+        header.pack(fill="x", pady=(0, 6))
+        ttk.Label(header, text="HAPPY JARZ MINI  •  LIVE OLED + APP GAMEPAD",
+                  style="Section.TLabel").pack(side="left")
+        ttk.Label(header, textvariable=self.oled_mirror_status,
+                  style="PanelMuted.TLabel").pack(side="right")
+
+        body = ttk.Frame(mini, style="Panel.TFrame")
+        body.pack(fill="both", expand=True)
+        body.columnconfigure(1, weight=1)
+
+        # Actual 128x64 device framebuffer, displayed at 2x.
+        screen_box = tk.Frame(body, bg="#05080d", bd=1, relief="sunken")
+        screen_box.grid(row=0, column=0, sticky="nw", padx=(0, 12))
+        self.oled_image = tk.PhotoImage(width=128, height=64)
+        self.oled_image.put("#000000", to=(0, 0, 128, 64))
+        self.oled_scaled_image = self.oled_image.zoom(2, 2)
+        self.oled_mirror_label = tk.Label(
+            screen_box, image=self.oled_scaled_image,
+            bg="#000000", bd=0, padx=0, pady=0,
+        )
+        self.oled_mirror_label.pack(padx=6, pady=6)
+
+        controls = ttk.Frame(body, style="Panel.TFrame")
+        controls.grid(row=0, column=1, sticky="nsew")
+        for col in range(6):
+            controls.columnconfigure(col, weight=1)
+
+        button_defs = (
+            ("↑ UP", "up"), ("↓ DOWN", "down"), ("← LEFT", "left"),
+            ("→ RIGHT", "right"), ("A", "a"), ("B", "b"),
+            ("X", "x"), ("Y", "y"), ("L", "l"),
+            ("R", "r"), ("START", "start"), ("SELECT", "select"),
+        )
+        for index, (label, key) in enumerate(button_defs):
+            row = index // 6
+            col = index % 6
+            btn = tk.Button(
+                controls,
+                text=label,
+                command=lambda k=key: self._mini_key(k),
+                bg=PANEL_2,
+                fg=TEXT,
+                activebackground="#24324d",
+                activeforeground="#ffffff",
+                disabledforeground="#4b5563",
+                relief="raised",
+                bd=1,
+                font=("TkDefaultFont", 9, "bold"),
+                padx=6,
+                pady=7,
+                takefocus=False,
+            )
+            btn.grid(row=row, column=col, sticky="nsew", padx=3, pady=3)
+            self.mini_buttons[key] = btn
+
+        ttk.Label(
+            controls,
+            text="Buttons send into the Jar's normal input path. FULL-only controls stay disabled until advertised by the device.",
+            style="PanelMuted.TLabel",
+            wraplength=620,
+        ).grid(row=2, column=0, columnspan=6, sticky="w", padx=3, pady=(5, 0))
+
+        self._apply_input_capabilities(self.device_capabilities)
+
+    def _mini_key(self, key: str):
+        key = key.strip().lower()
+        if key not in self.device_capabilities:
+            return
+        if self.link.send(f"KEY {key.upper()}"):
+            self._pulse_mini_button(key)
+
+    def _pulse_mini_button(self, key: str):
+        btn = self.mini_buttons.get(key)
+        if btn is None or str(btn.cget("state")) == "disabled":
+            return
+        try:
+            btn.configure(relief="sunken", bg=ACCENT)
+            self.after(120, lambda b=btn: b.configure(relief="raised", bg=PANEL_2))
+        except tk.TclError:
+            pass
+
+    def _render_oled_frame(self, seq: int, encoded: str):
+        try:
+            raw = base64.b64decode(encoded, validate=True)
+        except Exception:
+            self.oled_mirror_status.set("OLED FRAME ERROR")
+            return
+        if len(raw) != 1024:
+            self.oled_mirror_status.set(f"OLED BAD SIZE {len(raw)}")
+            return
+        if seq and seq <= self.oled_last_seq:
+            return
+        self.oled_last_seq = seq
+
+        # U8g2 SSD1306 full-buffer layout: 8 vertical pixels per byte,
+        # 128 bytes per page. This mirrors the actual device framebuffer.
+        on = "#d9f99d"
+        off = "#000000"
+        rows = []
+        for y in range(64):
+            page = (y >> 3) * 128
+            bit = 1 << (y & 7)
+            row = [on if (raw[page + x] & bit) else off for x in range(128)]
+            rows.append("{" + " ".join(row) + "}")
+        try:
+            self.oled_image.put(" ".join(rows))
+            self.oled_scaled_image = self.oled_image.zoom(2, 2)
+            self.oled_mirror_label.configure(image=self.oled_scaled_image)
+            self.oled_mirror_status.set(f"LIVE  •  FRAME {seq}")
+        except tk.TclError:
+            self.oled_mirror_status.set("OLED DRAW ERROR")
 
     def _build_setup_tab(self, root):
         top = ttk.Frame(root)
@@ -538,6 +665,8 @@ class HappyJarzApp(tk.Tk):
                 self.input_value_labels[key].configure(
                     fg=TEXT if enabled else "#4b5563"
                 )
+            if key in self.mini_buttons:
+                self.mini_buttons[key].configure(state="normal" if enabled else "disabled")
             if not enabled:
                 self.touch_vars[key].set("N/A")
             elif self.touch_vars[key].get() == "N/A":
@@ -621,6 +750,17 @@ class HappyJarzApp(tk.Tk):
             if raw:
                 caps = {part.strip().lower() for part in raw.split(",") if part.strip()}
                 self._apply_input_capabilities(caps)
+        elif line.startswith("HJ|OLED|"):
+            if fields.get("codec") == "b64v1" and fields.get("data"):
+                try:
+                    seq = int(fields.get("seq", "0"))
+                except ValueError:
+                    seq = 0
+                self._render_oled_frame(seq, fields["data"])
+        elif line.startswith("HJ|EVENT|") and fields.get("input"):
+            key = fields["input"].strip().lower()
+            if key in self.mini_buttons:
+                self._pulse_mini_button(key)
         elif line.startswith("HJ|LED_FRAME|"):
             for led in (1, 2, 3, 4):
                 raw = fields.get(f"led{led}") or fields.get(f"live_led{led}")
@@ -697,6 +837,15 @@ class HappyJarzApp(tk.Tk):
                         self.live_led_colors[led] = None
                         if led in self.led_swatches:
                             self.led_swatches[led].configure(bg="#111827")
+                    self.oled_last_seq = 0
+                    self.oled_mirror_status.set("WAITING FOR OLED")
+                    if self.oled_image is not None:
+                        try:
+                            self.oled_image.put("#000000", to=(0, 0, 128, 64))
+                            self.oled_scaled_image = self.oled_image.zoom(2, 2)
+                            self.oled_mirror_label.configure(image=self.oled_scaled_image)
+                        except tk.TclError:
+                            pass
                 elif kind == "line":
                     self._handle_line(payload)
                 elif kind == "tx":
