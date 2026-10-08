@@ -21,6 +21,15 @@ if count_old not in s:
     raise SystemExit("visual saver pack failed: 4-mode saver count marker not found")
 s = s.replace(count_old, 'static constexpr uint8_t HJ_SCREENSAVER_COUNT = 7;\n', 1)
 
+state_marker = 'static uint8_t hjParticleSpeed = 1;\n'
+if state_marker not in s:
+    raise SystemExit("visual saver pack failed: particle speed state marker not found")
+s = s.replace(
+    state_marker,
+    state_marker + 'static uint8_t hjVisualSpeed = 1;\nstatic uint32_t hjVisualSeed = 0xB1008255UL;\n',
+    1,
+)
+
 marker = '''static void oledRenderSaverParticles() {
 '''
 pos = s.find(marker)
@@ -34,8 +43,6 @@ end += 2
 visual_code = r'''
 
 // HAPPYJARZ_VISUAL_SAVER_PACK_V1
-static uint8_t hjVisualSpeed = 1;
-static uint32_t hjVisualSeed = 0xB1008255UL;
 
 static constexpr uint8_t HJ_GLITTER_COUNT = 18;
 struct HjGlitterBit {
@@ -123,8 +130,8 @@ static void oledRenderSaverBloom() {
   }
 
   // Lower lotus bowl / leaves.
-  oled->drawArc(cx,47,24,18,20,160);
-  oled->drawArc(cx,47,17,12,20,160);
+  oled->drawArc(cx,47,24,20,160);
+  oled->drawArc(cx,47,17,20,160);
   oled->drawCircle(cx,cy,2,U8G2_DRAW_ALL);
 
   // Occasional tiny pollen pixels.
