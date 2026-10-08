@@ -9,8 +9,8 @@ These rules are mandatory for HAPPY JARZ releases and behavior-changing builds.
 
 The current release pair is:
 
-- App `1.5.0`
-- Firmware `0.15.0`
+- App `1.6.0`
+- Firmware `0.16.0`
 
 ## Mandatory bump rule
 
@@ -113,3 +113,10 @@ Host app remains 1.5.0 and exposes the new pattern names through its existing pa
 Color-rolling chase update.
 
 All topology chase patterns now generate their own slowly rotating hue while preserving their existing physical motion paths.
+
+
+### App 1.6.0 / Firmware 0.16.0
+
+100-pattern release.
+
+Adds a 56-entry descriptor-driven pattern bank on top of the existing 44 effects, for exactly 100 registered patterns total. The host dropdown and firmware registry are updated together.
