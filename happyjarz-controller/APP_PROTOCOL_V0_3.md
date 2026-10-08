@@ -12,6 +12,8 @@ This document extends the existing USB CDC protocol without replacing any known-
 - `STREAM TOUCH OFF`
 - `SET LED1 COLOR R G B`
 - `SET LED2 COLOR R G B`
+- `SET LED3 COLOR R G B`
+- `SET LED4 COLOR R G B`
 - `SET BRIGHTNESS 0-100`
 - `SET PATTERN OFF|SOLID|FADE|RAINBOW|PULSE|RANDOM`
 - `TEST RGB`
