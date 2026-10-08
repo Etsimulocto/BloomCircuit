@@ -180,7 +180,7 @@ PWR BAT
 
 ## Four-lamp lighting
 
-Firmware v0.11.0 expands the physical APA106 chain to four lamps while preserving the proven GPIO7/RMT transport.
+Firmware v0.12.0 retains the four-lamp APA106 chain on the proven GPIO7/RMT transport and adds the host KEY/CAPS/OLED synchronization protocol used by app v1.5.0.
 
 - all four lamps remain on the same daisy-chain data pin
 - Light 1 through Light 4 have independent persistent SOLID colors
@@ -258,7 +258,7 @@ Preserve known-good layers. If local LED/touch/OLED behavior works but the deskt
 
 ### Integrated Mini mirror/controller
 
-App v1.4.0 / firmware v0.12.0 add the first synchronized Mini directly to the bottom of LIGHTS + CONTROL.
+App v1.5.0 / firmware v0.12.0 are the current synchronized pair. The Mini was introduced in app v1.4.0 and expanded in v1.5.0 with semantic gamepad routing and the blue OLED mirror.
 
 Current behavior:
 - actual 128x64 U8g2 framebuffer mirror from the device
@@ -296,3 +296,19 @@ Mapped logical controls:
 All gamepad events enter the same host `KEY ...` path used by clickable Mini controls. Device capability gating still applies, so SIMPLE ignores FULL-only actions until a FULL device advertises them.
 
 The Mini OLED mirror uses blue pixels on black to match the physical blue OLED modules.
+
+
+### Synchronization rule
+
+The app must not treat a sent command as proof of physical state.
+
+```text
+host request
+  -> ESP32 applies state
+  -> ESP32 reports authoritative state
+  -> host redraws from returned state
+```
+
+This rule applies to live lamp color, OLED content, input events and future FULL-device controls.
+
+Do not open a second serial connection for the Mini, OLED mirror or gamepad layer. The controller's existing HAPPY JARZ serial link is the single owner.
