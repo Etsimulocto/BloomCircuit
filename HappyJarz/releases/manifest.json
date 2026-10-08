@@ -6,9 +6,9 @@
       "status": "development",
       "hardware_profile": "HJ-SIMPLE-1",
       "region": "US",
-      "firmware_version": "0.17.2",
+      "firmware_version": "0.17.3",
       "artifact": null,
-      "host_app_version": "1.8.1"
+      "host_app_version": "1.8.2"
     },
     "simple-eu": {
       "status": "planned",
