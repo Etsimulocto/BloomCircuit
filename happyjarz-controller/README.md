@@ -258,7 +258,7 @@ Preserve known-good layers. If local LED/touch/OLED behavior works but the deskt
 
 ### Integrated Mini mirror/controller
 
-App v1.7.0 / firmware v0.17.1 are the current synchronized pair. The Mini was introduced in app v1.4.0 and expanded in v1.5.0 with semantic gamepad routing and the blue OLED mirror.
+App v1.7.0 / firmware v0.17.2 are the current synchronized pair. The Mini was introduced in app v1.4.0 and expanded in v1.5.0 with semantic gamepad routing and the blue OLED mirror.
 
 Current behavior:
 - actual 128x64 U8g2 framebuffer mirror from the device
@@ -423,7 +423,7 @@ Exact compiled flash usage must be taken from `arduino-cli compile`; do not infe
 
 ### Seven-mode OLED screensavers
 
-App v1.7.0 / firmware v0.17.1 provide the current seven-mode OLED saver set:
+App v1.7.0 / firmware v0.17.2 provide the current seven-mode OLED saver set:
 
 - SAYINGS
 - SPIRAL
@@ -448,3 +448,8 @@ The first seven-saver staging pass exposed two compile-only integration bugs:
 2. BLOOM used a six-argument `drawArc()` call, while installed U8g2 2.36.19 provides `drawArc(x, y, radius, start, end)`.
 
 Firmware 0.17.1 fixes both in the staging patch. The saver behavior itself is otherwise unchanged from the 0.17.0 feature pass.
+
+
+#### BLOOM petal styles
+
+Firmware 0.17.2 simplifies BLOOM into a clean flower-only saver. It cycles through 4, 6, 8 and 10-petal outline styles with a small center and slow open/close motion. Background pollen, lower bowl/leaves and other decorative elements were removed.
