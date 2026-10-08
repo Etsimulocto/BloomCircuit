@@ -1,6 +1,6 @@
 # HAPPY JARZ Controller
 
-**Current platform release pair:** desktop app **v1.6.0** + firmware **v0.16.0**
+**Current platform release pair:** desktop app **v1.8.3** + firmware **v0.17.9**
 
 This subsystem is the PC/Raspberry Pi field-service and control layer for the HAPPY JARZ powered stand. It sits above the known-good ESP32-S3 light/touch/OLED hardware layer and is designed so desktop-side changes do not casually rewrite the proven APA106 timing.
 
@@ -17,7 +17,7 @@ Current values:
 
 ```text
 App      1.8.3
-Firmware 0.12.0
+Firmware 0.17.9
 ```
 
 Legacy filenames such as `happyjarz_controller_v0_3_3.py`, `happyjarz_integrated_v0_5.ino`, and `flash_happyjarz_v0_5.sh` are compatibility names only. The flasher reads `firmware/VERSION`, injects it into `HJ_FW_VERSION`, and verifies the final staged build before upload.
@@ -165,7 +165,7 @@ Current prototype sensing path:
 
 - GPIO3 ADC
 - divider ratio `2.0`
-- provisional `BATTERY_CAL_FACTOR = 1.370`
+- calibrated `BATTERY_CAL_FACTOR = 0.802`
 - battery percentage is voltage-estimated, not coulomb counted
 
 Bench reference:
@@ -180,7 +180,7 @@ PWR BAT
 
 ## Four-lamp lighting
 
-Firmware v0.12.0 retains the four-lamp APA106 chain on the proven GPIO7/RMT transport and adds the host KEY/CAPS/OLED synchronization protocol used by app v1.5.0.
+Firmware v0.17.9 retains the four-lamp APA106 chain on the proven GPIO7/RMT transport and adds the host KEY/CAPS/OLED synchronization protocol used by app v1.5.0.
 
 - all four lamps remain on the same daisy-chain data pin
 - Light 1 through Light 4 have independent persistent SOLID colors
@@ -258,7 +258,7 @@ Preserve known-good layers. If local LED/touch/OLED behavior works but the deskt
 
 ### Integrated Mini mirror/controller
 
-App v1.7.0 / firmware v0.17.2 are the current synchronized pair. The Mini was introduced in app v1.4.0 and expanded in v1.5.0 with semantic gamepad routing and the blue OLED mirror.
+App v1.8.3 / firmware v0.17.9 are the current synchronized pair. The Mini was introduced in app v1.4.0 and expanded in v1.5.0 with semantic gamepad routing and the blue OLED mirror.
 
 Current behavior:
 - actual 128x64 U8g2 framebuffer mirror from the device
@@ -514,7 +514,7 @@ That means all three pattern-change paths now trigger the same frozen host theme
 The app updates its pattern selector from the device frame, arms a short palette capture, derives the new theme, then freezes it until the next pattern change.
 
 
-#### Firmware 0.17.5 switched accessory pause
+#### Firmware 0.17.9 switched accessory pause
 
 The OLED and four APA106 lamps may share a switched 3.3 V accessory rail while the ESP32 remains powered.
 
@@ -529,7 +529,7 @@ HJ|ACCESSORY|state=ACTIVE|sensor=OLED
 ```
 
 
-#### Firmware 0.17.5 low battery warning
+#### Firmware 0.17.9 low battery warning
 
 When the calibrated Fuel Gauge reports 10% or less, HAPPY JARZ enters a visible low-battery warning overlay:
 
@@ -538,4 +538,35 @@ When the calibrated Fuel Gauge reports 10% or less, HAPPY JARZ enters a visible 
 - every OLED presentation is overridden with `LOW BATTERY / CHARGE ME!!! / <percent>% USB ->`
 - warning clears only after battery reaches 15% to prevent threshold chatter
 
-Unverified or implausible Fuel Gauge readings never trigger the warning. The current prototype still reports `sensor=UNVERIFIED` until the GPIO3 battery divider/calibration is corrected.
+Unverified or implausible Fuel Gauge readings never trigger the warning. The current prototype calibration is corrected on the tested unit and `GET POWER` reports `sensor=OK`. Battery voltage/percentage is filtered to reduce ADC chatter.
+
+#### Firmware 0.17.9 battery smoothing + one-hour sleep
+
+Current Fuel Gauge constants:
+
+```text
+BATTERY_DIVIDER_RATIO = 2.0
+BATTERY_CAL_FACTOR    = 0.802
+```
+
+The tested calibration reference was approximately 2.184V at the GPIO3 ADC while the battery terminals measured 3.50V. The voltage estimate is lightly filtered before percentage conversion so normal ADC noise does not create large visible percentage jumps.
+
+HOME now keeps battery percentage visible while USB is connected instead of replacing it with only `PWR USB / CHG ?`.
+
+One-hour software sleep behavior:
+
+```text
+1 hour no physical input
+-> OLED controller power-save
+-> four lamps blank
+-> pattern engine frozen
+-> ESP32 / clock / alarm / USB / Wi-Fi / touch remain active
+```
+
+Wake sources are any of the six physical touch controls or an alarm firing. A touch used to wake is consumed as wake-only, preventing an accidental pattern/menu/game action.
+
+```text
+HJ|SLEEP|state=ASLEEP|reason=IDLE_1H
+HJ|SLEEP|state=AWAKE|reason=TOUCH
+HJ|SLEEP|state=AWAKE|reason=ALARM
+```
