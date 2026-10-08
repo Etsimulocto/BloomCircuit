@@ -8,6 +8,7 @@ Goals:
 - app/keyboard/gamepad buttons enter the SAME serviceInputs() path as copper touch
 - SIMPLE advertises only its six proven controls
 - OLED mirror comes from the actual U8g2 framebuffer after sendBuffer()
+- LED mirror comes from the actual four-lamp writeFrame() path
 - one existing USB serial connection owns control + telemetry
 - mirror traffic is change-driven and capped at 4 Hz so it cannot become an
   accidental full-speed serial flood
@@ -50,7 +51,7 @@ static int8_t hjHostKeyIndex(String name) {
 }
 
 static void hjPrintCaps() {
-  Serial.println("HJ|CAPS|profile=SIMPLE|controls=up,down,left,right,a,b|oled=128x64|oled_mirror=1|leds=4");
+  Serial.println("HJ|CAPS|profile=SIMPLE|controls=up,down,left,right,a,b|oled=128x64|oled_mirror=1|leds=4|led_mirror=1");
 }
 '''
 s = s.replace(marker, marker + input_block, 1)
@@ -72,6 +73,70 @@ service_repl = service_marker + r'''  // Merge one-shot host events after readin
   }
 '''
 s = s.replace(service_marker, service_repl, 1)
+
+# ---------------------------------------------------------------------------
+# Live four-lamp frame telemetry. writeFrame() is the single hardware output
+# choke point, so capture exactly what every pattern asks the APA106 chain to
+# display. The host may stream it at <=10 Hz; patterns can animate faster.
+# ---------------------------------------------------------------------------
+write_sig = 'static void writeFrame(const Rgb frame[LED_COUNT], uint8_t brightness) {\n'
+write_pos = s.find(write_sig)
+if write_pos < 0:
+    fail("writeFrame marker not found")
+
+led_block = r'''
+// Host LED mirror: raw pattern colors before global brightness scaling.
+// The physical APA106 writer remains untouched; this only observes frames.
+static bool hjLedStream = false;
+static bool hjLedHaveFrame = false;
+static Rgb hjLedLastFrame[LED_COUNT];
+static unsigned long hjLedLastMirrorMs = 0;
+
+static void hjPrintLedFrame(const Rgb frame[LED_COUNT]) {
+  Serial.print("HJ|LED_FRAME");
+  for (uint8_t i=0; i<LED_COUNT; ++i) {
+    Serial.print("|led"); Serial.print(i+1); Serial.print("=");
+    Serial.print(frame[i].r); Serial.print(",");
+    Serial.print(frame[i].g); Serial.print(",");
+    Serial.print(frame[i].b);
+  }
+  Serial.print("|pattern="); Serial.print(patternName);
+  Serial.print("|brightness="); Serial.println(brightnessPercent);
+}
+
+static void hjObserveLedFrame(const Rgb frame[LED_COUNT]) {
+  memcpy(hjLedLastFrame, frame, sizeof(hjLedLastFrame));
+  hjLedHaveFrame = true;
+  if (!hjLedStream || !Serial) return;
+  unsigned long now = millis();
+  if (now - hjLedLastMirrorMs < 100UL) return;
+  hjLedLastMirrorMs = now;
+  hjPrintLedFrame(frame);
+}
+
+static void hjEmitLedFrameNow() {
+  if (hjLedHaveFrame) hjPrintLedFrame(hjLedLastFrame);
+  else hjPrintLedFrame(ledColor);
+}
+
+'''
+s = s[:write_pos] + led_block + s[write_pos:]
+
+write_pos = s.find(write_sig, write_pos + len(led_block))
+write_end = s.find('\n}', write_pos)
+if write_end < 0:
+    fail("writeFrame end not found")
+write_body = s[write_pos:write_end]
+needle = '  delayMicroseconds(100);'
+if needle not in write_body:
+    fail("writeFrame latch marker not found")
+write_body = write_body.replace(
+    needle,
+    needle + '\n  hjObserveLedFrame(frame);',
+    1,
+)
+s = s[:write_pos] + write_body + s[write_end:]
+
 
 # ---------------------------------------------------------------------------
 # OLED framebuffer mirror. Replace all existing U8g2 presents FIRST, then add
@@ -163,6 +228,18 @@ if cmd_marker not in s:
     fail("GET STATUS command marker not found")
 
 commands = r'''  if(line=="GET CAPS"){hjPrintCaps();return;}
+  if(line=="GET LED FRAME"){hjEmitLedFrameNow();return;}
+  if(line=="STREAM LED ON"){
+    hjLedStream=true;
+    ack("STREAM LED ON");
+    hjEmitLedFrameNow();
+    return;
+  }
+  if(line=="STREAM LED OFF"){
+    hjLedStream=false;
+    ack("STREAM LED OFF");
+    return;
+  }
   if(line=="GET OLED"){hjEmitOledFrame(true);return;}
   if(line=="STREAM OLED ON"){
     hjOledStream=true;
@@ -196,5 +273,5 @@ s = s.replace(cmd_marker, cmd_marker + commands, 1)
 
 p.write_text(s, encoding="utf-8")
 print(
-    "Applied HAPPY JARZ host sync: SIMPLE KEY input + CAPS + actual OLED framebuffer mirror."
+    "Applied HAPPY JARZ host sync: SIMPLE KEY + CAPS + actual OLED and four-lamp frame mirrors."
 )
