@@ -99,3 +99,22 @@ The Mini appearance editor remains planned until the production wood stand geome
 The OLED mirror is blue-on-black to match the blue physical SSD1306 modules used by HAPPY JARZ.
 
 The current Mini is a functional placeholder layout. Once the production wood stand geometry is finalized, the Mini appearance editor should reproduce the real stand's OLED position, lamp positions, control positions, labels and overall outline without changing the underlying logical input or synchronization model.
+
+
+## OLED saver modes
+
+The host exposes all seven device-local saver modes without reimplementing their graphics:
+
+```text
+SAYINGS
+SPIRAL
+TRIPPY
+PARTICLES
+BLOOM
+BREATHE
+GLITTER
+```
+
+The ESP32 remains the renderer and source of truth. The app only sends saver commands and mirrors the returned 1024-byte OLED framebuffer. This keeps BLOOM, BREATHE, GLITTER, arcade screens and future device-local visuals synchronized with the physical display.
+
+For BLOOM/BREATHE/GLITTER, `HJ|SAVER|` reports the shared `visual_speed` value used by the host status readout.
