@@ -23,3 +23,11 @@ See:
 - `../docs/SYNCHRONICITY.md`
 
 The central design goal is hardware / USB / host-app synchronicity. Host UI state follows authoritative device state rather than simply caching commands it sent.
+
+## Current synchronized release
+
+Host app: **1.8.3**
+
+Firmware: **0.17.9**
+
+The host continues to treat device state as authoritative. Current firmware also reports accessory pause/resume and battery-warning events. One-hour sleep remains device-local so the Jar can keep time and service its alarm without a host connection.
