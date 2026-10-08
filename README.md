@@ -10,7 +10,7 @@ The repository also contains the current **HAPPY JARZ controller/firmware stack*
 
 See [`happyjarz-controller/README.md`](happyjarz-controller/README.md) for the controller/service workflow and [`happyjarz-controller/firmware/README.md`](happyjarz-controller/firmware/README.md) for the ESP32 firmware layer.
 
-Current integrated hardware-development firmware on `feature/happyjarz-catch-the-glitter`: **v0.11.0**. The newer platform branch `feature/happyjarz-platform` carries the synchronized host/app architecture at **app v1.5.0 + firmware v0.12.0**.
+Current integrated hardware-development firmware on `feature/happyjarz-catch-the-glitter`: **v0.11.0**. The newer platform branch `feature/happyjarz-platform` carries the synchronized HAPPY JARZ stack at **app v1.7.0 + firmware v0.17.1**.
 
 Current proven hardware:
 
@@ -56,7 +56,7 @@ Current on-device UI includes:
 - GAMES with seven native OLED mini-games
 - SETTINGS with ALARM and TIMER
 - SYSTEM status
-- 30-second SAYINGS / SPIRAL / TRIPPY / PARTICLES screensavers
+- 30-second SAYINGS / SPIRAL / TRIPPY / PARTICLES / BLOOM / BREATHE / GLITTER screensavers
 
 The pattern library currently includes:
 
@@ -236,3 +236,19 @@ Key additions on the platform branch:
 - SIMPLE / FULL and US / EU release-lane architecture
 
 The production FULL board GPIO map remains intentionally uncommitted until the actual board is received and bench-tested.
+
+
+### Current HAPPY JARZ platform snapshot
+
+`feature/happyjarz-platform` currently targets:
+
+```text
+Host app  1.7.0
+Firmware  0.17.1
+Patterns  100
+Savers    7
+```
+
+The firmware includes 100 registered four-lamp light patterns plus seven board-local OLED screensavers. The newest saver pack adds BLOOM, BREATHE and GLITTER, while the host app mirrors the actual blue SSD1306 framebuffer over the same USB serial connection used for control and telemetry.
+
+Firmware 0.17.1 is the compile-fix release for that saver pack: visual-saver state is declared before saver-status telemetry uses it, and BLOOM uses the installed U8g2 five-argument `drawArc(x, y, radius, start, end)` API.
