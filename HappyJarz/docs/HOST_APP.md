@@ -70,7 +70,7 @@ This applies to physical touch changes, animated patterns, OLED navigation, game
 See SYNCHRONICITY.md.
 ## Current implementation status
 
-Host app v1.4.0 on the platform branch now includes:
+Host app v1.5.0 on the platform branch now includes:
 
 - four Light cards with separate BASE and LIVE swatches
 - 12-input gamepad tester: UP/DOWN/LEFT/RIGHT, A/B/X/Y, L/R, START/SELECT
@@ -87,5 +87,8 @@ The integrated Mini is now implemented in LIGHTS + CONTROL:
 - capability gating for SIMPLE vs FULL
 - one shared serial connection
 - returned device input events pulse the Mini controls
+- semantic Linux gamepad routing: event* preferred, js* fallback
+- D-pad/hat/stick plus A/B/X/Y/L/R/START/SELECT logical mapping
+- blue OLED mirror pixels matching the physical blue display
 
 The Mini appearance editor remains planned until the production wood stand geometry is finalized.
