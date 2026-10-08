@@ -74,82 +74,263 @@ static void showFour(const Rgb &a, const Rgb &b, const Rgb &c, const Rgb &d, uin
     count=1,
 )
 
-replace_once(
-    '    showPair(wheel((uint8_t)patternStep), wheel((uint8_t)(patternStep+96)), bri);\n',
-    '    showFour(wheel((uint8_t)patternStep), wheel((uint8_t)(patternStep+64)),\n'
-    '             wheel((uint8_t)(patternStep+128)), wheel((uint8_t)(patternStep+192)), bri);\n',
-    "RAINBOW pair",
-)
-
-# RANDOM: four independent colors.
-random_re = re.compile(
-    r'  if \(patternName == "RANDOM"\) \{\n'
-    r'    if \(now-patternLastMs < 300\) return; patternLastMs=now;\n'
-    r'    showPair\(\{\(uint8_t\)random\(256\),\(uint8_t\)random\(256\),\(uint8_t\)random\(256\)\},\n'
-    r'             \{\(uint8_t\)random\(256\),\(uint8_t\)random\(256\),\(uint8_t\)random\(256\)\},bri\); return;\n'
-    r'  \}'
-)
-if not random_re.search(s):
-    raise SystemExit("four-light patch failed: RANDOM marker not found")
-s = random_re.sub(
-    '''  if (patternName == "RANDOM") {
-    if (now-patternLastMs < 300) return; patternLastMs=now;
-    showFour({(uint8_t)random(256),(uint8_t)random(256),(uint8_t)random(256)},
-             {(uint8_t)random(256),(uint8_t)random(256),(uint8_t)random(256)},
-             {(uint8_t)random(256),(uint8_t)random(256),(uint8_t)random(256)},
-             {(uint8_t)random(256),(uint8_t)random(256),(uint8_t)random(256)},bri); return;
-  }''',
-    s,
-    count=1,
-)
-
-# COLOR_SWAP rotates all four user-selected SOLID colors.
-color_swap_re = re.compile(
-    r'  if \(patternName == "COLOR_SWAP"\) \{\n'
-    r'    if \(now-patternLastMs < 700\) return; patternLastMs=now;\n'
-    r'    bool flip=.*?return;\n'
-    r'  \}',
+# Replace the entire staged pattern service with a true four-lamp engine.
+# This is deliberately done after the shared pattern library is staged so no
+# legacy two-lamp showPair() call can accidentally survive into the final build.
+service_re = re.compile(
+    r'static void servicePattern\(\) \{.*?\n\}\n\n(?=static void hjSetLed)',
     re.DOTALL,
 )
-if not color_swap_re.search(s):
-    raise SystemExit("four-light patch failed: COLOR_SWAP marker not found")
-s = color_swap_re.sub(
-    '''  if (patternName == "COLOR_SWAP") {
-    if (now-patternLastMs < 700) return; patternLastMs=now;
-    uint8_t shift=(uint8_t)(patternStep++ & 3U);
+if not service_re.search(s):
+    raise SystemExit("four-light patch failed: servicePattern marker not found")
+
+service_four = r'''static void servicePattern() {
+  // HAPPYJARZ_FOUR_LAMP_PATTERN_ENGINE_V2
+  if (patternName == "SOLID") return;
+  if (patternName == "OFF") { allOff(); return; }
+
+  unsigned long now = millis();
+  uint8_t bri = safeBrightness(brightnessPercent);
+  if (bri == 0) { allOff(); return; }
+
+  // Base-color brightness effects already operate on all four saved lamp colors.
+  if (patternName == "FADE" || patternName == "BREATH") {
+    uint16_t interval = patternName == "BREATH" ? 35 : 22;
+    if (now-patternLastMs < interval) return; patternLastMs=now;
+    uint8_t level = triangle8(patternStep, patternName == "BREATH" ? 260 : 200);
+    uint8_t floorPct = patternName == "BREATH" ? 5 : 8;
+    uint8_t pct = floorPct + (uint8_t)((uint16_t)level*(100U-floorPct)/255U);
+    writeFrame(ledColor,(uint8_t)((uint16_t)pct*bri/100U));
+    patternStep++; return;
+  }
+
+  if (patternName == "PULSE") {
+    if (now-patternLastMs < 16) return; patternLastMs=now;
+    uint16_t phase=patternStep%150; uint8_t pct;
+    if (phase<30) pct=10+(uint8_t)((uint16_t)phase*90U/29U);
+    else if (phase<60) pct=100-(uint8_t)((uint16_t)(phase-30)*90U/29U);
+    else pct=10;
+    writeFrame(ledColor,(uint8_t)((uint16_t)pct*bri/100U));
+    patternStep++; return;
+  }
+
+  // Four equally-spaced hues moving around the physical chain.
+  if (patternName == "RAINBOW") {
+    if (now-patternLastMs < 35) return; patternLastMs=now;
+    showFour(
+      wheel((uint8_t)patternStep),
+      wheel((uint8_t)(patternStep+64)),
+      wheel((uint8_t)(patternStep+128)),
+      wheel((uint8_t)(patternStep+192)), bri);
+    patternStep++; return;
+  }
+
+  // All four bulbs intentionally share one hue for a uniform color wash.
+  if (patternName == "HUE_FADE") {
+    if (now-patternLastMs < 45) return; patternLastMs=now;
+    Rgb c=wheel((uint8_t)patternStep);
+    showFour(c,c,c,c,bri);
+    patternStep++; return;
+  }
+
+  // Two opposing hues alternate around the four-lamp ring/line.
+  if (patternName == "DUAL_HUE") {
+    if (now-patternLastMs < 45) return; patternLastMs=now;
+    Rgb a=wheel((uint8_t)patternStep);
+    Rgb b=wheel((uint8_t)(patternStep+128));
+    showFour(a,b,a,b,bri);
+    patternStep++; return;
+  }
+
+  if (patternName == "DRIFT") {
+    if (now-patternLastMs < 70) return; patternLastMs=now;
+    uint8_t t0=triangle8(patternStep,220);
+    uint8_t t1=triangle8(patternStep+55,220);
+    uint8_t t2=triangle8(patternStep+110,220);
+    uint8_t t3=triangle8(patternStep+165,220);
+    showFour(
+      blendRgb({20,0,90},{0,120,255},t0),
+      blendRgb({0,50,120},{130,0,190},t1),
+      blendRgb({20,0,90},{0,120,255},t2),
+      blendRgb({0,50,120},{130,0,190},t3), bri);
+    patternStep++; return;
+  }
+
+  if (patternName == "AURORA") {
+    if (now-patternLastMs < 55) return; patternLastMs=now;
+    uint8_t t0=triangle8(patternStep,240);
+    uint8_t t1=triangle8(patternStep+60,240);
+    uint8_t t2=triangle8(patternStep+120,240);
+    uint8_t t3=triangle8(patternStep+180,240);
+    showFour(
+      blendRgb({0,180,90},{100,0,220},t0),
+      blendRgb({0,80,255},{0,220,120},t1),
+      blendRgb({0,220,120},{90,20,230},t2),
+      blendRgb({0,70,220},{20,255,140},t3), bri);
+    patternStep++; return;
+  }
+
+  if (patternName == "OCEAN") {
+    if (now-patternLastMs < 65) return; patternLastMs=now;
+    uint8_t t0=triangle8(patternStep,180);
+    uint8_t t1=triangle8(patternStep+45,180);
+    uint8_t t2=triangle8(patternStep+90,180);
+    uint8_t t3=triangle8(patternStep+135,180);
+    showFour(
+      blendRgb({0,20,100},{0,180,255},t0),
+      blendRgb({0,120,180},{0,30,130},t1),
+      blendRgb({0,35,120},{0,220,210},t2),
+      blendRgb({0,100,200},{20,40,150},t3), bri);
+    patternStep++; return;
+  }
+
+  // Uniform lavender remains intentionally uniform, but all four are explicit.
+  if (patternName == "LAVENDER") {
+    if (now-patternLastMs < 70) return; patternLastMs=now;
+    uint8_t t=triangle8(patternStep,220);
+    Rgb c=blendRgb({90,20,150},{230,120,255},t);
+    showFour(c,c,c,c,bri);
+    patternStep++; return;
+  }
+
+  if (patternName == "SUNSET") {
+    if (now-patternLastMs < 60) return; patternLastMs=now;
+    uint8_t t0=triangle8(patternStep,200);
+    uint8_t t1=triangle8(patternStep+50,200);
+    uint8_t t2=triangle8(patternStep+100,200);
+    uint8_t t3=triangle8(patternStep+150,200);
+    showFour(
+      blendRgb({255,30,0},{255,130,20},t0),
+      blendRgb({255,0,100},{100,0,180},t1),
+      blendRgb({255,90,0},{255,20,120},t2),
+      blendRgb({160,0,180},{255,100,20},t3), bri);
+    patternStep++; return;
+  }
+
+  if (patternName == "CHRISTMAS") {
+    if (now-patternLastMs < 550) return; patternLastMs=now;
+    bool flip=(patternStep++ & 1U);
+    Rgb red={255,0,0}, green={0,255,0};
+    showFour(flip?red:green, flip?green:red, flip?red:green, flip?green:red, bri);
+    return;
+  }
+
+  if (patternName == "HALLOWEEN") {
+    if (now-patternLastMs < 500) return; patternLastMs=now;
+    bool flip=(patternStep++ & 1U);
+    Rgb orange={255,70,0}, purple={120,0,255};
+    showFour(flip?orange:purple, flip?purple:orange,
+             flip?orange:purple, flip?purple:orange, bri);
+    return;
+  }
+
+  if (patternName == "VALENTINE") {
+    if (now-patternLastMs < 45) return; patternLastMs=now;
+    uint8_t t0=triangle8(patternStep,180);
+    uint8_t t1=triangle8(patternStep+45,180);
+    uint8_t t2=triangle8(patternStep+90,180);
+    uint8_t t3=triangle8(patternStep+135,180);
+    showFour(
+      blendRgb({255,0,40},{255,20,160},t0),
+      blendRgb({255,40,100},{180,0,70},t1),
+      blendRgb({255,20,120},{255,100,160},t2),
+      blendRgb({180,0,80},{255,40,60},t3), bri);
+    patternStep++; return;
+  }
+
+  if (patternName == "EASTER") {
+    if (now-patternLastMs < 650) return; patternLastMs=now;
+    static const Rgb p[]={{255,120,200},{130,220,255},{180,130,255},{255,220,80},{120,255,170}};
+    uint8_t i=patternStep++%5;
+    showFour(p[i],p[(i+1)%5],p[(i+2)%5],p[(i+3)%5],bri);
+    return;
+  }
+
+  if (patternName == "FOURTH") {
+    if (now-patternLastMs < 420) return; patternLastMs=now;
+    static const Rgb p[]={{255,0,0},{255,255,255},{0,60,255}};
+    uint8_t i=patternStep++%3;
+    showFour(p[i],p[(i+1)%3],p[(i+2)%3],p[i],bri);
+    return;
+  }
+
+  if (patternName == "THANKSGIVING") {
+    if (now-patternLastMs < 600) return; patternLastMs=now;
+    static const Rgb p[]={{255,70,0},{180,30,0},{255,160,0},{100,20,0}};
+    uint8_t i=patternStep++%4;
+    showFour(p[i],p[(i+1)%4],p[(i+2)%4],p[(i+3)%4],bri);
+    return;
+  }
+
+  if (patternName == "CANDY") {
+    if (now-patternLastMs < 320) return; patternLastMs=now;
+    static const Rgb p[]={{255,20,120},{0,220,255},{255,180,0},{120,255,80},{170,40,255}};
+    showFour(p[random(5)],p[random(5)],p[random(5)],p[random(5)],bri);
+    return;
+  }
+
+  if (patternName == "GALAXY") {
+    if (now-patternLastMs < 90) return; patternLastMs=now;
     Rgb frame[LED_COUNT];
-    for (uint8_t i=0; i<LED_COUNT; ++i) frame[i]=ledColor[(i+shift)%LED_COUNT];
-    writeFrame(frame,bri); return;
-  }''',
-    s,
-    count=1,
-)
+    for(uint8_t i=0;i<LED_COUNT;++i){
+      uint8_t t=triangle8(patternStep + (uint16_t)i*60U,240);
+      frame[i]=blendRgb(i&1 ? Rgb{0,20,70}:Rgb{10,0,40},
+                        i&1 ? Rgb{255,0,130}:Rgb{100,0,220},t);
+      uint16_t spark=(uint16_t)(37U + (uint16_t)i*7U);
+      if(((patternStep + i*11U)%spark)==0) frame[i]=i&1 ? Rgb{255,255,255}:Rgb{180,180,255};
+    }
+    writeFrame(frame,bri);
+    patternStep++; return;
+  }
 
-# TWINKLE and SPARKLE preserve each lamp's own selected base color.
-twinkle_re = re.compile(
-    r'  if \(patternName == "TWINKLE"\) \{.*?\n  \}',
-    re.DOTALL,
-)
-m = twinkle_re.search(s)
-if not m:
-    raise SystemExit("four-light patch failed: TWINKLE marker not found")
-s = s[:m.start()] + '''  if (patternName == "TWINKLE") {
+  if (patternName == "FIRE") {
+    if (now-patternLastMs < 80) return; patternLastMs=now;
+    Rgb frame[LED_COUNT];
+    for(uint8_t i=0;i<LED_COUNT;++i)
+      frame[i]={(uint8_t)random(180,256),(uint8_t)random(10,105),(uint8_t)random(0,8)};
+    writeFrame(frame,bri); return;
+  }
+
+  if (patternName == "ICE") {
+    if (now-patternLastMs < 100) return; patternLastMs=now;
+    Rgb frame[LED_COUNT];
+    for(uint8_t i=0;i<LED_COUNT;++i)
+      frame[i]={(uint8_t)random(20,180),(uint8_t)random(120,256),255};
+    writeFrame(frame,bri); return;
+  }
+
+  if (patternName == "FOREST") {
+    if (now-patternLastMs < 90) return; patternLastMs=now;
+    uint8_t t0=triangle8(patternStep,210);
+    uint8_t t1=triangle8(patternStep+52,210);
+    uint8_t t2=triangle8(patternStep+105,210);
+    uint8_t t3=triangle8(patternStep+157,210);
+    showFour(
+      blendRgb({0,45,5},{40,200,20},t0),
+      blendRgb({0,90,40},{100,255,50},t1),
+      blendRgb({5,55,0},{80,180,25},t2),
+      blendRgb({0,110,30},{130,240,60},t3), bri);
+    patternStep++; return;
+  }
+
+  if (patternName == "NEON") {
+    if (now-patternLastMs < 260) return; patternLastMs=now;
+    static const Rgb p[]={{255,0,180},{0,255,220},{160,0,255},{255,80,0},{0,120,255}};
+    uint8_t i=patternStep++%5;
+    showFour(p[i],p[(i+1)%5],p[(i+2)%5],p[(i+3)%5],bri);
+    return;
+  }
+
+  if (patternName == "TWINKLE") {
     if (now-patternLastMs < 180) return; patternLastMs=now;
     Rgb frame[LED_COUNT];
     for (uint8_t i=0; i<LED_COUNT; ++i)
       frame[i]=blendRgb(ledColor[i],{255,255,255},(uint8_t)random(30,150));
     uint8_t low=(uint8_t)max(1,(int)bri/3);
     writeFrame(frame,(uint8_t)random((long)low,(long)bri+1L)); return;
-  }''' + s[m.end():]
+  }
 
-sparkle_re = re.compile(
-    r'  if \(patternName == "SPARKLE"\) \{.*?\n  \}',
-    re.DOTALL,
-)
-m = sparkle_re.search(s)
-if not m:
-    raise SystemExit("four-light patch failed: SPARKLE marker not found")
-s = s[:m.start()] + '''  if (patternName == "SPARKLE") {
+  if (patternName == "SPARKLE") {
     if (now-patternLastMs < 110) return; patternLastMs=now;
     Rgb frame[LED_COUNT];
     for (uint8_t i=0; i<LED_COUNT; ++i) {
@@ -157,7 +338,67 @@ s = s[:m.start()] + '''  if (patternName == "SPARKLE") {
       if (random(3)==0) frame[i]={255,255,255};
     }
     writeFrame(frame,bri); return;
-  }''' + s[m.end():]
+  }
+
+  if (patternName == "COLOR_SWAP") {
+    if (now-patternLastMs < 700) return; patternLastMs=now;
+    uint8_t shift=(uint8_t)(patternStep++ & 3U);
+    Rgb frame[LED_COUNT];
+    for (uint8_t i=0; i<LED_COUNT; ++i)
+      frame[i]=ledColor[(i+shift)%LED_COUNT];
+    writeFrame(frame,bri); return;
+  }
+
+  // One bright head moves through all four physical lamps with two fading tails.
+  if (patternName == "COMET") {
+    if (now-patternLastMs < 120) return; patternLastMs=now;
+    uint8_t head=(uint8_t)(patternStep++ & 3U);
+    Rgb frame[LED_COUNT]={{0,0,0},{0,0,0},{0,0,0},{0,0,0}};
+    frame[head]=ledColor[head];
+    uint8_t tail1=(uint8_t)((head+3U)&3U);
+    uint8_t tail2=(uint8_t)((head+2U)&3U);
+    frame[tail1]=blendRgb({0,0,0},ledColor[tail1],110);
+    frame[tail2]=blendRgb({0,0,0},ledColor[tail2],40);
+    writeFrame(frame,bri); return;
+  }
+
+  if (patternName == "FIREFLY") {
+    if (now-patternLastMs < 160) return; patternLastMs=now;
+    Rgb dark={0,5,0}, glow={160,255,30};
+    showFour(random(5)==0?glow:dark,
+             random(5)==0?glow:dark,
+             random(5)==0?glow:dark,
+             random(5)==0?glow:dark,bri);
+    return;
+  }
+
+  if (patternName == "BUBBLEGUM") {
+    if (now-patternLastMs < 55) return; patternLastMs=now;
+    uint8_t t0=triangle8(patternStep,170);
+    uint8_t t1=triangle8(patternStep+42,170);
+    uint8_t t2=triangle8(patternStep+85,170);
+    uint8_t t3=triangle8(patternStep+127,170);
+    showFour(
+      blendRgb({255,30,180},{80,180,255},t0),
+      blendRgb({120,40,255},{255,120,200},t1),
+      blendRgb({255,70,170},{50,210,255},t2),
+      blendRgb({100,60,255},{255,160,210},t3), bri);
+    patternStep++; return;
+  }
+
+  if (patternName == "RANDOM") {
+    if (now-patternLastMs < 300) return; patternLastMs=now;
+    showFour(
+      {(uint8_t)random(256),(uint8_t)random(256),(uint8_t)random(256)},
+      {(uint8_t)random(256),(uint8_t)random(256),(uint8_t)random(256)},
+      {(uint8_t)random(256),(uint8_t)random(256),(uint8_t)random(256)},
+      {(uint8_t)random(256),(uint8_t)random(256),(uint8_t)random(256)},bri);
+    return;
+  }
+}
+
+'''
+s = service_re.sub(service_four, s, count=1)
 
 # Status now exposes all four lamp colors.
 replace_once(
