@@ -1,0 +1,63 @@
+# HAPPY JARZ Platform
+
+This folder is the production-oriented scaffold for the next HAPPY JARZ architecture.
+
+It is intentionally separated from BloomPulse and from unrelated BloomCircuit tools.
+
+## Device classes
+
+### SIMPLE
+
+Target: ESP32-S3 Mini / 4 MB flash.
+
+Current proven integrated base:
+- six capacitive-touch inputs
+- 128x64 OLED
+- four daisy-chained APA106 lamps on GPIO7
+- battery/power telemetry
+- local clock, settings, screensavers, games and USB control
+
+Current development firmware baseline: `0.11.0`.
+
+### FULL
+
+Target: full-size ESP32-S3 with substantially more flash and PSRAM.
+
+Expected target discussed during planning:
+- 16 MB flash
+- 8 MB PSRAM
+- more touch/button inputs
+- larger native game/screensaver/content budget
+
+The exact FULL production board and GPIO map are **not yet bench-verified**. Do not publish a FULL firmware image until the real board is received and documented.
+
+## Region lanes
+
+The release system is designed for four lanes:
+
+- `simple-us`
+- `simple-eu`
+- `full-us`
+- `full-eu`
+
+Region is a provisioned device property, not something inferred from USB hardware.
+
+## Host layer
+
+Pi/PC software will eventually:
+1. detect the connected HAPPY JARZ
+2. read device identity/capabilities
+3. determine SIMPLE vs FULL
+4. read the stored region
+5. compare installed version against the release manifest
+6. install only a compatible update
+7. verify the flashed identity/version
+8. launch the correct Mini/host experience
+
+The updater is not implemented yet. This branch establishes the contract first so firmware, Pi and future PC support do not fragment into unrelated builds.
+
+See:
+- `docs/BOARD_PROFILES.md`
+- `docs/UPDATE_SYSTEM.md`
+- `docs/US_EU_PROFILES.md`
+- `releases/manifest.json`
