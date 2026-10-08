@@ -125,3 +125,19 @@ For BLOOM/BREATHE/GLITTER, `HJ|SAVER|` reports the shared `visual_speed` value u
 Multiple UI surfaces may display the same OLED framebuffer. App 1.7.1 shows the device framebuffer in both LIGHTS + CONTROL and OLED + PROCEDURAL SCREENSAVERS.
 
 These are not separate mirrors or serial consumers. Both widgets are updated from the same decoded `HJ|OLED|` frame, preserving one serial owner and one authoritative device-rendered OLED state.
+
+
+## Lamp-driven host theme
+
+App 1.8.0 maps the four authoritative BASE lamp colors into four host presentation roles:
+
+```text
+LED1 BASE -> background
+LED2 BASE -> panel
+LED3 BASE -> outline/accent
+LED4 BASE -> text
+```
+
+The theme updates when BASE colors change or when `HJ|STATUS|` refreshes those saved colors. It does not consume `HJ|LED_FRAME|`, so animated pattern output never drives host chrome.
+
+Derived secondary colors are allowed for Panel2, muted text and hover states, but the source palette remains the four device BASE colors. OLED mirror pixels and literal BASE/LIVE color swatches remain visually literal.
