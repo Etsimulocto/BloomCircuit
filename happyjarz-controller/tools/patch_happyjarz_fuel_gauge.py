@@ -14,8 +14,9 @@ BloomCore intent:
 Calibration:
 - default divider ratio is 2.0 (1:1 divider)
 - BATTERY_CAL_FACTOR is centralized for bench calibration
-- current prototype calibration is provisional: charged battery measured 3.06 V
-  in firmware, so factor 1.37 brings that near 4.19 V
+- calibrated 2026-10-08 from live prototype reference:
+  GPIO3 ADC ~2.184 V while battery terminals measured 3.50 V
+- effective multiplier ~1.603, implemented as divider ratio 2.0 * cal factor 0.802
 """
 
 from pathlib import Path
@@ -50,7 +51,7 @@ fuel_block = r'''
 // -----------------------------
 static constexpr uint8_t BATTERY_ADC_PIN = 3;
 static constexpr float BATTERY_DIVIDER_RATIO = 2.0f;
-static constexpr float BATTERY_CAL_FACTOR = 1.370f;
+static constexpr float BATTERY_CAL_FACTOR = 0.802f;
 
 static void fuelGaugeInit() {
   pinMode(BATTERY_ADC_PIN, INPUT);
