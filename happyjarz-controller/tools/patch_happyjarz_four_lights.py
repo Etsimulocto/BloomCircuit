@@ -69,10 +69,46 @@ s = show_pair_re.sub(
 static void showFour(const Rgb &a, const Rgb &b, const Rgb &c, const Rgb &d, uint8_t brightness) {
   Rgb frame[LED_COUNT] = {a,b,c,d};
   writeFrame(frame, safeBrightness(brightness));
+}
+
+// Physical HAPPY JARZ stand topology.
+// Bulb 1/2 light the jars; bulb 3/4 are the left/right box-side accents.
+static constexpr uint8_t HJ_TOP_LEFT   = 0;
+static constexpr uint8_t HJ_TOP_RIGHT  = 1;
+static constexpr uint8_t HJ_SIDE_LEFT  = 2;
+static constexpr uint8_t HJ_SIDE_RIGHT = 3;
+
+static void hjBlankFrame(Rgb frame[LED_COUNT]) {
+  for (uint8_t i=0; i<LED_COUNT; ++i) frame[i]={0,0,0};
+}
+
+static Rgb hjDim(const Rgb &c, uint8_t amount) {
+  return blendRgb({0,0,0}, c, amount);
 }''',
     s,
     count=1,
 )
+
+# Extend the shared pattern registry with stand-topology chase effects.
+pattern_names_re = re.compile(
+    r'static const char \*PATTERN_NAMES\[\] = \{.*?\n\};',
+    re.DOTALL,
+)
+m = pattern_names_re.search(s)
+if not m:
+    raise SystemExit("four-light patch failed: PATTERN_NAMES registry not found")
+registry = '''static const char *PATTERN_NAMES[] = {
+  "SOLID","FADE","PULSE","RAINBOW","RANDOM",
+  "HUE_FADE","DUAL_HUE","BREATH","DRIFT","AURORA","OCEAN","LAVENDER","SUNSET",
+  "CHRISTMAS","HALLOWEEN","VALENTINE","EASTER","FOURTH","THANKSGIVING",
+  "CANDY","GALAXY","FIRE","ICE","FOREST","NEON","TWINKLE","SPARKLE","COLOR_SWAP",
+  "COMET","FIREFLY","BUBBLEGUM",
+  "CHASE_CW","CHASE_CCW","JAR_CHASE","SIDE_CHASE",
+  "SWEEP_LR","SWEEP_TS","DIAGONAL","PING_PONG",
+  "DUAL_CHASE","OPP_CHASE","JAR_PULSE","SIDE_ACCENT",
+  "OFF"
+};'''
+s = s[:m.start()] + registry + s[m.end():]
 
 # Replace the entire staged pattern service with a true four-lamp engine.
 # This is deliberately done after the shared pattern library is staged so no
@@ -384,6 +420,141 @@ service_four = r'''static void servicePattern() {
       blendRgb({255,70,170},{50,210,255},t2),
       blendRgb({100,60,255},{255,160,210},t3), bri);
     patternStep++; return;
+  }
+
+  // Stand-topology chase family. Paths use physical geometry rather than
+  // DIN order assumptions: 1=top-left, 2=top-right, 3=side-left, 4=side-right.
+  if (patternName == "CHASE_CW") {
+    if (now-patternLastMs < 180) return; patternLastMs=now;
+    static const uint8_t path[] = {HJ_TOP_LEFT,HJ_TOP_RIGHT,HJ_SIDE_RIGHT,HJ_SIDE_LEFT};
+    uint8_t head=path[patternStep++ & 3U];
+    Rgb frame[LED_COUNT]; hjBlankFrame(frame);
+    frame[head]=ledColor[head];
+    frame[path[(patternStep+2U)&3U]]=hjDim(ledColor[path[(patternStep+2U)&3U]],55);
+    writeFrame(frame,bri); return;
+  }
+
+  if (patternName == "CHASE_CCW") {
+    if (now-patternLastMs < 180) return; patternLastMs=now;
+    static const uint8_t path[] = {HJ_TOP_LEFT,HJ_SIDE_LEFT,HJ_SIDE_RIGHT,HJ_TOP_RIGHT};
+    uint8_t head=path[patternStep++ & 3U];
+    Rgb frame[LED_COUNT]; hjBlankFrame(frame);
+    frame[head]=ledColor[head];
+    frame[path[(patternStep+2U)&3U]]=hjDim(ledColor[path[(patternStep+2U)&3U]],55);
+    writeFrame(frame,bri); return;
+  }
+
+  if (patternName == "JAR_CHASE") {
+    if (now-patternLastMs < 260) return; patternLastMs=now;
+    bool right=(patternStep++ & 1U);
+    Rgb frame[LED_COUNT]; hjBlankFrame(frame);
+    frame[right?HJ_TOP_RIGHT:HJ_TOP_LEFT]=ledColor[right?HJ_TOP_RIGHT:HJ_TOP_LEFT];
+    frame[HJ_SIDE_LEFT]=hjDim(ledColor[HJ_SIDE_LEFT],45);
+    frame[HJ_SIDE_RIGHT]=hjDim(ledColor[HJ_SIDE_RIGHT],45);
+    writeFrame(frame,bri); return;
+  }
+
+  if (patternName == "SIDE_CHASE") {
+    if (now-patternLastMs < 260) return; patternLastMs=now;
+    bool right=(patternStep++ & 1U);
+    Rgb frame[LED_COUNT]; hjBlankFrame(frame);
+    frame[right?HJ_SIDE_RIGHT:HJ_SIDE_LEFT]=ledColor[right?HJ_SIDE_RIGHT:HJ_SIDE_LEFT];
+    writeFrame(frame,bri); return;
+  }
+
+  if (patternName == "SWEEP_LR") {
+    if (now-patternLastMs < 300) return; patternLastMs=now;
+    bool right=(patternStep++ & 1U);
+    Rgb frame[LED_COUNT]; hjBlankFrame(frame);
+    if(right){
+      frame[HJ_TOP_RIGHT]=ledColor[HJ_TOP_RIGHT];
+      frame[HJ_SIDE_RIGHT]=ledColor[HJ_SIDE_RIGHT];
+    }else{
+      frame[HJ_TOP_LEFT]=ledColor[HJ_TOP_LEFT];
+      frame[HJ_SIDE_LEFT]=ledColor[HJ_SIDE_LEFT];
+    }
+    writeFrame(frame,bri); return;
+  }
+
+  if (patternName == "SWEEP_TS") {
+    if (now-patternLastMs < 320) return; patternLastMs=now;
+    bool sides=(patternStep++ & 1U);
+    Rgb frame[LED_COUNT]; hjBlankFrame(frame);
+    if(sides){
+      frame[HJ_SIDE_LEFT]=ledColor[HJ_SIDE_LEFT];
+      frame[HJ_SIDE_RIGHT]=ledColor[HJ_SIDE_RIGHT];
+    }else{
+      frame[HJ_TOP_LEFT]=ledColor[HJ_TOP_LEFT];
+      frame[HJ_TOP_RIGHT]=ledColor[HJ_TOP_RIGHT];
+    }
+    writeFrame(frame,bri); return;
+  }
+
+  if (patternName == "DIAGONAL") {
+    if (now-patternLastMs < 320) return; patternLastMs=now;
+    bool flip=(patternStep++ & 1U);
+    Rgb frame[LED_COUNT]; hjBlankFrame(frame);
+    if(flip){
+      frame[HJ_TOP_LEFT]=ledColor[HJ_TOP_LEFT];
+      frame[HJ_SIDE_RIGHT]=ledColor[HJ_SIDE_RIGHT];
+    }else{
+      frame[HJ_TOP_RIGHT]=ledColor[HJ_TOP_RIGHT];
+      frame[HJ_SIDE_LEFT]=ledColor[HJ_SIDE_LEFT];
+    }
+    writeFrame(frame,bri); return;
+  }
+
+  if (patternName == "PING_PONG") {
+    if (now-patternLastMs < 170) return; patternLastMs=now;
+    static const uint8_t path[] = {
+      HJ_TOP_LEFT,HJ_TOP_RIGHT,HJ_SIDE_RIGHT,HJ_SIDE_LEFT,
+      HJ_SIDE_RIGHT,HJ_TOP_RIGHT
+    };
+    uint8_t head=path[patternStep++ % 6U];
+    Rgb frame[LED_COUNT]; hjBlankFrame(frame);
+    frame[head]=ledColor[head];
+    writeFrame(frame,bri); return;
+  }
+
+  if (patternName == "DUAL_CHASE") {
+    if (now-patternLastMs < 250) return; patternLastMs=now;
+    bool right=(patternStep++ & 1U);
+    Rgb frame[LED_COUNT]; hjBlankFrame(frame);
+    frame[right?HJ_TOP_RIGHT:HJ_TOP_LEFT]=ledColor[right?HJ_TOP_RIGHT:HJ_TOP_LEFT];
+    frame[right?HJ_SIDE_RIGHT:HJ_SIDE_LEFT]=ledColor[right?HJ_SIDE_RIGHT:HJ_SIDE_LEFT];
+    writeFrame(frame,bri); return;
+  }
+
+  if (patternName == "OPP_CHASE") {
+    if (now-patternLastMs < 250) return; patternLastMs=now;
+    bool phase=(patternStep++ & 1U);
+    Rgb frame[LED_COUNT]; hjBlankFrame(frame);
+    frame[phase?HJ_TOP_RIGHT:HJ_TOP_LEFT]=ledColor[phase?HJ_TOP_RIGHT:HJ_TOP_LEFT];
+    frame[phase?HJ_SIDE_LEFT:HJ_SIDE_RIGHT]=ledColor[phase?HJ_SIDE_LEFT:HJ_SIDE_RIGHT];
+    writeFrame(frame,bri); return;
+  }
+
+  if (patternName == "JAR_PULSE") {
+    if (now-patternLastMs < 28) return; patternLastMs=now;
+    uint8_t level=triangle8(patternStep++,180);
+    uint8_t jarAmt=(uint8_t)(70U + (uint16_t)level*185U/255U);
+    Rgb frame[LED_COUNT];
+    frame[HJ_TOP_LEFT]=hjDim(ledColor[HJ_TOP_LEFT],jarAmt);
+    frame[HJ_TOP_RIGHT]=hjDim(ledColor[HJ_TOP_RIGHT],jarAmt);
+    frame[HJ_SIDE_LEFT]=hjDim(ledColor[HJ_SIDE_LEFT],55);
+    frame[HJ_SIDE_RIGHT]=hjDim(ledColor[HJ_SIDE_RIGHT],55);
+    writeFrame(frame,bri); return;
+  }
+
+  if (patternName == "SIDE_ACCENT") {
+    if (now-patternLastMs < 240) return; patternLastMs=now;
+    bool right=(patternStep++ & 1U);
+    Rgb frame[LED_COUNT];
+    frame[HJ_TOP_LEFT]=hjDim(ledColor[HJ_TOP_LEFT],150);
+    frame[HJ_TOP_RIGHT]=hjDim(ledColor[HJ_TOP_RIGHT],150);
+    frame[HJ_SIDE_LEFT]=right ? hjDim(ledColor[HJ_SIDE_LEFT],25) : ledColor[HJ_SIDE_LEFT];
+    frame[HJ_SIDE_RIGHT]=right ? ledColor[HJ_SIDE_RIGHT] : hjDim(ledColor[HJ_SIDE_RIGHT],25);
+    writeFrame(frame,bri); return;
   }
 
   if (patternName == "RANDOM") {
