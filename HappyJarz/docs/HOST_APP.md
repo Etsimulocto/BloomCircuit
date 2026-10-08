@@ -92,3 +92,10 @@ The integrated Mini is now implemented in LIGHTS + CONTROL:
 - blue OLED mirror pixels matching the physical blue display
 
 The Mini appearance editor remains planned until the production wood stand geometry is finalized.
+
+
+## Current visual convention
+
+The OLED mirror is blue-on-black to match the blue physical SSD1306 modules used by HAPPY JARZ.
+
+The current Mini is a functional placeholder layout. Once the production wood stand geometry is finalized, the Mini appearance editor should reproduce the real stand's OLED position, lamp positions, control positions, labels and overall outline without changing the underlying logical input or synchronization model.
