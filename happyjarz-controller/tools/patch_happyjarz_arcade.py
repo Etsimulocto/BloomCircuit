@@ -31,7 +31,11 @@ if marker not in s:
 
 adapter = r'''
 
-// HAPPY JARZ Arcade -> known-good U8g2 OLED adapter
+// HAPPY JARZ Arcade -> known-good U8g2 OLED adapter.
+// Host sync is staged before the release/arcade layer, so route every arcade
+// present through the same mirrored OLED presentation helper.
+static void hjOledPresent();
+
 static void arcadeClear() {
   if (oled) oled->clearBuffer();
 }
@@ -65,7 +69,7 @@ static void arcadeText(int16_t x, int16_t y, const char *text, uint8_t size) {
 }
 
 static void arcadePresent() {
-  if (oled) oled->sendBuffer();
+  if (oled) hjOledPresent();
 }
 
 static const HjArcadeDisplay ARCADE_DISPLAY = {
