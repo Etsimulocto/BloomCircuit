@@ -9,8 +9,8 @@ These rules are mandatory for HAPPY JARZ releases and behavior-changing builds.
 
 The current release pair is:
 
-- App `1.2.0`
-- Firmware `0.11.0`
+- App `1.4.0`
+- Firmware `0.12.0`
 
 ## Mandatory bump rule
 
@@ -72,3 +72,15 @@ Before merging a runtime change:
 7. Confirm `HJ|IDENTITY` reports the expected firmware version.
 
 If those versions do not agree, stop. Do not flash or publish the build.
+
+
+### Host Mini synchronization
+
+App 1.4.0 / firmware 0.12.0 are paired because the integrated Mini depends on new firmware protocol:
+- GET CAPS
+- KEY <logical action>
+- GET OLED
+- STREAM OLED ON/OFF
+- HJ|OLED framebuffer frames
+
+Older firmware may still run the host application, but the synchronized Mini controls/mirror are not considered supported without firmware 0.12.0 or later.
