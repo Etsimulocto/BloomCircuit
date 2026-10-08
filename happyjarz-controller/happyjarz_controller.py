@@ -96,6 +96,7 @@ class JarSerial:
                     self.send("STREAM TOUCH ON")
                     self.send("GET STATUS")
                     self.send("GET CAPS")
+                    self.send("STREAM LED ON")
                     self.send("STREAM OLED ON")
                     return
                 probe.close()
@@ -1232,8 +1233,8 @@ class HappyJarzApp(tk.Tk):
         return fields
 
     def _handle_line(self, line: str):
-        # OLED frames are intentionally not copied into the visible/session log:
-        # each payload is ~1.4 KB Base64 and can arrive several times per second.
+        # OLED and live LED frames are intentionally not copied into the
+        # visible/session log; they are high-rate rendering telemetry.
         if line.startswith("HJ|OLED|"):
             fields = self._parse_fields(line)
             if fields.get("codec") == "b64v1" and fields.get("data"):
@@ -1257,7 +1258,8 @@ class HappyJarzApp(tk.Tk):
                     self.touch_vars[dest].set(fields[source])
             return
 
-        self._log(f"RX  {line}")
+        if not line.startswith("HJ|LED_FRAME|"):
+            self._log(f"RX  {line}")
         fields = self._parse_fields(line)
         if line.startswith("HJ|IDENTITY|"):
             for key in ("serial", "hw", "fw"):
