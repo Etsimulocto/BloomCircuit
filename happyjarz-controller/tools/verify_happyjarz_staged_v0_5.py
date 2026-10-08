@@ -56,6 +56,10 @@ required = {
     "LED stream on command": 'if(line=="STREAM LED ON")',
     "LED stream off command": 'if(line=="STREAM LED OFF")',
     "LED mirror capability": "led_mirror=1",
+    "accessory pause layer": "HAPPYJARZ_ACCESSORY_PAUSE_V1",
+    "OLED rail sensor": "hjAccessoryRailPresent",
+    "LED clamp on pause": "if (hjAccessoryPaused) { pinMode(LED_DATA_PIN, OUTPUT); digitalWrite(LED_DATA_PIN, LOW); return; }",
+    "accessory pause telemetry": "HJ|ACCESSORY|state=PAUSED|sensor=OLED",
     "unified virtual input queue": "hjHostKeyPending",
     "true four-lamp pattern engine": "HAPPYJARZ_FOUR_LAMP_PATTERN_ENGINE_V2",
     "stand topology constants": "HJ_TOP_LEFT",
@@ -101,6 +105,7 @@ print("  host KEY/CAPS protocol present")
 print("  actual U8g2 OLED framebuffer mirror present")
 print("  arcade/game OLED frames use mirrored present path")
 print("  live four-lamp LED_FRAME stream present")
+print("  switched 3.3V accessory rail auto-pause/resume present")
 print("  true four-lamp pattern engine present")
 print("  stand-topology chase family present")
 print("  100-pattern descriptor bank present")
