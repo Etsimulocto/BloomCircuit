@@ -19,6 +19,7 @@ MENU_PATCH="$HERE/patch_happyjarz_menu_controls.py"
 PATTERN_PATCH="$HERE/patch_happyjarz_patterns.py"
 FOUR_LIGHT_PATCH="$HERE/patch_happyjarz_four_lights.py"
 HOST_SYNC_PATCH="$HERE/patch_happyjarz_host_sync.py"
+LOW_BATTERY_PATCH="$HERE/patch_happyjarz_low_battery_warning.py"
 ACCESSORY_PAUSE_PATCH="$HERE/patch_happyjarz_accessory_pause.py"
 SCREENSAVER_PATCH="$HERE/patch_happyjarz_screensavers.py"
 SAYINGS_PATCH="$HERE/patch_happyjarz_sayings_v2.py"
@@ -35,7 +36,7 @@ if ! command -v arduino-cli >/dev/null 2>&1; then
   exit 1
 fi
 
-for required in "$SRC" "$FW_VERSION_FILE" "$VERSION_PATCH" "$TOUCH_PATCH" "$OLED_PATCH" "$MENU_PATCH" "$PATTERN_PATCH" "$FOUR_LIGHT_PATCH" "$HOST_SYNC_PATCH" "$ACCESSORY_PAUSE_PATCH" "$SCREENSAVER_PATCH" "$SAYINGS_PATCH" "$CUSTOM_SAYINGS_PATCH" "$SAVER_CONTROLS_PATCH" "$SAVER_PROTOCOL_PATCH" "$VERIFY_STAGE"; do
+for required in "$SRC" "$FW_VERSION_FILE" "$VERSION_PATCH" "$TOUCH_PATCH" "$OLED_PATCH" "$MENU_PATCH" "$PATTERN_PATCH" "$FOUR_LIGHT_PATCH" "$HOST_SYNC_PATCH" "$LOW_BATTERY_PATCH" "$ACCESSORY_PAUSE_PATCH" "$SCREENSAVER_PATCH" "$SAYINGS_PATCH" "$CUSTOM_SAYINGS_PATCH" "$SAVER_CONTROLS_PATCH" "$SAVER_PROTOCOL_PATCH" "$VERIFY_STAGE"; do
   if [[ ! -f "$required" ]]; then
     echo "ERROR: required file missing: $required"
     exit 1
@@ -249,6 +250,7 @@ python3 "$SAVER_CONTROLS_PATCH" "$SKETCH"
 python3 "$SAVER_PROTOCOL_PATCH" "$SKETCH"
 python3 "$FOUR_LIGHT_PATCH" "$SKETCH"
 python3 "$HOST_SYNC_PATCH" "$SKETCH"
+python3 "$LOW_BATTERY_PATCH" "$SKETCH"
 python3 "$ACCESSORY_PAUSE_PATCH" "$SKETCH"
 
 # Release version is injected LAST so the binary identity always matches the
