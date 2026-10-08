@@ -29,6 +29,8 @@ if version_marker not in s:
 
 required = {
     "Fuel Gauge layer": "FUEL_GAUGE_PATCH_V1",
+    "battery smoothing": "BATTERY_FILTER_INTERVAL_MS = 1000UL",
+    "battery smoothing EMA": "batteryFilteredVoltage * 0.75f + rawVolts * 0.25f",
     "battery ADC": "BATTERY_ADC_PIN = 3",
     "GET POWER protocol": 'if(line=="GET POWER")',
     "POWER OLED screen": "UI_POWER",
@@ -61,6 +63,11 @@ required = {
     "OLED rail sensor": "hjAccessoryRailPresent",
     "LED clamp on pause": "if (hjAccessoryPaused) { pinMode(LED_DATA_PIN, OUTPUT); digitalWrite(LED_DATA_PIN, LOW); return; }",
     "accessory pause telemetry": "HJ|ACCESSORY|state=PAUSED|sensor=OLED",
+    "one hour sleep mode": "HAPPYJARZ_SLEEP_MODE_V1",
+    "one hour sleep interval": "HJ_SLEEP_IDLE_MS = 3600000UL",
+    "touch wake": "hjWakeFromSleep(\"TOUCH\")",
+    "alarm wake": "hjWakeFromSleep(\"ALARM\")",
+    "OLED power save": "oled->setPowerSave(1)",
     "low battery warning": "HAPPYJARZ_LOW_BATTERY_WARNING_V1",
     "low battery early declarations": "HAPPYJARZ_LOW_BATTERY_WARNING_EARLY",
     "low battery threshold": "HJ_LOW_BATTERY_ENTER_PCT = 10",
@@ -103,6 +110,7 @@ if 'touchStreamCompat && millis()-lastTouchCompatMs' in s:
 print("HAPPY JARZ staged firmware verification: PASS")
 print(f"  firmware version {expected_version}")
 print("  Fuel Gauge + HOME battery/power cycle present")
+print("  smoothed Fuel Gauge present")
 print("  GET POWER protocol present")
 print("  30-second OLED screensaver present")
 print("  expanded four-lamp patterns + particle saver present")
@@ -113,6 +121,7 @@ print("  actual U8g2 OLED framebuffer mirror present")
 print("  arcade/game OLED frames use mirrored present path")
 print("  live four-lamp LED_FRAME stream present")
 print("  switched 3.3V accessory rail auto-pause/resume present")
+print("  1-hour sleep + any-touch/alarm wake present")
 print("  low-battery bulb 4 beacon + CHARGE ME OLED warning present")
 print("  true four-lamp pattern engine present")
 print("  stand-topology chase family present")
