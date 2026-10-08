@@ -1,6 +1,6 @@
 # HAPPY JARZ Controller
 
-**Current release pair:** desktop app **v1.2.0** + firmware **v0.11.0**
+**Current platform release pair:** desktop app **v1.4.0** + firmware **v0.12.0**
 
 This subsystem is the PC/Raspberry Pi field-service and control layer for the HAPPY JARZ powered stand. It sits above the known-good ESP32-S3 light/touch/OLED hardware layer and is designed so desktop-side changes do not casually rewrite the proven APA106 timing.
 
@@ -16,8 +16,8 @@ happyjarz-controller/firmware/VERSION # firmware version
 Current values:
 
 ```text
-App      1.2.0
-Firmware 0.11.0
+App      1.4.0
+Firmware 0.12.0
 ```
 
 Legacy filenames such as `happyjarz_controller_v0_3_3.py`, `happyjarz_integrated_v0_5.ino`, and `flash_happyjarz_v0_5.sh` are compatibility names only. The flasher reads `firmware/VERSION`, injects it into `HJ_FW_VERSION`, and verifies the final staged build before upload.
@@ -254,3 +254,20 @@ See [`PROTOCOL.md`](PROTOCOL.md), [`APP_PROTOCOL_V0_3.md`](APP_PROTOCOL_V0_3.md)
 ## Failure boundary
 
 Preserve known-good layers. If local LED/touch/OLED behavior works but the desktop UI does not, debug watcher/controller/protocol deployment first. If local LEDs/touch/OLED fail, debug firmware/hardware before changing the desktop app.
+
+
+### Integrated Mini mirror/controller
+
+App v1.4.0 / firmware v0.12.0 add the first synchronized Mini directly to the bottom of LIGHTS + CONTROL.
+
+Current behavior:
+- actual 128x64 U8g2 framebuffer mirror from the device
+- one shared serial connection; no second OLED serial owner
+- 12 visible app controls
+- SIMPLE enables UP/DOWN/LEFT/RIGHT/A/B
+- X/Y/L/R/START/SELECT remain visible but disabled until a FULL device advertises them
+- app keys use the same firmware input path consumed by physical copper touch
+- returned HJ|EVENT input messages pulse the matching Mini button
+- OLED telemetry is change-driven, Base64 encoded and capped at 4 Hz
+
+Do not reconstruct menus independently in the host app. The physical device framebuffer is authoritative.
