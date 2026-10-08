@@ -1,0 +1,10 @@
+{
+  "profile_id": "simple-us",
+  "hardware_profile": "HJ-SIMPLE-1",
+  "region": "US",
+  "flash_mb": 4,
+  "psram_mb": null,
+  "status": "development",
+  "logical_inputs": ["UP", "DOWN", "LEFT", "RIGHT", "A", "B"],
+  "led_count": 4
+}
