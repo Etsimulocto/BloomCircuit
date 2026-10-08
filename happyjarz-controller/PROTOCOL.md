@@ -229,3 +229,22 @@ SAVER SPEED DOWN
 ```
 
 For BLOOM, BREATHE and GLITTER, status includes `visual_speed=<1..8>`. The graphics remain device-rendered and are mirrored to the host through the normal `HJ|OLED|` framebuffer stream.
+
+
+### Live LED frame mirror
+
+Firmware 0.17.3 adds a rate-limited mirror of the actual four-lamp pattern frame:
+
+```text
+GET LED FRAME
+STREAM LED ON
+STREAM LED OFF
+```
+
+Telemetry:
+
+```text
+HJ|LED_FRAME|led1=<r,g,b>|led2=<r,g,b>|led3=<r,g,b>|led4=<r,g,b>|pattern=<name>|brightness=<0..100>
+```
+
+The values are the raw live pattern RGB values before global brightness scaling. The stream shares the existing serial owner and is capped at 10 Hz.
