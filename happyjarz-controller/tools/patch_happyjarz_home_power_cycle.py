@@ -65,9 +65,8 @@ old_helper = r'''static String oledHomePowerText() {
 '''
 
 new_helper = r'''static String oledHomePowerText() {
-  uint16_t adcMv = batteryAdcMillivolts();
-  float volts = ((float)adcMv / 1000.0f) * BATTERY_DIVIDER_RATIO * BATTERY_CAL_FACTOR;
-  bool usbPower = volts > 4.45f;
+  float volts = batteryVoltage();
+  bool usbPower = usbDataLinked();
 
   String text = "A MENU  ";
   if (usbPower) {
