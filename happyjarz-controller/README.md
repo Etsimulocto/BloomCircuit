@@ -16,7 +16,7 @@ happyjarz-controller/firmware/VERSION # firmware version
 Current values:
 
 ```text
-App      1.8.1
+App      1.8.2
 Firmware 0.12.0
 ```
 
@@ -452,17 +452,17 @@ Firmware 0.17.1 fixes both in the staging patch. The saver behavior itself is ot
 
 #### BLOOM petal styles
 
-Firmware 0.17.2 simplifies BLOOM into a clean flower-only saver. It cycles through 4, 6, 8 and 10-petal outline styles with a small center and slow open/close motion. Background pollen, lower bowl/leaves and other decorative elements were removed.
+Firmware 0.17.3 simplifies BLOOM into a clean flower-only saver. It cycles through 4, 6, 8 and 10-petal outline styles with a small center and slow open/close motion. Background pollen, lower bowl/leaves and other decorative elements were removed.
 
 
-#### App      1.8.1 screensaver OLED preview
+#### App      1.8.2 screensaver OLED preview
 
 The OLED + PROCEDURAL SCREENSAVERS panel now includes its own live 2x view of the actual 128x64 device framebuffer. It shares the same incoming `HJ|OLED|` stream as the Mini in LIGHTS + CONTROL; there is still one serial owner and one device framebuffer source of truth.
 
 Changing saver mode, reseeding, or changing speed can now be watched directly on the screensaver page without switching tabs.
 
 
-#### App      1.8.1 lamp-driven theme
+#### App      1.8.2 lamp-driven theme
 
 The host UI can now derive its chrome directly from the four saved/base lamp colors:
 
@@ -476,10 +476,26 @@ Only BASE colors drive the theme. Animated `HJ|LED_FRAME|` output is explicitly 
 Secondary shades such as Panel2, muted text and hover states are derived from those four base colors. Literal LED swatches and the black/blue OLED mirror remain protected from theme recoloring.
 
 
-#### App 1.8.1 pattern palette theming
+#### App      1.8.2 pattern palette theming
 
 The host theme now follows the selected light pattern rather than the saved BASE lamp colors.
 
 When the pattern changes, the app samples a short burst of `HJ|LED_FRAME|` telemetry, ignores near-black transition frames, chooses the strongest/distinct pattern colors, builds background/panel/outline/text roles from that palette, then freezes the theme until the next pattern change.
 
 This preserves a calm static UI while allowing OCEAN, EMBER, NEBULA, RAINBOW and other patterns to give the host app their own visual skin.
+
+
+#### App 1.8.2 / Firmware 0.17.3 live LED palette capture
+
+Firmware now exposes the actual four-lamp pattern output over the existing USB serial link:
+
+```text
+GET LED FRAME
+STREAM LED ON
+STREAM LED OFF
+HJ|LED_FRAME|led1=r,g,b|led2=r,g,b|led3=r,g,b|led4=r,g,b|pattern=...|brightness=...
+```
+
+The stream is observed at the central `writeFrame()` hardware output path and rate-limited to 10 Hz. Raw pattern RGB is reported before global brightness scaling so the host theme preserves hue even at low lamp brightness.
+
+App 1.8.2 enables the stream on connect. When a pattern changes, the app samples a short burst of live frames, derives a static host palette, then freezes that theme until the next pattern change.
