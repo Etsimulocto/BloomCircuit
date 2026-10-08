@@ -51,6 +51,7 @@ required = {
     "OLED mirror protocol": "HJ|OLED|seq=",
     "OLED mirror stream": 'line=="STREAM OLED ON"',
     "OLED actual framebuffer source": "oled->getBufferPtr()",
+    "arcade uses mirrored OLED present": "if (oled) hjOledPresent();",
     "unified virtual input queue": "hjHostKeyPending",
     "true four-lamp pattern engine": "HAPPYJARZ_FOUR_LAMP_PATTERN_ENGINE_V2",
     "stand topology constants": "HJ_TOP_LEFT",
@@ -89,6 +90,7 @@ print("  USB touch telemetry single-stream fix present (5 Hz)")
 print("  four-lamp protocol/status/persistence present")
 print("  host KEY/CAPS protocol present")
 print("  actual U8g2 OLED framebuffer mirror present")
+print("  arcade/game OLED frames use mirrored present path")
 print("  true four-lamp pattern engine present")
 print("  stand-topology chase family present")
 print("  100-pattern descriptor bank present")
