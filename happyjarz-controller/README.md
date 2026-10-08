@@ -16,7 +16,7 @@ happyjarz-controller/firmware/VERSION # firmware version
 Current values:
 
 ```text
-App      1.6.0
+App      1.7.0
 Firmware 0.12.0
 ```
 
@@ -419,3 +419,22 @@ Renderer modes include:
 The app and firmware share the same 100 registered names. The final staged verifier requires `HAPPYJARZ_PATTERN_BANK_100`.
 
 Exact compiled flash usage must be taken from `arduino-cli compile`; do not infer it from source length.
+
+
+### Seven-mode OLED screensavers
+
+App v1.7.0 / firmware v0.17.0 expand the OLED saver set to seven modes:
+
+- SAYINGS
+- SPIRAL
+- TRIPPY
+- PARTICLES
+- BLOOM
+- BREATHE
+- GLITTER
+
+BLOOM renders an opening/closing lotus-like procedural flower.
+BREATHE uses changing radius, geometry and dither density to create a fade/breath illusion on the monochrome OLED.
+GLITTER runs a persistent falling field of mixed tiny shapes with independent speed, drift and occasional flash-stars.
+
+LEFT/RIGHT cycles modes, B exits, UP/DOWN changes speed for procedural visual modes, and A reseeds/new-universe behavior.
