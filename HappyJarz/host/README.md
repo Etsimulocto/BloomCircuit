@@ -14,3 +14,12 @@ Planned responsibilities:
 - future Windows support
 
 Pi support should be stabilized first. Windows support can be added after SIMPLE and FULL device profiles are established so the project does not fragment into many temporary builds.
+
+
+## Architecture contracts
+
+See:
+- `../docs/HOST_APP.md`
+- `../docs/SYNCHRONICITY.md`
+
+The central design goal is hardware / USB / host-app synchronicity. Host UI state follows authoritative device state rather than simply caching commands it sent.
