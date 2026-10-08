@@ -108,39 +108,49 @@ static void oledDrawGlitterShape(int x, int y, uint8_t shape, uint8_t phase) {
 }
 
 static void oledRenderSaverBloom() {
-  // Eight symmetric petals open and close around a small lotus core.
+  // Clean procedural flower: plain petal outlines only.
+  // Styles rotate through 4 / 6 / 8 / 10 petals with no background decoration.
+  static const uint8_t petalCounts[] = {4,6,8,10};
+
+  uint8_t style = (uint8_t)((hjArtStep / 180U) % 4U);
+  uint8_t petals = petalCounts[style];
+
   float breath = (sinf((float)hjArtStep * 0.035f) + 1.0f) * 0.5f;
-  float twist = (float)hjArtStep * 0.010f;
-  int cx=64, cy=34;
-  int outerR = 10 + (int)(breath * 18.0f);
-  int innerR = 5 + (int)((1.0f-breath) * 8.0f);
+  float twist = (float)hjArtStep * 0.006f;
 
-  for(int petal=0; petal<8; ++petal) {
-    float a = twist + (float)petal * 0.785398f;
-    int x1 = cx + (int)(cosf(a) * innerR);
-    int y1 = cy + (int)(sinf(a) * innerR * 0.58f);
-    int x2 = cx + (int)(cosf(a) * outerR);
-    int y2 = cy + (int)(sinf(a) * outerR * 0.58f);
-    int px = cx + (int)(cosf(a+0.33f) * (outerR-3));
-    int py = cy + (int)(sinf(a+0.33f) * (outerR-3) * 0.58f);
-    int mx = cx + (int)(cosf(a-0.33f) * (outerR-3));
-    int my = cy + (int)(sinf(a-0.33f) * (outerR-3) * 0.58f);
-    oled->drawTriangle(x1,y1,px,py,x2,y2);
-    oled->drawTriangle(x1,y1,mx,my,x2,y2);
+  const int cx = 64;
+  const int cy = 32;
+  int innerR = 4 + (int)(breath * 4.0f);
+  int outerR = 12 + (int)(breath * 16.0f);
+
+  // Keep petal width visually balanced as petal count rises.
+  float spread = 0.42f;
+  if (petals == 6) spread = 0.34f;
+  else if (petals == 8) spread = 0.27f;
+  else if (petals == 10) spread = 0.22f;
+
+  for (uint8_t i=0; i<petals; ++i) {
+    float a = twist + 6.2831853f * (float)i / (float)petals;
+
+    int bx = cx + (int)(cosf(a) * innerR);
+    int by = cy + (int)(sinf(a) * innerR);
+
+    int lx = cx + (int)(cosf(a-spread) * (outerR-3));
+    int ly = cy + (int)(sinf(a-spread) * (outerR-3));
+
+    int rx = cx + (int)(cosf(a+spread) * (outerR-3));
+    int ry = cy + (int)(sinf(a+spread) * (outerR-3));
+
+    int tx = cx + (int)(cosf(a) * outerR);
+    int ty = cy + (int)(sinf(a) * outerR);
+
+    oled->drawLine(bx,by,lx,ly);
+    oled->drawLine(lx,ly,tx,ty);
+    oled->drawLine(tx,ty,rx,ry);
+    oled->drawLine(rx,ry,bx,by);
   }
 
-  // Lower lotus bowl / leaves.
-  oled->drawArc(cx,47,24,20,160);
-  oled->drawArc(cx,47,17,20,160);
-  oled->drawCircle(cx,cy,2,U8G2_DRAW_ALL);
-
-  // Occasional tiny pollen pixels.
-  for(uint8_t i=0;i<5;++i) {
-    uint16_t v=(uint16_t)(hjArtStep*13U + i*97U);
-    int x=48 + (v % 33U);
-    int y=9 + ((v/7U + i*11U) % 15U);
-    if(((hjArtStep+i*5U)%17U)<9U) oled->drawPixel(x,y);
-  }
+  oled->drawDisc(cx,cy,2,U8G2_DRAW_ALL);
 }
 
 static void oledRenderSaverBreathe() {
