@@ -159,7 +159,14 @@ class HappyJarzApp(tk.Tk):
 
         self.identity_vars = {k: tk.StringVar(value="—") for k in ("serial", "hw", "fw")}
         self.connection_var = tk.StringVar(value="WAITING FOR JAR")
-        self.touch_vars = {k: tk.StringVar(value="—") for k in ("up", "down", "left", "right", "a", "b")}
+        self.input_names = ("up", "down", "left", "right", "a", "b", "x", "y", "l", "r", "start", "select")
+        self.simple_inputs = {"up", "down", "left", "right", "a", "b"}
+        self.touch_vars = {k: tk.StringVar(value="—") for k in self.input_names}
+        self.input_tiles = {}
+        self.input_name_labels = {}
+        self.input_value_labels = {}
+        self.device_capabilities = set(self.simple_inputs)
+
         self.brightness_var = tk.IntVar(value=75)
         self.pattern_var = tk.StringVar(value="SOLID")
         self.led_colors = {
@@ -168,7 +175,9 @@ class HappyJarzApp(tk.Tk):
             3: (255, 80, 120),
             4: (80, 120, 255),
         }
+        self.live_led_colors = {1: None, 2: None, 3: None, 4: None}
         self.led_swatches = {}
+        self.led_base_swatches = {}
         self._brightness_after = None
 
         self.wifi_ssid = tk.StringVar()
@@ -297,9 +306,29 @@ class HappyJarzApp(tk.Tk):
             top = ttk.Frame(box, style="Panel.TFrame")
             top.pack(fill="x")
             ttk.Label(top, text=f"LIGHT {led}", style="Section.TLabel").pack(side="left")
-            swatch = tk.Label(top, text="    ", bg="#%02x%02x%02x" % self.led_colors[led], padx=3, pady=3, bd=0)
-            swatch.pack(side="right")
+
+            live_group = ttk.Frame(top, style="Panel.TFrame")
+            live_group.pack(side="right")
+
+            ttk.Label(live_group, text="BASE", style="PanelMuted.TLabel",
+                      font=("TkDefaultFont", 7, "bold")).pack(side="left", padx=(0, 3))
+            base_swatch = tk.Label(
+                live_group, text="   ",
+                bg="#%02x%02x%02x" % self.led_colors[led],
+                padx=3, pady=3, bd=0,
+            )
+            base_swatch.pack(side="left", padx=(0, 8))
+            self.led_base_swatches[led] = base_swatch
+
+            ttk.Label(live_group, text="LIVE", style="PanelMuted.TLabel",
+                      font=("TkDefaultFont", 7, "bold")).pack(side="left", padx=(0, 3))
+            swatch = tk.Label(
+                live_group, text="   ", bg="#111827",
+                padx=3, pady=3, bd=0,
+            )
+            swatch.pack(side="left")
             self.led_swatches[led] = swatch
+
             row = ttk.Frame(box, style="Panel.TFrame")
             row.pack(fill="x", pady=(8, 0))
             ttk.Button(row, text="Choose color", style="Accent.TButton", command=lambda n=led: self._choose_color(n)).pack(side="left", fill="x", expand=True)
@@ -325,13 +354,38 @@ class HappyJarzApp(tk.Tk):
 
         outer, inputbox = self._card(root, 8)
         outer.pack(fill="x")
-        ttk.Label(inputbox, text="6-BUTTON INPUT  •  D-PAD + A/B", style="Section.TLabel").grid(row=0, column=0, columnspan=6, sticky="w", pady=(0, 5))
-        for col, (name, key) in enumerate((("↑ UP", "up"), ("↓ DOWN", "down"), ("← LEFT", "left"), ("→ RIGHT", "right"), ("A", "a"), ("B / ESC", "b"))):
-            tile = ttk.Frame(inputbox, style="Panel2.TFrame", padding=6)
-            tile.grid(row=1, column=col, sticky="nsew", padx=3)
-            ttk.Label(tile, text=name, background=PANEL_2, foreground=MUTED, font=("TkDefaultFont", 8, "bold")).pack()
-            ttk.Label(tile, textvariable=self.touch_vars[key], style="TouchValue.TLabel").pack()
-            inputbox.columnconfigure(col, weight=1)
+        head = ttk.Frame(inputbox, style="Panel.TFrame")
+        head.grid(row=0, column=0, columnspan=6, sticky="ew", pady=(0, 5))
+        ttk.Label(head, text="GAMEPAD INPUT  •  LIVE TOUCH / USB STATE", style="Section.TLabel").pack(side="left")
+        ttk.Label(head, text="FULL controls stay visible on SIMPLE", style="PanelMuted.TLabel").pack(side="right")
+
+        controls = (
+            ("↑ UP", "up"), ("↓ DOWN", "down"), ("← LEFT", "left"), ("→ RIGHT", "right"),
+            ("A", "a"), ("B / ESC", "b"),
+            ("X", "x"), ("Y", "y"), ("L", "l"), ("R", "r"),
+            ("START", "start"), ("SELECT", "select"),
+        )
+        for index, (name, key) in enumerate(controls):
+            grid_row = 1 + index // 6
+            grid_col = index % 6
+            tile = ttk.Frame(inputbox, style="Panel2.TFrame", padding=5)
+            tile.grid(row=grid_row, column=grid_col, sticky="nsew", padx=3, pady=2)
+            name_label = tk.Label(
+                tile, text=name, bg=PANEL_2, fg=MUTED,
+                font=("TkDefaultFont", 8, "bold"), bd=0,
+            )
+            name_label.pack()
+            value_label = tk.Label(
+                tile, textvariable=self.touch_vars[key], bg=PANEL_2, fg=TEXT,
+                font=("TkFixedFont", 11, "bold"), bd=0,
+            )
+            value_label.pack()
+            self.input_tiles[key] = tile
+            self.input_name_labels[key] = name_label
+            self.input_value_labels[key] = value_label
+            inputbox.columnconfigure(grid_col, weight=1)
+
+        self._apply_input_capabilities(self.device_capabilities)
 
     def _build_setup_tab(self, root):
         top = ttk.Frame(root)
@@ -454,9 +508,47 @@ class HappyJarzApp(tk.Tk):
 
     def _set_led(self, led: int, r: int, g: int, b: int):
         self.led_colors[led] = (r, g, b)
+        if led in self.led_base_swatches:
+            self.led_base_swatches[led].configure(bg=f"#{r:02x}{g:02x}{b:02x}")
+        self.link.send(f"SET LED{led} COLOR {r} {g} {b}")
+
+    def _set_live_led(self, led: int, rgb):
+        if led not in self.live_led_colors:
+            return
+        try:
+            r, g, b = (int(value) for value in rgb)
+        except (TypeError, ValueError):
+            return
+        if not all(0 <= value <= 255 for value in (r, g, b)):
+            return
+        self.live_led_colors[led] = (r, g, b)
         if led in self.led_swatches:
             self.led_swatches[led].configure(bg=f"#{r:02x}{g:02x}{b:02x}")
-        self.link.send(f"SET LED{led} COLOR {r} {g} {b}")
+
+    def _apply_input_capabilities(self, capabilities):
+        caps = {str(name).strip().lower() for name in capabilities}
+        self.device_capabilities = caps
+        for key in self.input_names:
+            enabled = key in caps
+            if key in self.input_name_labels:
+                self.input_name_labels[key].configure(
+                    fg=MUTED if enabled else "#4b5563"
+                )
+            if key in self.input_value_labels:
+                self.input_value_labels[key].configure(
+                    fg=TEXT if enabled else "#4b5563"
+                )
+            if not enabled:
+                self.touch_vars[key].set("N/A")
+            elif self.touch_vars[key].get() == "N/A":
+                self.touch_vars[key].set("—")
+
+    def _apply_identity_capabilities(self, fields):
+        hw = fields.get("hw", "").upper()
+        if "FULL" in hw:
+            self._apply_input_capabilities(self.input_names)
+        elif hw:
+            self._apply_input_capabilities(self.simple_inputs)
 
     def _brightness_changed(self, value):
         n = max(0, min(100, int(float(value))))
@@ -506,7 +598,12 @@ class HappyJarzApp(tk.Tk):
     def _handle_line(self, line: str):
         if line.startswith("HJ|TOUCH|") or line.startswith("HJ|INPUT|"):
             fields = self._parse_fields(line)
-            aliases = {"c1": "a", "c2": "b", "up": "up", "down": "down", "left": "left", "right": "right", "a": "a", "b": "b"}
+            aliases = {
+                "c1": "a", "c2": "b",
+                "up": "up", "down": "down", "left": "left", "right": "right",
+                "a": "a", "b": "b", "x": "x", "y": "y", "l": "l", "r": "r",
+                "start": "start", "select": "select",
+            }
             for source, dest in aliases.items():
                 if source in fields and dest in self.touch_vars:
                     self.touch_vars[dest].set(fields[source])
@@ -518,6 +615,22 @@ class HappyJarzApp(tk.Tk):
             for key in ("serial", "hw", "fw"):
                 if key in fields:
                     self.identity_vars[key].set(fields[key])
+            self._apply_identity_capabilities(fields)
+        elif line.startswith("HJ|CAPS|"):
+            raw = fields.get("controls", "")
+            if raw:
+                caps = {part.strip().lower() for part in raw.split(",") if part.strip()}
+                self._apply_input_capabilities(caps)
+        elif line.startswith("HJ|LED_FRAME|"):
+            for led in (1, 2, 3, 4):
+                raw = fields.get(f"led{led}") or fields.get(f"live_led{led}")
+                if not raw:
+                    continue
+                try:
+                    rgb = tuple(int(part) for part in raw.split(",", 2))
+                except ValueError:
+                    continue
+                self._set_live_led(led, rgb)
         elif line.startswith("HJ|STATUS|"):
             if "brightness" in fields:
                 try:
@@ -538,8 +651,10 @@ class HappyJarzApp(tk.Tk):
                     continue
                 if all(0 <= value <= 255 for value in (r, g, b)):
                     self.led_colors[led] = (r, g, b)
-                    if led in self.led_swatches:
-                        self.led_swatches[led].configure(bg=f"#{r:02x}{g:02x}{b:02x}")
+                    if led in self.led_base_swatches:
+                        self.led_base_swatches[led].configure(bg=f"#{r:02x}{g:02x}{b:02x}")
+                    if self.pattern_var.get() == "SOLID":
+                        self._set_live_led(led, (r, g, b))
         elif line.startswith("HJ|WIFI|"):
             self.wifi_state.set(fields.get("state", "UNKNOWN"))
             if fields.get("ssid"):
@@ -576,8 +691,12 @@ class HappyJarzApp(tk.Tk):
                     self.connection_var.set("WAITING FOR JAR")
                     self.status_pill.configure(bg=WAIT_BG, fg=WAIT_FG)
                     self._log(f"Disconnected from {payload}; scanning continues")
-                    for var in self.touch_vars.values():
-                        var.set("—")
+                    for key, var in self.touch_vars.items():
+                        var.set("—" if key in self.device_capabilities else "N/A")
+                    for led in self.live_led_colors:
+                        self.live_led_colors[led] = None
+                        if led in self.led_swatches:
+                            self.led_swatches[led].configure(bg="#111827")
                 elif kind == "line":
                     self._handle_line(payload)
                 elif kind == "tx":
