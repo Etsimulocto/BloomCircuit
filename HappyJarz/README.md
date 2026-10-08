@@ -17,7 +17,7 @@ Current proven integrated base:
 - battery/power telemetry
 - local clock, settings, screensavers, games and USB control
 
-Current platform development firmware baseline: `0.14.0`.
+Current platform development firmware baseline: `0.15.0`.
 Current host app baseline: `1.5.0`.
 
 ### FULL
