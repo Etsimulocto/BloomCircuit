@@ -1,6 +1,6 @@
 # HAPPY JARZ Controller
 
-**Current platform release pair:** desktop app **v1.5.0** + firmware **v0.14.0**
+**Current platform release pair:** desktop app **v1.5.0** + firmware **v0.15.0**
 
 This subsystem is the PC/Raspberry Pi field-service and control layer for the HAPPY JARZ powered stand. It sits above the known-good ESP32-S3 light/touch/OLED hardware layer and is designed so desktop-side changes do not casually rewrite the proven APA106 timing.
 
@@ -340,7 +340,7 @@ The final staged verifier requires `HAPPYJARZ_FOUR_LAMP_PATTERN_ENGINE_V2` so an
 
 ### Stand-topology chase family
 
-Firmware v0.14.0 adds patterns based on the real stand geometry:
+Firmware v0.15.0 adds patterns based on the real stand geometry:
 
 ```text
 1 = top-left jar light
@@ -366,3 +366,26 @@ New patterns:
 The clockwise physical path is `1 -> 2 -> 4 -> 3`.
 
 These effects use the saved per-lamp base colors rather than hard-coding a single chase color, so user color choices continue to matter.
+
+
+### Color-rolling chase update
+
+Firmware v0.15.0 keeps the stand-topology chase motion but moves the chase color slowly through the hue wheel.
+
+Affected patterns:
+- CHASE_CW
+- CHASE_CCW
+- JAR_CHASE
+- SIDE_CHASE
+- SWEEP_LR
+- SWEEP_TS
+- DIAGONAL
+- PING_PONG
+- DUAL_CHASE
+- OPP_CHASE
+- JAR_PULSE
+- SIDE_ACCENT
+
+The spatial animation cadence remains fast enough to read as a chase, while hue advances much more slowly so it does not look like a rainbow strobe.
+
+The chase family no longer depends on saved base colors being non-white.
