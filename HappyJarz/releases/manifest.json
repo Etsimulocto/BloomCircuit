@@ -8,7 +8,7 @@
       "region": "US",
       "firmware_version": "0.12.0",
       "artifact": null,
-      "host_app_version": "1.4.0"
+      "host_app_version": "1.5.0"
     },
     "simple-eu": {
       "status": "planned",
