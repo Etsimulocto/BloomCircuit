@@ -182,6 +182,7 @@ class HappyJarzApp(tk.Tk):
         self.oled_image = None
         self.oled_scaled_image = None
         self.oled_mirror_label = None
+        self.oled_mirror_labels = []
         self.oled_mirror_status = tk.StringVar(value="WAITING FOR OLED")
         self.gamepad_status = tk.StringVar(value="GAMEPAD: SEARCHING")
         self.oled_last_seq = 0
@@ -437,6 +438,7 @@ class HappyJarzApp(tk.Tk):
             bg="#000000", bd=0, padx=0, pady=0,
         )
         self.oled_mirror_label.pack(padx=6, pady=6)
+        self.oled_mirror_labels.append(self.oled_mirror_label)
 
         controls = ttk.Frame(body, style="Panel.TFrame")
         controls.grid(row=0, column=1, sticky="nsew")
@@ -767,7 +769,11 @@ class HappyJarzApp(tk.Tk):
         try:
             self.oled_image.put(" ".join(rows))
             self.oled_scaled_image = self.oled_image.zoom(2, 2)
-            self.oled_mirror_label.configure(image=self.oled_scaled_image)
+            for label in tuple(self.oled_mirror_labels):
+                try:
+                    label.configure(image=self.oled_scaled_image)
+                except tk.TclError:
+                    pass
             self.oled_mirror_status.set(f"LIVE  •  FRAME {seq}")
         except tk.TclError:
             self.oled_mirror_status.set("OLED DRAW ERROR")
@@ -1106,7 +1112,11 @@ class HappyJarzApp(tk.Tk):
                         try:
                             self.oled_image.put("#000000", to=(0, 0, 128, 64))
                             self.oled_scaled_image = self.oled_image.zoom(2, 2)
-                            self.oled_mirror_label.configure(image=self.oled_scaled_image)
+                            for label in tuple(self.oled_mirror_labels):
+                                try:
+                                    label.configure(image=self.oled_scaled_image)
+                                except tk.TclError:
+                                    pass
                         except tk.TclError:
                             pass
                 elif kind == "line":
