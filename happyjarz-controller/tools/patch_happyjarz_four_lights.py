@@ -424,82 +424,99 @@ service_four = r'''static void servicePattern() {
 
   // Stand-topology chase family. Paths use physical geometry rather than
   // DIN order assumptions: 1=top-left, 2=top-right, 3=side-left, 4=side-right.
+  // Stand-topology chase family with a slowly rotating hue.
+  // Spatial motion stays fast; color phase advances much more slowly so the
+  // pattern feels like a chase, not a rainbow strobe.
   if (patternName == "CHASE_CW") {
     if (now-patternLastMs < 180) return; patternLastMs=now;
     static const uint8_t path[] = {HJ_TOP_LEFT,HJ_TOP_RIGHT,HJ_SIDE_RIGHT,HJ_SIDE_LEFT};
-    uint8_t head=path[patternStep++ & 3U];
+    uint8_t step=(uint8_t)(patternStep++);
+    uint8_t head=path[step & 3U];
+    Rgb c=wheel((uint8_t)(step*5U));
     Rgb frame[LED_COUNT]; hjBlankFrame(frame);
-    frame[head]=ledColor[head];
-    frame[path[(patternStep+2U)&3U]]=hjDim(ledColor[path[(patternStep+2U)&3U]],55);
+    frame[head]=c;
+    frame[path[(step+3U)&3U]]=hjDim(c,55);
     writeFrame(frame,bri); return;
   }
 
   if (patternName == "CHASE_CCW") {
     if (now-patternLastMs < 180) return; patternLastMs=now;
     static const uint8_t path[] = {HJ_TOP_LEFT,HJ_SIDE_LEFT,HJ_SIDE_RIGHT,HJ_TOP_RIGHT};
-    uint8_t head=path[patternStep++ & 3U];
+    uint8_t step=(uint8_t)(patternStep++);
+    uint8_t head=path[step & 3U];
+    Rgb c=wheel((uint8_t)(step*5U));
     Rgb frame[LED_COUNT]; hjBlankFrame(frame);
-    frame[head]=ledColor[head];
-    frame[path[(patternStep+2U)&3U]]=hjDim(ledColor[path[(patternStep+2U)&3U]],55);
+    frame[head]=c;
+    frame[path[(step+3U)&3U]]=hjDim(c,55);
     writeFrame(frame,bri); return;
   }
 
   if (patternName == "JAR_CHASE") {
     if (now-patternLastMs < 260) return; patternLastMs=now;
-    bool right=(patternStep++ & 1U);
+    uint8_t step=(uint8_t)(patternStep++);
+    bool right=(step & 1U);
+    Rgb c=wheel((uint8_t)(step*5U));
     Rgb frame[LED_COUNT]; hjBlankFrame(frame);
-    frame[right?HJ_TOP_RIGHT:HJ_TOP_LEFT]=ledColor[right?HJ_TOP_RIGHT:HJ_TOP_LEFT];
-    frame[HJ_SIDE_LEFT]=hjDim(ledColor[HJ_SIDE_LEFT],45);
-    frame[HJ_SIDE_RIGHT]=hjDim(ledColor[HJ_SIDE_RIGHT],45);
+    frame[right?HJ_TOP_RIGHT:HJ_TOP_LEFT]=c;
+    frame[HJ_SIDE_LEFT]=hjDim(c,35);
+    frame[HJ_SIDE_RIGHT]=hjDim(c,35);
     writeFrame(frame,bri); return;
   }
 
   if (patternName == "SIDE_CHASE") {
     if (now-patternLastMs < 260) return; patternLastMs=now;
-    bool right=(patternStep++ & 1U);
+    uint8_t step=(uint8_t)(patternStep++);
+    bool right=(step & 1U);
+    Rgb c=wheel((uint8_t)(step*5U));
     Rgb frame[LED_COUNT]; hjBlankFrame(frame);
-    frame[right?HJ_SIDE_RIGHT:HJ_SIDE_LEFT]=ledColor[right?HJ_SIDE_RIGHT:HJ_SIDE_LEFT];
+    frame[right?HJ_SIDE_RIGHT:HJ_SIDE_LEFT]=c;
     writeFrame(frame,bri); return;
   }
 
   if (patternName == "SWEEP_LR") {
     if (now-patternLastMs < 300) return; patternLastMs=now;
-    bool right=(patternStep++ & 1U);
+    uint8_t step=(uint8_t)(patternStep++);
+    bool right=(step & 1U);
+    Rgb c=wheel((uint8_t)(step*5U));
     Rgb frame[LED_COUNT]; hjBlankFrame(frame);
     if(right){
-      frame[HJ_TOP_RIGHT]=ledColor[HJ_TOP_RIGHT];
-      frame[HJ_SIDE_RIGHT]=ledColor[HJ_SIDE_RIGHT];
+      frame[HJ_TOP_RIGHT]=c;
+      frame[HJ_SIDE_RIGHT]=c;
     }else{
-      frame[HJ_TOP_LEFT]=ledColor[HJ_TOP_LEFT];
-      frame[HJ_SIDE_LEFT]=ledColor[HJ_SIDE_LEFT];
+      frame[HJ_TOP_LEFT]=c;
+      frame[HJ_SIDE_LEFT]=c;
     }
     writeFrame(frame,bri); return;
   }
 
   if (patternName == "SWEEP_TS") {
     if (now-patternLastMs < 320) return; patternLastMs=now;
-    bool sides=(patternStep++ & 1U);
+    uint8_t step=(uint8_t)(patternStep++);
+    bool sides=(step & 1U);
+    Rgb c=wheel((uint8_t)(step*5U));
     Rgb frame[LED_COUNT]; hjBlankFrame(frame);
     if(sides){
-      frame[HJ_SIDE_LEFT]=ledColor[HJ_SIDE_LEFT];
-      frame[HJ_SIDE_RIGHT]=ledColor[HJ_SIDE_RIGHT];
+      frame[HJ_SIDE_LEFT]=c;
+      frame[HJ_SIDE_RIGHT]=c;
     }else{
-      frame[HJ_TOP_LEFT]=ledColor[HJ_TOP_LEFT];
-      frame[HJ_TOP_RIGHT]=ledColor[HJ_TOP_RIGHT];
+      frame[HJ_TOP_LEFT]=c;
+      frame[HJ_TOP_RIGHT]=c;
     }
     writeFrame(frame,bri); return;
   }
 
   if (patternName == "DIAGONAL") {
     if (now-patternLastMs < 320) return; patternLastMs=now;
-    bool flip=(patternStep++ & 1U);
+    uint8_t step=(uint8_t)(patternStep++);
+    bool flip=(step & 1U);
+    Rgb c=wheel((uint8_t)(step*5U));
     Rgb frame[LED_COUNT]; hjBlankFrame(frame);
     if(flip){
-      frame[HJ_TOP_LEFT]=ledColor[HJ_TOP_LEFT];
-      frame[HJ_SIDE_RIGHT]=ledColor[HJ_SIDE_RIGHT];
+      frame[HJ_TOP_LEFT]=c;
+      frame[HJ_SIDE_RIGHT]=c;
     }else{
-      frame[HJ_TOP_RIGHT]=ledColor[HJ_TOP_RIGHT];
-      frame[HJ_SIDE_LEFT]=ledColor[HJ_SIDE_LEFT];
+      frame[HJ_TOP_RIGHT]=c;
+      frame[HJ_SIDE_LEFT]=c;
     }
     writeFrame(frame,bri); return;
   }
@@ -510,50 +527,60 @@ service_four = r'''static void servicePattern() {
       HJ_TOP_LEFT,HJ_TOP_RIGHT,HJ_SIDE_RIGHT,HJ_SIDE_LEFT,
       HJ_SIDE_RIGHT,HJ_TOP_RIGHT
     };
-    uint8_t head=path[patternStep++ % 6U];
+    uint8_t step=(uint8_t)(patternStep++);
+    uint8_t head=path[step % 6U];
+    Rgb c=wheel((uint8_t)(step*5U));
     Rgb frame[LED_COUNT]; hjBlankFrame(frame);
-    frame[head]=ledColor[head];
+    frame[head]=c;
     writeFrame(frame,bri); return;
   }
 
   if (patternName == "DUAL_CHASE") {
     if (now-patternLastMs < 250) return; patternLastMs=now;
-    bool right=(patternStep++ & 1U);
+    uint8_t step=(uint8_t)(patternStep++);
+    bool right=(step & 1U);
+    Rgb c=wheel((uint8_t)(step*5U));
     Rgb frame[LED_COUNT]; hjBlankFrame(frame);
-    frame[right?HJ_TOP_RIGHT:HJ_TOP_LEFT]=ledColor[right?HJ_TOP_RIGHT:HJ_TOP_LEFT];
-    frame[right?HJ_SIDE_RIGHT:HJ_SIDE_LEFT]=ledColor[right?HJ_SIDE_RIGHT:HJ_SIDE_LEFT];
+    frame[right?HJ_TOP_RIGHT:HJ_TOP_LEFT]=c;
+    frame[right?HJ_SIDE_RIGHT:HJ_SIDE_LEFT]=c;
     writeFrame(frame,bri); return;
   }
 
   if (patternName == "OPP_CHASE") {
     if (now-patternLastMs < 250) return; patternLastMs=now;
-    bool phase=(patternStep++ & 1U);
+    uint8_t step=(uint8_t)(patternStep++);
+    bool phase=(step & 1U);
+    Rgb c=wheel((uint8_t)(step*5U));
     Rgb frame[LED_COUNT]; hjBlankFrame(frame);
-    frame[phase?HJ_TOP_RIGHT:HJ_TOP_LEFT]=ledColor[phase?HJ_TOP_RIGHT:HJ_TOP_LEFT];
-    frame[phase?HJ_SIDE_LEFT:HJ_SIDE_RIGHT]=ledColor[phase?HJ_SIDE_LEFT:HJ_SIDE_RIGHT];
+    frame[phase?HJ_TOP_RIGHT:HJ_TOP_LEFT]=c;
+    frame[phase?HJ_SIDE_LEFT:HJ_SIDE_RIGHT]=c;
     writeFrame(frame,bri); return;
   }
 
   if (patternName == "JAR_PULSE") {
     if (now-patternLastMs < 28) return; patternLastMs=now;
-    uint8_t level=triangle8(patternStep++,180);
+    uint16_t step=patternStep++;
+    uint8_t level=triangle8(step,180);
     uint8_t jarAmt=(uint8_t)(70U + (uint16_t)level*185U/255U);
+    Rgb c=wheel((uint8_t)(step/3U));
     Rgb frame[LED_COUNT];
-    frame[HJ_TOP_LEFT]=hjDim(ledColor[HJ_TOP_LEFT],jarAmt);
-    frame[HJ_TOP_RIGHT]=hjDim(ledColor[HJ_TOP_RIGHT],jarAmt);
-    frame[HJ_SIDE_LEFT]=hjDim(ledColor[HJ_SIDE_LEFT],55);
-    frame[HJ_SIDE_RIGHT]=hjDim(ledColor[HJ_SIDE_RIGHT],55);
+    frame[HJ_TOP_LEFT]=hjDim(c,jarAmt);
+    frame[HJ_TOP_RIGHT]=hjDim(c,jarAmt);
+    frame[HJ_SIDE_LEFT]=hjDim(c,45);
+    frame[HJ_SIDE_RIGHT]=hjDim(c,45);
     writeFrame(frame,bri); return;
   }
 
   if (patternName == "SIDE_ACCENT") {
     if (now-patternLastMs < 240) return; patternLastMs=now;
-    bool right=(patternStep++ & 1U);
+    uint8_t step=(uint8_t)(patternStep++);
+    bool right=(step & 1U);
+    Rgb c=wheel((uint8_t)(step*5U));
     Rgb frame[LED_COUNT];
-    frame[HJ_TOP_LEFT]=hjDim(ledColor[HJ_TOP_LEFT],150);
-    frame[HJ_TOP_RIGHT]=hjDim(ledColor[HJ_TOP_RIGHT],150);
-    frame[HJ_SIDE_LEFT]=right ? hjDim(ledColor[HJ_SIDE_LEFT],25) : ledColor[HJ_SIDE_LEFT];
-    frame[HJ_SIDE_RIGHT]=right ? ledColor[HJ_SIDE_RIGHT] : hjDim(ledColor[HJ_SIDE_RIGHT],25);
+    frame[HJ_TOP_LEFT]=hjDim(c,135);
+    frame[HJ_TOP_RIGHT]=hjDim(c,135);
+    frame[HJ_SIDE_LEFT]=right ? hjDim(c,20) : c;
+    frame[HJ_SIDE_RIGHT]=right ? c : hjDim(c,20);
     writeFrame(frame,bri); return;
   }
 
