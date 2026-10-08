@@ -17,8 +17,8 @@ Current proven integrated base:
 - battery/power telemetry
 - local clock, settings, screensavers, games and USB control
 
-Current platform development firmware baseline: `0.17.1`.
-Current host app baseline: `1.7.0`.
+Current platform development firmware baseline: `0.17.9`.
+Current host app baseline: `1.8.3`.
 
 ### FULL
 
@@ -111,3 +111,19 @@ GLITTER
 BLOOM is a procedural opening/closing lotus. BREATHE creates a perceived fade on the monochrome OLED using changing geometry and pixel density. GLITTER is a persistent falling mixed-shape field with independent drift, fall speed and occasional flash-stars.
 
 Firmware `0.17.1` is the compile-fix release for this saver pack. It moves the visual-saver speed/state declarations ahead of saver-status telemetry and uses the installed U8g2 five-argument `drawArc()` signature.
+
+## Power and sleep behavior
+
+Current SIMPLE firmware `0.17.9` keeps the ESP32 alive while visible outputs can pause or sleep.
+
+- GPIO3 battery telemetry is calibrated and filtered before percentage conversion.
+- HOME keeps showing battery percentage while USB is attached.
+- At 10% or lower, bulb 4 flashes red and the OLED shows `LOW BATTERY / CHARGE ME!!!`.
+- The warning clears at 15% to prevent threshold chatter.
+- OLED + four APA106 lamps may share a switched 3.3V accessory rail.
+- OLED `0x3C` presence is used to detect accessory pause/resume.
+- After one hour of no physical input, software sleep powers down the OLED display state, blanks all lamps and freezes pattern advancement.
+- Any physical touch wakes the Jar without also executing that first button action.
+- Alarm firing wakes the output stack before the alarm pattern runs.
+
+This is software sleep, not ESP32 deep sleep, because clock, alarm, USB, Wi-Fi and capacitive touch must remain active.
