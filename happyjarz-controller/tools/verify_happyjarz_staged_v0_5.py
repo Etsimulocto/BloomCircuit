@@ -35,6 +35,7 @@ required = {
     "HOME power helper": "oledHomePowerText",
     "battery-only HOME status": '"PWR BAT"',
     "USB HOME status": '"PWR USB"',
+    "USB HOME battery percent": "batteryReadingPlausible(volts)",
     "charger unknown status": '"CHG ?"',
     "30 second OLED screensaver": "HJ_SCREENSAVER_IDLE_MS = 30000UL",
     "expanded pattern library": "PATTERN_COUNT",
