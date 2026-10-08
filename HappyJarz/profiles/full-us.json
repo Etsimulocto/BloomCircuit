@@ -1,0 +1,11 @@
+{
+  "profile_id": "full-us",
+  "hardware_profile": "HJ-FULL-1",
+  "region": "US",
+  "flash_mb": 16,
+  "psram_mb": 8,
+  "status": "planned-unverified",
+  "logical_inputs": ["UP", "DOWN", "LEFT", "RIGHT", "A", "B"],
+  "additional_inputs": "TBD after board bench test",
+  "led_count": 4
+}
