@@ -13,7 +13,7 @@ A future device identity should expose enough information to select a release sa
 Example shape:
 
 ```text
-HJ|IDENTITY|serial=HJ-001|hw=HJ-SIMPLE-1|region=US|fw=0.11.0
+HJ|IDENTITY|serial=HJ-001|hw=HJ-SIMPLE-1|region=US|fw=0.12.0
 ```
 
 Capability/status fields may later expose flash/PSRAM information separately.
