@@ -191,60 +191,7 @@ s = parse_re.sub(
 # exact text.
 if 'SET LED3 COLOR ' not in s or 'SET LED4 COLOR ' not in s:
     brightness_cmd = re.search(
-        r'(?m)^\s*if\(line\.startsWith\("SET BRIGHTNESS "\)\).*?
-# RGB self-test covers every connected lamp and restores all four colors.
-test_re = re.compile(
-    r'  if\(line=="TEST RGB"\)\{\n.*?Serial\.println\("HJ\|TEST\|rgb=PASS"\);return;\n  \}',
-    re.DOTALL,
-)
-m = test_re.search(s)
-if not m:
-    raise SystemExit("four-light patch failed: TEST RGB block not found")
-s = s[:m.start()] + '''  if(line=="TEST RGB"){
-    Rgb saved[LED_COUNT];
-    for(uint8_t i=0;i<LED_COUNT;++i) saved[i]=ledColor[i];
-    uint8_t sb=brightnessPercent; String sp=patternName;
-    patternName="SOLID"; brightnessPercent=35;
-    const Rgb tests[]={{255,0,0},{0,255,0},{0,0,255},{255,255,255}};
-    for(const auto &c:tests){
-      for(uint8_t i=0;i<LED_COUNT;++i) ledColor[i]=c;
-      showLeds(); delay(350);
-    }
-    for(uint8_t i=0;i<LED_COUNT;++i) ledColor[i]=saved[i];
-    brightnessPercent=sb; patternName=sp; resetPatternEngine();
-    if(sp=="SOLID") showLeds();
-    Serial.println("HJ|TEST|rgb=PASS"); return;
-  }''' + s[m.end():]
-
-# Startup color self-test now drives all four lamps together.
-s = s.replace(
-    'brightnessPercent=25; ledColor[0]={0,0,255};ledColor[1]={0,0,255};showLeds();',
-    'brightnessPercent=25; for(uint8_t i=0;i<LED_COUNT;++i) ledColor[i]={0,0,255}; showLeds();',
-    1,
-)
-s = s.replace(
-    'ledColor[0]={0,255,0};ledColor[1]={0,255,0};showLeds();delay(180);',
-    'for(uint8_t i=0;i<LED_COUNT;++i) ledColor[i]={0,255,0}; showLeds(); delay(180);',
-    1,
-)
-
-# Alarm uses all four lamps.
-s = s.replace(
-    '  ledColor[0] = {255,120,20}; ledColor[1] = {255,40,100};\n',
-    '  ledColor[0] = {255,120,20}; ledColor[1] = {255,40,100};\n'
-    '  ledColor[2] = {255,120,20}; ledColor[3] = {255,40,100};\n',
-    1,
-)
-
-s = s.replace(
-    'Rgb off[LED_COUNT] = {{0,0,0},{0,0,0}};',
-    'Rgb off[LED_COUNT] = {{0,0,0},{0,0,0},{0,0,0},{0,0,0}};',
-    1,
-)
-
-p.write_text(s, encoding="utf-8")
-print("Applied HAPPY JARZ four-light patch: 4 APA106 lamps + LED3/4 protocol/persistence + 4-lamp patterns.")
-,
+        r'(?m)^\s*if\(line\.startsWith\("SET BRIGHTNESS "\)\).*?$',
         s,
     )
     if not brightness_cmd:
