@@ -59,6 +59,11 @@ required = {
     "side accent chase": '"SIDE_ACCENT"',
     "100-pattern bank marker": "HAPPYJARZ_PATTERN_BANK_100",
     "100-pattern terminal entry": '"MOONLIGHT"',
+    "visual saver pack": "HAPPYJARZ_VISUAL_SAVER_PACK_V1",
+    "seven saver modes": "HJ_SCREENSAVER_COUNT = 7",
+    "Bloom saver mode": '"BLOOM"',
+    "Breathe saver mode": '"BREATHE"',
+    "Glitter saver mode": '"GLITTER"',
 }
 
 missing = [name for name, marker in required.items() if marker not in s]
@@ -94,3 +99,4 @@ print("  arcade/game OLED frames use mirrored present path")
 print("  true four-lamp pattern engine present")
 print("  stand-topology chase family present")
 print("  100-pattern descriptor bank present")
+print("  BLOOM + BREATHE + GLITTER saver pack present")
