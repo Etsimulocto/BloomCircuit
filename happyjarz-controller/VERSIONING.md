@@ -122,8 +122,19 @@ All topology chase patterns now generate their own slowly rotating hue while pre
 Adds a 56-entry descriptor-driven pattern bank on top of the existing 44 effects, for exactly 100 registered patterns total. The host dropdown and firmware registry are updated together.
 
 
-### App 1.7.0 / Firmware 0.17.0
+### App 1.7.0 / Firmware 0.17.1
 
 Expanded OLED screensaver release.
 
 Adds BLOOM, BREATHE and GLITTER as first-class saver modes, bringing the board-local saver set to seven. The host display tab exposes all seven modes and reports shared visual speed telemetry.
+
+
+### Firmware 0.17.1 compile fix
+
+Follow-up to the seven-saver feature release.
+
+Fixes two staged C++ compile errors:
+- visual saver speed/state declaration order relative to `hjPrintSaverStatus()`
+- BLOOM lotus arc calls updated to the U8g2 2.36.19 five-argument `drawArc()` API
+
+No host protocol break. Host app remains `1.7.0`.
