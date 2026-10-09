@@ -17,7 +17,7 @@ Current proven integrated base:
 - battery/power telemetry
 - local clock, settings, screensavers, games and USB control
 
-Current platform development firmware baseline: `0.17.11`.
+Current platform development firmware baseline: `0.17.13`.
 Current host app baseline: `1.8.4`.
 
 ### FULL
@@ -114,7 +114,7 @@ Firmware `0.17.1` is the compile-fix release for this saver pack. It moves the v
 
 ## Power and sleep behavior
 
-Current SIMPLE firmware `0.17.9` keeps the ESP32 alive while visible outputs can pause or sleep.
+Current SIMPLE firmware `0.17.13` keeps the ESP32 alive while visible outputs can pause or sleep.
 
 - GPIO3 battery telemetry is calibrated and filtered before percentage conversion.
 - HOME keeps showing battery percentage while USB is attached.
@@ -127,3 +127,22 @@ Current SIMPLE firmware `0.17.9` keeps the ESP32 alive while visible outputs can
 - Alarm firing wakes the output stack before the alarm pattern runs.
 
 This is software sleep, not ESP32 deep sleep, because clock, alarm, USB, Wi-Fi and capacitive touch must remain active.
+
+## Unified logical input routing
+
+Firmware `0.17.13` fixes an ordering problem where some late-added OLED screens saw physical touch before host/gamepad `KEY ...` events were merged.
+
+Final input order:
+
+```text
+physical touch scan
+-> physical-only sleep wake check
+-> host/gamepad KEY merge
+-> CLOCK / SETTINGS / INFO / ARCADE / LIGHTS / MAIN MENU / HOME
+```
+
+After the sleep-specific wake check, physical touch, app Mini buttons and USB gamepad controls are intentionally the same logical UP/DOWN/LEFT/RIGHT/A/B inputs.
+
+## Accessory lamp resume
+
+When the switched 3.3V OLED/lamp rail is restored, firmware now treats the APA106 transport as a real peripheral restart. GPIO7 is rebound to the ESP32 RMT peripheral before fresh lamp frames are sent. This fixes the case where menus and pattern state changed normally after a switch cycle while the physical bulbs remained frozen.
