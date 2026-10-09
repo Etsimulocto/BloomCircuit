@@ -10,7 +10,7 @@ The repository also contains the current **HAPPY JARZ controller/firmware stack*
 
 See [`happyjarz-controller/README.md`](happyjarz-controller/README.md) for the controller/service workflow and [`happyjarz-controller/firmware/README.md`](happyjarz-controller/firmware/README.md) for the ESP32 firmware layer.
 
-Current integrated hardware-development firmware on `feature/happyjarz-catch-the-glitter`: **v0.11.0**. The newer platform branch `feature/happyjarz-platform` carries the synchronized HAPPY JARZ stack at **app v1.8.3 + firmware v0.17.9**.
+Current integrated hardware-development firmware on `feature/happyjarz-catch-the-glitter`: **v0.11.0**. The newer platform branch `feature/happyjarz-platform` carries the synchronized HAPPY JARZ stack at **app v1.8.4 + firmware v0.17.13**.
 
 Current proven hardware:
 
@@ -219,8 +219,8 @@ BloomCircuit is intentionally a wiring-map and fabrication-documentation tool. I
 Current platform release pair:
 
 ```text
-Host app  1.8.3
-Firmware  0.17.9
+Host app  1.8.4
+Firmware  0.17.13
 ```
 
 Key additions on the platform branch:
@@ -243,8 +243,8 @@ The production FULL board GPIO map remains intentionally uncommitted until the a
 `feature/happyjarz-platform` currently targets:
 
 ```text
-Host app  1.8.3
-Firmware  0.17.9
+Host app  1.8.4
+Firmware  0.17.13
 Patterns  100
 Savers    7
 ```
@@ -255,7 +255,7 @@ Firmware 0.17.1 is the compile-fix release for that saver pack: visual-saver sta
 
 ### Power, battery and sleep snapshot
 
-Current SIMPLE firmware `0.17.9` includes:
+Current SIMPLE firmware `0.17.13` includes:
 
 - calibrated + filtered GPIO3 battery telemetry
 - HOME battery percentage while USB is connected
@@ -268,3 +268,15 @@ Current SIMPLE firmware `0.17.9` includes:
 - alarm events wake the Jar before firing the alarm light pattern
 
 The ESP32 itself remains running during accessory pause and software sleep so clock, alarm, USB, Wi-Fi and touch services stay alive.
+
+### Input and accessory-resume fixes
+
+Firmware `0.17.13` carries the latest HAPPY JARZ development fixes:
+
+- switched accessory resume rebinds GPIO7 to the ESP32 RMT peripheral before sending APA106 data again
+- the accessory rail still clamps GPIO7 LOW while OLED/lamp power is off
+- all late menu routers receive the same merged logical input stream
+- physical touch, app Mini buttons and semantic USB gamepad input therefore share UP/DOWN/LEFT/RIGHT/A/B across CLOCK, SETTINGS, INFO, LIGHTS, GAMES/ARCADE, MAIN MENU and HOME
+- the one-hour sleep wake check remains physical-touch-only before host/gamepad events are merged
+
+The staged verifier checks both the accessory RMT rebind and the final unified menu/gamepad input ordering.
