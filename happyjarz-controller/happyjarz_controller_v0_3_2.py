@@ -24,7 +24,7 @@ class HappyJarzApp(previous.HappyJarzApp):
         if self.custom_saying_source is None:
             self.custom_saying_source = tk.StringVar(master=self, value="BUILTIN")
         if self.custom_saying_state is None:
-            self.custom_saying_state = tk.StringVar(master=self, value="8 custom slots stored in jar")
+            self.custom_saying_state = tk.StringVar(master=self, value="50 custom slots stored in jar")
         if self.saver_state is None:
             self.saver_state = tk.StringVar(master=self, value="Idle • auto-start after 10 seconds")
 
@@ -135,7 +135,7 @@ class HappyJarzApp(previous.HappyJarzApp):
 
         ttk.Label(
             panel,
-            text="For banks, clinics, shops, offices, events, gifts, etc. Up to 8 messages; each is saved inside the jar and survives unplugging.",
+            text="For banks, clinics, shops, offices, events, gifts, etc. Up to 50 messages; each is saved inside the jar and survives unplugging.",
             style="PanelMuted.TLabel",
         ).pack(anchor="w", pady=(5, 6))
 
@@ -190,7 +190,7 @@ class HappyJarzApp(previous.HappyJarzApp):
             text = raw.strip().replace("|", "/")
             if text:
                 lines.append(text[:96])
-            if len(lines) >= 8:
+            if len(lines) >= 50:
                 break
 
         self.link.send("CLEAR CUSTOM SAYINGS")
@@ -257,7 +257,7 @@ class HappyJarzApp(previous.HappyJarzApp):
                 slot = int(fields.get("slot", "0"))
             except ValueError:
                 slot = 0
-            if 1 <= slot <= 8:
+            if 1 <= slot <= 50:
                 self._custom_saying_rx[slot] = fields.get("text", "")
             return
 
@@ -268,7 +268,7 @@ class HappyJarzApp(previous.HappyJarzApp):
                 self.custom_saying_source.set(source)
             if self.custom_saying_text is not None:
                 self.custom_saying_text.delete("1.0", "end")
-                values = [self._custom_saying_rx.get(i, "") for i in range(1, 9)]
+                values = [self._custom_saying_rx.get(i, "") for i in range(1, 51)]
                 while values and not values[-1]:
                     values.pop()
                 self.custom_saying_text.insert("1.0", "\n".join(values))
