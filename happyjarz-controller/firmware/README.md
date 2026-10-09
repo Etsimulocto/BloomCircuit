@@ -307,3 +307,8 @@ HJ|SLEEP|state=ASLEEP|reason=IDLE_1H
 HJ|SLEEP|state=AWAKE|reason=TOUCH
 HJ|SLEEP|state=AWAKE|reason=ALARM
 ```
+
+
+### 50 custom marquee sayings
+
+The Jar now stores up to **50** user/business marquee messages, each up to **96 characters**, with `BUILTIN`, `CUSTOM`, and `MIXED` source modes. The desktop CUSTOM MARQUEE editor loads, edits, sends, clears, and restores all 50 slots.
