@@ -63,6 +63,8 @@ required = {
     "OLED rail sensor": "hjAccessoryRailPresent",
     "LED clamp on pause": "if (hjAccessoryPaused) { pinMode(LED_DATA_PIN, OUTPUT); digitalWrite(LED_DATA_PIN, LOW); return; }",
     "accessory pause telemetry": "HJ|ACCESSORY|state=PAUSED|sensor=OLED",
+    "accessory lamp cold restart": "HJ|ACCESSORY|state=ACTIVE|sensor=OLED|lamps=RESTARTED",
+    "accessory lamp settle delay": "delay(8)",
     "one hour sleep mode": "HAPPYJARZ_SLEEP_MODE_V1",
     "one hour sleep interval": "HJ_SLEEP_IDLE_MS = 3600000UL",
     "touch wake": "hjWakeFromSleep(\"TOUCH\")",
