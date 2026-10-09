@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Add persistent editable custom marquee sayings to staged HAPPY JARZ firmware.
 
-Provides 8 business/user-editable slots stored in ESP32 Preferences.
+Provides 50 business/user-editable slots stored in ESP32 Preferences.
 Serial protocol:
   GET CUSTOM SAYINGS
-  SET CUSTOM SAYING <1-8> <text>
+  SET CUSTOM SAYING <1-50> <text>
   CLEAR CUSTOM SAYINGS
   SET SAYING SOURCE BUILTIN|CUSTOM|MIXED
 
@@ -30,7 +30,7 @@ if not m:
     raise SystemExit("custom sayings patch failed: saying count marker not found")
 
 block = r'''
-static constexpr uint8_t HJ_CUSTOM_SAYING_SLOTS = 8;
+static constexpr uint8_t HJ_CUSTOM_SAYING_SLOTS = 50;
 static String hjCustomSayings[HJ_CUSTOM_SAYING_SLOTS];
 static String hjSayingSource = "BUILTIN";
 static int8_t hjCustomActiveSlot = -1;
@@ -177,7 +177,7 @@ cmd_block = r'''  if(line=="GET CUSTOM SAYINGS"){hjPrintCustomSayings();return;}
     int slot=rest.substring(0,split).toInt();
     String text=rest.substring(split+1); text.trim();
     text.replace("|","/"); text.replace("\r"," "); text.replace("\n"," ");
-    if(slot<1||slot>HJ_CUSTOM_SAYING_SLOTS){err("custom saying slot must be 1-8");return;}
+    if(slot<1||slot>HJ_CUSTOM_SAYING_SLOTS){err("custom saying slot must be 1-50");return;}
     if(text.length()>96) text=text.substring(0,96);
     hjSaveCustomSaying((uint8_t)(slot-1),text); ack("SET CUSTOM SAYING"); return;
   }
