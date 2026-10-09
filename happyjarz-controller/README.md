@@ -1,6 +1,6 @@
 # HAPPY JARZ Controller
 
-**Current platform release pair:** desktop app **v1.8.3** + firmware **v0.17.9**
+**Current platform release pair:** desktop app **v1.8.3** + firmware **v0.17.11**
 
 This subsystem is the PC/Raspberry Pi field-service and control layer for the HAPPY JARZ powered stand. It sits above the known-good ESP32-S3 light/touch/OLED hardware layer and is designed so desktop-side changes do not casually rewrite the proven APA106 timing.
 
@@ -218,7 +218,7 @@ Controls:
 - SPIRAL/TRIPPY/PARTICLES: UP/DOWN = speed
 - SPIRAL/TRIPPY/PARTICLES: A = reseed / new universe
 
-Custom sayings provide 8 persistent slots up to 96 characters each with `BUILTIN`, `CUSTOM`, and `MIXED` source modes.
+Custom sayings provide 50 persistent slots up to 96 characters each with `BUILTIN`, `CUSTOM`, and `MIXED` source modes.
 
 ## Current Pi flash workflow
 
@@ -570,3 +570,8 @@ HJ|SLEEP|state=ASLEEP|reason=IDLE_1H
 HJ|SLEEP|state=AWAKE|reason=TOUCH
 HJ|SLEEP|state=AWAKE|reason=ALARM
 ```
+
+
+### 50 custom marquee sayings
+
+The Jar now stores up to **50** user/business marquee messages, each up to **96 characters**, with `BUILTIN`, `CUSTOM`, and `MIXED` source modes. The desktop CUSTOM MARQUEE editor loads, edits, sends, clears, and restores all 50 slots.
