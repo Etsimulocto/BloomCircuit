@@ -1,6 +1,6 @@
 # HAPPY JARZ ESP32 Firmware
 
-**Current firmware release:** **v0.17.9**
+**Current firmware release:** **v0.17.13**
 
 **Compatibility staging base:** `happyjarz_integrated_v0_5.ino` + standard patch pipeline
 
@@ -231,7 +231,7 @@ A long B press acts as HOME/escape from the arcade.
 At 115200 baud the firmware responds to `HELLO` with an `HJ|IDENTITY|...` line. For this branch/release it should report:
 
 ```text
-fw=0.17.9
+fw=0.17.13
 ```
 
 ## Current Pi compile/upload path
@@ -262,7 +262,7 @@ Preserve known-good layers. If USB/controller behavior is wrong but local touch,
 
 ## Low-battery warning
 
-Firmware `0.17.9` uses the calibrated/filtered Fuel Gauge for warning decisions.
+Firmware `0.17.13` uses the calibrated/filtered Fuel Gauge for warning decisions.
 
 - enter warning at 10% or lower
 - clear only at 15% or higher
@@ -312,3 +312,27 @@ HJ|SLEEP|state=AWAKE|reason=ALARM
 ### 50 custom marquee sayings
 
 The Jar now stores up to **50** user/business marquee messages, each up to **96 characters**, with `BUILTIN`, `CUSTOM`, and `MIXED` source modes. The desktop CUSTOM MARQUEE editor loads, edits, sends, clears, and restores all 50 slots.
+
+## Unified host/gamepad menu routing
+
+Firmware `0.17.13` applies a final input-order patch after CLOCK, SETTINGS, INFO, ARCADE and sleep integration. This prevents a late UI patch from consuming physical touch before the host/gamepad queue has been merged.
+
+```text
+physical q[] scan
+-> physical-only sleep wake handling
+-> pending host/gamepad KEY merge
+-> every normal menu/game/saver/HOME router
+```
+
+The staged verifier checks that the unified merge marker occurs before the late UI/game routers.
+
+## APA106 RMT rebind after accessory resume
+
+Accessory PAUSED state clamps GPIO7 LOW while the OLED/lamp 3.3V rail is off. On ACTIVE transition, firmware waits for the rail to settle, deinitializes RMT on GPIO7, calls `initApa106Rmt()`, resets the pattern engine and immediately pushes a fresh lamp frame.
+
+```text
+HJ|ACCESSORY|state=ACTIVE|sensor=OLED|lamps=RMT_REBOUND
+HJ|ACCESSORY|state=ACTIVE|sensor=OLED|lamps=RMT_ERROR
+```
+
+This specifically addresses the case where the OLED and menu state recovered after a switch cycle but the physical lamps remained frozen on their pre-switch frame.
