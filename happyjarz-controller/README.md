@@ -180,7 +180,7 @@ PWR BAT
 
 ## Four-lamp lighting
 
-Firmware v0.17.9 retains the four-lamp APA106 chain on the proven GPIO7/RMT transport and adds the host KEY/CAPS/OLED synchronization protocol used by app v1.5.0.
+Firmware v0.17.13 retains the four-lamp APA106 chain on the proven GPIO7/RMT transport and adds the host KEY/CAPS/OLED synchronization protocol used by app v1.5.0.
 
 - all four lamps remain on the same daisy-chain data pin
 - Light 1 through Light 4 have independent persistent SOLID colors
@@ -258,7 +258,7 @@ Preserve known-good layers. If local LED/touch/OLED behavior works but the deskt
 
 ### Integrated Mini mirror/controller
 
-App v1.8.3 / firmware v0.17.9 are the current synchronized pair. The Mini was introduced in app v1.4.0 and expanded in v1.5.0 with semantic gamepad routing and the blue OLED mirror.
+App v1.8.4 / firmware v0.17.13 are the current synchronized pair. The Mini was introduced in app v1.4.0 and expanded in v1.5.0 with semantic gamepad routing and the blue OLED mirror.
 
 Current behavior:
 - actual 128x64 U8g2 framebuffer mirror from the device
@@ -514,7 +514,7 @@ That means all three pattern-change paths now trigger the same frozen host theme
 The app updates its pattern selector from the device frame, arms a short palette capture, derives the new theme, then freezes it until the next pattern change.
 
 
-#### Firmware 0.17.9 switched accessory pause
+#### Firmware 0.17.13 switched accessory pause
 
 The OLED and four APA106 lamps may share a switched 3.3 V accessory rail while the ESP32 remains powered.
 
@@ -529,7 +529,7 @@ HJ|ACCESSORY|state=ACTIVE|sensor=OLED
 ```
 
 
-#### Firmware 0.17.9 low battery warning
+#### Firmware 0.17.13 low battery warning
 
 When the calibrated Fuel Gauge reports 10% or less, HAPPY JARZ enters a visible low-battery warning overlay:
 
@@ -540,7 +540,7 @@ When the calibrated Fuel Gauge reports 10% or less, HAPPY JARZ enters a visible 
 
 Unverified or implausible Fuel Gauge readings never trigger the warning. The current prototype calibration is corrected on the tested unit and `GET POWER` reports `sensor=OK`. Battery voltage/percentage is filtered to reduce ADC chatter.
 
-#### Firmware 0.17.9 battery smoothing + one-hour sleep
+#### Firmware 0.17.13 battery smoothing + one-hour sleep
 
 Current Fuel Gauge constants:
 
@@ -575,3 +575,33 @@ HJ|SLEEP|state=AWAKE|reason=ALARM
 ### 50 custom marquee sayings
 
 The Jar now stores up to **50** user/business marquee messages, each up to **96 characters**, with `BUILTIN`, `CUSTOM`, and `MIXED` source modes. The desktop CUSTOM MARQUEE editor loads, edits, sends, clears, and restores all 50 slots.
+
+#### Firmware 0.17.13 accessory RMT rebound
+
+The switched accessory rail can remove power from the OLED and APA106 lamps while the ESP32 remains alive. During PAUSED state, GPIO7 is deliberately clamped LOW with ordinary GPIO output to avoid driving an unpowered APA106 chain.
+
+That clamp can detach GPIO7 from the ESP32 RMT peripheral. Firmware now performs a real transport restart when the rail returns:
+
+```text
+OLED rail detected ACTIVE
+-> settle shared rail
+-> rmtDeinit(GPIO7)
+-> initApa106Rmt()
+-> reset pattern engine
+-> send fresh four-lamp frame
+```
+
+Resume telemetry reports `HJ|ACCESSORY|state=ACTIVE|sensor=OLED|lamps=RMT_REBOUND`. An RMT initialization failure reports `lamps=RMT_ERROR`.
+
+#### Firmware 0.17.13 unified menu/gamepad input
+
+Some late-added OLED handlers were previously inserted above the host/gamepad `KEY ...` merge, so physical touch worked in those screens while gamepad input did not. The final staging pass now enforces:
+
+```text
+physical touch scan
+-> physical-only sleep wake check
+-> host/gamepad KEY merge
+-> CLOCK / SETTINGS / INFO / ARCADE / LIGHTS / MAIN MENU / HOME
+```
+
+After the physical-only sleep check, app Mini controls, USB gamepad input and copper touch share the same logical UP/DOWN/LEFT/RIGHT/A/B path across normal UI and game routing.
