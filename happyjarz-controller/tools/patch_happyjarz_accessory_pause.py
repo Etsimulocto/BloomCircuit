@@ -122,9 +122,27 @@ static void hjAccessoryPauseExit() {
   }
 
   oledDirty = true;
+
+  // The APA106 chain lost VCC with the OLED. Treat rail return like a lamp
+  // cold-start, not just a pattern-engine resume. Give the shared rail a short
+  // settling window, re-establish a long LOW latch/reset, then push a fresh
+  // frame immediately so the lamps cannot remain stuck on power-up data.
+  pinMode(LED_DATA_PIN, OUTPUT);
+  digitalWrite(LED_DATA_PIN, LOW);
+  delay(8);
   resetPatternEngine();
-  if (patternName == "SOLID") showLeds();
-  if (Serial) Serial.println("HJ|ACCESSORY|state=ACTIVE|sensor=OLED");
+
+  if (patternName == "OFF") {
+    allOff();
+  } else {
+    // Send a known valid four-lamp frame immediately. Animated patterns will
+    // overwrite this on their next service tick.
+    showLeds();
+    delayMicroseconds(200);
+    showLeds();
+  }
+
+  if (Serial) Serial.println("HJ|ACCESSORY|state=ACTIVE|sensor=OLED|lamps=RESTARTED");
 }
 
 static void serviceAccessoryPause() {
