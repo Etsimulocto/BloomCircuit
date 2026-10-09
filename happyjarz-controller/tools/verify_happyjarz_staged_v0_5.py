@@ -68,6 +68,7 @@ required = {
     "accessory RMT reinit": "initApa106Rmt()",
     "accessory lamp settle delay": "delay(8)",
     "one hour sleep mode": "HAPPYJARZ_SLEEP_MODE_V1",
+    "unified menu/gamepad input order": "HAPPYJARZ_UNIFIED_INPUT_ORDER_V1",
     "one hour sleep interval": "HJ_SLEEP_IDLE_MS = 3600000UL",
     "touch wake": "hjWakeFromSleep(\"TOUCH\")",
     "alarm wake": "hjWakeFromSleep(\"ALARM\")",
@@ -112,6 +113,24 @@ if 'touchStreamCompat && millis()-lastTouchCompatMs' in s:
     print(f"Staged file left for inspection: {p}", file=sys.stderr)
     raise SystemExit(6)
 
+# Virtual/gamepad keys must be merged before late UI/game routers. Later menu
+# patches are intentionally allowed to own input, but only after the common merge.
+host_merge_pos = s.find("HAPPYJARZ_UNIFIED_INPUT_ORDER_V1")
+late_router_markers = [
+    'if (!hjArcadeActive() && !hjScreensaverActive && uiScreen == UI_GAMES',
+    'uiScreen == UI_INFO',
+    'uiScreen == UI_SETTINGS',
+    'uiScreen == UI_CLOCK',
+]
+if host_merge_pos < 0:
+    print("ERROR: unified input merge marker missing.", file=sys.stderr)
+    raise SystemExit(7)
+for marker in late_router_markers:
+    pos = s.find(marker)
+    if pos >= 0 and host_merge_pos > pos:
+        print(f"ERROR: host/gamepad input merge occurs after late router: {marker}", file=sys.stderr)
+        raise SystemExit(8)
+
 print("HAPPY JARZ staged firmware verification: PASS")
 print(f"  firmware version {expected_version}")
 print("  Fuel Gauge + HOME battery/power cycle present")
@@ -127,6 +146,7 @@ print("  arcade/game OLED frames use mirrored present path")
 print("  live four-lamp LED_FRAME stream present")
 print("  switched 3.3V accessory rail auto-pause/resume present")
 print("  1-hour sleep + any-touch/alarm wake present")
+print("  unified physical + gamepad menu routing present")
 print("  low-battery bulb 4 beacon + CHARGE ME OLED warning present")
 print("  true four-lamp pattern engine present")
 print("  stand-topology chase family present")
