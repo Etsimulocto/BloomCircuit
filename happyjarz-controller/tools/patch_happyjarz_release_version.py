@@ -64,6 +64,14 @@ if not sleep_patch.exists():
     raise SystemExit(f"release staging failed: missing sleep patch {sleep_patch}")
 subprocess.run([sys.executable, str(sleep_patch), str(sketch)], check=True)
 
+# Finalize logical input ordering after all menu/game patches have inserted their
+# handlers. This keeps the sleep layer's first wake check physical-only, then
+# merges host/gamepad KEY events before every menu/game router.
+unified_input_patch = Path(__file__).with_name("patch_happyjarz_unified_input_order.py")
+if not unified_input_patch.exists():
+    raise SystemExit(f"release staging failed: missing unified input patch {unified_input_patch}")
+subprocess.run([sys.executable, str(unified_input_patch), str(sketch)], check=True)
+
 s = sketch.read_text(encoding="utf-8")
 pattern = r'static const char \*HJ_FW_VERSION = "[^"]+";'
 replacement = f'static const char *HJ_FW_VERSION = "{version}";'
