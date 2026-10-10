@@ -9,8 +9,8 @@ These rules are mandatory for HAPPY JARZ releases and behavior-changing builds.
 
 The current release pair is:
 
-- App `1.7.0`
-- Firmware `0.16.0`
+- App `1.9.0`
+- Firmware `0.17.13`
 
 ## Mandatory bump rule
 
@@ -138,3 +138,4 @@ Fixes two staged C++ compile errors:
 - BLOOM lotus arc calls updated to the U8g2 2.36.19 five-argument `drawArc()` API
 
 No host protocol break. Host app remains `1.7.0`.
+
