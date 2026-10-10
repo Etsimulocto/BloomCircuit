@@ -1,6 +1,6 @@
 # HAPPY JARZ Controller
 
-**Current platform release pair:** desktop app **v1.8.3** + firmware **v0.17.11**
+**Current platform release pair:** desktop app **v1.9.0** + firmware **v0.17.13**
 
 This subsystem is the PC/Raspberry Pi field-service and control layer for the HAPPY JARZ powered stand. It sits above the known-good ESP32-S3 light/touch/OLED hardware layer and is designed so desktop-side changes do not casually rewrite the proven APA106 timing.
 
@@ -16,8 +16,8 @@ happyjarz-controller/firmware/VERSION # firmware version
 Current values:
 
 ```text
-App      1.8.3
-Firmware 0.17.9
+App      1.9.0
+Firmware 0.17.13
 ```
 
 Legacy filenames such as `happyjarz_controller_v0_3_3.py`, `happyjarz_integrated_v0_5.ino`, and `flash_happyjarz_v0_5.sh` are compatibility names only. The flasher reads `firmware/VERSION`, injects it into `HJ_FW_VERSION`, and verifies the final staged build before upload.
@@ -38,6 +38,7 @@ Legacy filenames such as `happyjarz_controller_v0_3_3.py`, `happyjarz_integrated
 - Fuel Gauge / `GET POWER` telemetry
 - 30-second screensaver timeout with SAYINGS / SPIRAL / TRIPPY / PARTICLES / BLOOM / BREATHE / GLITTER
 - persistent custom marquee sayings
+- local 128×64 OLED art editor beside Custom Marquee; pictures save on the Pi and export as U8g2 headers (device transfer requires a future firmware protocol)
 - transient desktop MENU/GAME input modes that fall back to local JAR control when the USB CDC session disappears
 
 ## Bench-proven hardware map
@@ -605,3 +606,4 @@ physical touch scan
 ```
 
 After the physical-only sleep check, app Mini controls, USB gamepad input and copper touch share the same logical UP/DOWN/LEFT/RIGHT/A/B path across normal UI and game routing.
+
