@@ -8,6 +8,7 @@ import tkinter as tk
 from tkinter import ttk
 
 import happyjarz_controller_v0_3_2 as previous
+from happyjarz_art_studio import HappyJarzArtStudio
 
 
 def _read_app_version() -> str:
@@ -24,6 +25,7 @@ APP_VERSION = _read_app_version()
 
 class HappyJarzApp(previous.HappyJarzApp):
     def __init__(self):
+        self.art_studio = None
         self.power_voltage = None
         self.power_percent = None
         self.power_usb = None
@@ -33,7 +35,27 @@ class HappyJarzApp(previous.HappyJarzApp):
         self._power_poll_started = False
         super().__init__()
         self.title(f"HAPPY JARZ Controller v{APP_VERSION}")
-        self._log(f"HAPPY JARZ app v{APP_VERSION} • Fuel Gauge UI + GET POWER telemetry active")
+        self._log(f"HAPPY JARZ app v{APP_VERSION} • Fuel Gauge UI + OLED marquee art editor active")
+
+    def _build_display_tab(self, root):
+        super()._build_display_tab(root)
+
+        outer, panel = self._card(root, 9)
+        outer.pack(fill="both", expand=True, pady=(8, 0))
+
+        head = ttk.Frame(panel, style="Panel.TFrame")
+        head.pack(fill="x")
+        ttk.Label(head, text="CUSTOM MARQUEE ART", style="Section.TLabel").pack(side="left")
+        ttk.Label(head, text="128 × 64 • 1,024 bytes per image", style="PanelMuted.TLabel").pack(side="right")
+        ttk.Label(
+            panel,
+            text="Draw faces and symbols for the OLED here. Save the art library on the Pi; firmware upload support is still pending.",
+            style="PanelMuted.TLabel",
+            wraplength=820,
+        ).pack(anchor="w", pady=(5, 8))
+
+        self.art_studio = HappyJarzArtStudio(panel)
+        self.art_studio.pack(fill="both", expand=True)
 
     def _build_service_tab(self, root):
         super()._build_service_tab(root)
@@ -137,3 +159,4 @@ class HappyJarzApp(previous.HappyJarzApp):
 
 if __name__ == "__main__":
     HappyJarzApp().mainloop()
+
