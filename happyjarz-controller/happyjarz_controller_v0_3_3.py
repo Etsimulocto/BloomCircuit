@@ -8,6 +8,7 @@ import tkinter as tk
 from tkinter import ttk
 
 import happyjarz_controller_v0_3_2 as previous
+from happyjarz_art_studio import HappyJarzArtStudio
 
 
 def _read_app_version() -> str:
@@ -33,7 +34,24 @@ class HappyJarzApp(previous.HappyJarzApp):
         self._power_poll_started = False
         super().__init__()
         self.title(f"HAPPY JARZ Controller v{APP_VERSION}")
-        self._log(f"HAPPY JARZ app v{APP_VERSION} • Fuel Gauge UI + GET POWER telemetry active")
+        self._log(f"HAPPY JARZ app v{APP_VERSION} • OLED Art Studio + Fuel Gauge UI active")
+
+    @staticmethod
+    def _walk_widgets(parent):
+        for child in parent.winfo_children():
+            yield child
+            yield from HappyJarzApp._walk_widgets(child)
+
+    def _build_ui(self):
+        super()._build_ui()
+        notebook = next((widget for widget in self._walk_widgets(self)
+                         if isinstance(widget, ttk.Notebook)), None)
+        if notebook is None:
+            raise RuntimeError("Could not find the HAPPY JARZ controller tab notebook")
+        art_tab = ttk.Frame(notebook, padding=8)
+        notebook.add(art_tab, text="OLED ART")
+        self.art_studio = HappyJarzArtStudio(art_tab)
+        self.art_studio.pack(fill="both", expand=True)
 
     def _build_service_tab(self, root):
         super()._build_service_tab(root)
