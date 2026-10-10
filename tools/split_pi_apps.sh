@@ -3,11 +3,12 @@ set -euo pipefail
 
 # Split the Pi tools into independent folders so switching Git branches never
 # makes an app disappear again.
+# HAPPY JARZ desktop + firmware source of truth: feature/happyjarz-platform (1.8.x / 0.17.x).
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT"
 
 echo "Updating remote refs..."
-git fetch origin main happyjarz-controller-v0.1
+git fetch origin main happyjarz-controller-v0.1 feature/happyjarz-platform
 
 extract_dir() {
   local ref="$1"
@@ -25,7 +26,7 @@ extract_dir() {
 
 extract_dir origin/main BloomSaver "$HOME/BloomSaver"
 extract_dir origin/happyjarz-controller-v0.1 BloomTunes "$HOME/BloomTunes"
-extract_dir origin/happyjarz-controller-v0.1 happyjarz-controller "$HOME/HappyJarzController"
+extract_dir origin/feature/happyjarz-platform happyjarz-controller "$HOME/HappyJarzController"
 
 # Keep Pi login autostart tied to the stable split-app folder, not whichever
 # Git branch/path happened to be checked out when the watcher was first installed.
