@@ -9,7 +9,7 @@ These rules are mandatory for HAPPY JARZ releases and behavior-changing builds.
 
 The current release pair is:
 
-- App `1.1.0`
+- App `1.2.0`
 - Firmware `0.6.1`
 
 ## Mandatory bump rule
